@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 
 from .analyzer import SelfDevelopmentAnalyzer
 from .builder import SelfDevelopmentBuilder
 from .evaluator import SelfDevelopmentEvaluator
+from .lease import DevelopmentLeaseStore
 from .planner import SelfDevelopmentPlanner
 from .policies import SelfDevelopmentPolicy
 from .proposal import ImprovementProposal, ProposalStatus, ProposalStore
@@ -14,14 +16,16 @@ from .tester import SelfDevelopmentTester
 
 
 class SelfDevelopmentEngine:
-    """Controlled improvement pipeline that stops before production activation.
+    """Controlled, cross-process-safe improvement pipeline.
 
-    Flow implemented here:
+    Flow:
       GAP -> PROPOSAL -> ANALYZE/PLAN -> SANDBOX -> BUILD -> TEST -> POLICY/DIFF
       -> AWAITING_APPROVAL -> APPROVED/REJECTED
 
-    A later controlled release engine owns production merge/deploy/monitor/rollback.
-    This engine never silently writes to the production worktree.
+    Mutating operations are guarded by short SQLite-backed leases. A crashed JARVIS
+    instance cannot permanently lock a proposal; expired leases can be reclaimed and
+    interrupted states are converted to recoverable FAILED states instead of being
+    silently treated as completed work.
     """
 
     def __init__(
@@ -39,6 +43,8 @@ class SelfDevelopmentEngine:
         self.tester = SelfDevelopmentTester(self.policy.max_build_time)
         self.evaluator = SelfDevelopmentEvaluator()
         self.rollback = RollbackManager(db_path)
+        self.leases = DevelopmentLeaseStore(db_path, default_ttl_seconds=max(120, self.policy.max_build_time + 120))
+        self.recovery_summary = self.recover_interrupted()
 
     @staticmethod
     def _require(proposal: ImprovementProposal | None, allowed: set[ProposalStatus]) -> ImprovementProposal:
@@ -48,6 +54,76 @@ class SelfDevelopmentEngine:
             names = ', '.join(sorted(item.value for item in allowed))
             raise RuntimeError(f'Proposal {proposal.id} is {proposal.status.value}; expected one of: {names}.')
         return proposal
+
+    @contextmanager
+    def operation(
+        self,
+        proposal_id: str,
+        operation: str,
+        *,
+        lease_token: str | None = None,
+    ):
+        """Hold or re-enter the proposal lease for one bounded operation."""
+        with self.leases.hold(
+            proposal_id,
+            operation,
+            owner_token=lease_token,
+            ttl_seconds=max(120, self.policy.max_build_time + 120),
+        ) as lease:
+            yield lease.owner_token
+
+    def recover_interrupted(self) -> dict:
+        """Recover stale persisted states without guessing that work succeeded.
+
+        Active leases are never touched. Expired TESTING/SECURITY_REVIEW/EVALUATED
+        states become FAILED/retryable. States that require a sandbox become FAILED
+        when the recorded worktree has disappeared. No production Git state is
+        modified by this recovery pass.
+        """
+        expired = self.leases.cleanup_expired()
+        recovered: list[dict] = []
+        interrupted = {
+            ProposalStatus.TESTING,
+            ProposalStatus.SECURITY_REVIEW,
+            ProposalStatus.EVALUATED,
+        }
+        requires_sandbox = {
+            ProposalStatus.SANDBOX_READY,
+            ProposalStatus.TESTING,
+            ProposalStatus.TESTED,
+            ProposalStatus.EVALUATED,
+            ProposalStatus.SECURITY_REVIEW,
+            ProposalStatus.AWAITING_APPROVAL,
+            ProposalStatus.APPROVED,
+        }
+
+        for row in self.store.list_recent(500):
+            proposal_id = str(row.get('id') or '')
+            proposal = self.store.get(proposal_id) if proposal_id else None
+            if proposal is None or self.leases.get(proposal.id) is not None:
+                continue
+            reason = ''
+            if proposal.status in interrupted:
+                reason = f'Interrupted {proposal.status.value} operation had no active lease.'
+            elif proposal.status in requires_sandbox:
+                sandbox_path = Path(proposal.sandbox_path) if proposal.sandbox_path else None
+                if sandbox_path is None or not sandbox_path.exists():
+                    reason = 'Recorded self-development sandbox is missing.'
+            if not reason:
+                continue
+            previous = proposal.status.value
+            proposal.test_summary = {
+                **dict(proposal.test_summary or {}),
+                'recovery': {
+                    'previous_status': previous,
+                    'reason': reason,
+                    'safe_to_retry': True,
+                },
+            }
+            proposal.touch(ProposalStatus.FAILED)
+            self.store.save(proposal)
+            recovered.append({'proposal_id': proposal.id, 'from': previous, 'reason': reason})
+        return {'expired_leases_removed': expired, 'recovered': recovered}
 
     def proposal_from_gap(self, gap: dict) -> ImprovementProposal:
         capability = str(gap.get('capability') or 'Unknown Capability')[:160]
@@ -75,98 +151,124 @@ class SelfDevelopmentEngine:
         self.store.save(proposal)
         return proposal
 
-    def prepare_sandbox(self, proposal_id: str) -> ImprovementProposal:
-        proposal = self._require(self.store.get(proposal_id), {ProposalStatus.PROPOSED})
-        info = self.sandbox.create(proposal.id)
-        proposal.branch = info.branch
-        proposal.sandbox_path = info.path
-        proposal.touch(ProposalStatus.SANDBOX_READY)
-        self.rollback.create(proposal.id, info.base_head)
-        self.store.save(proposal)
-        return proposal
+    def prepare_sandbox(self, proposal_id: str, *, _lease_token: str | None = None) -> ImprovementProposal:
+        with self.operation(proposal_id, 'prepare-sandbox', lease_token=_lease_token):
+            proposal = self._require(self.store.get(proposal_id), {ProposalStatus.PROPOSED})
+            info = self.sandbox.create(proposal.id)
+            proposal.branch = info.branch
+            proposal.sandbox_path = info.path
+            proposal.touch(ProposalStatus.SANDBOX_READY)
+            self.rollback.create(proposal.id, info.base_head)
+            self.store.save(proposal)
+            return proposal
 
-    def apply_changes(self, proposal_id: str, changes: dict[str, str]) -> ImprovementProposal:
-        proposal = self._require(
-            self.store.get(proposal_id),
-            {ProposalStatus.SANDBOX_READY, ProposalStatus.FAILED},
-        )
-        if not proposal.sandbox_path:
-            raise RuntimeError('Proposal has no prepared sandbox.')
-        builder = SelfDevelopmentBuilder(Path(proposal.sandbox_path), self.policy)
-        written = builder.apply(changes)
-        proposal.changed_files = sorted({item.path for item in written})
-        proposal.test_summary = {'build_changes': [item.as_dict() for item in written]}
-        proposal.touch(ProposalStatus.SANDBOX_READY)
-        self.store.save(proposal)
-        return proposal
+    def apply_changes(
+        self,
+        proposal_id: str,
+        changes: dict[str, str],
+        *,
+        _lease_token: str | None = None,
+    ) -> ImprovementProposal:
+        with self.operation(proposal_id, 'apply-changes', lease_token=_lease_token):
+            proposal = self._require(
+                self.store.get(proposal_id),
+                {ProposalStatus.SANDBOX_READY, ProposalStatus.FAILED},
+            )
+            if not proposal.sandbox_path:
+                raise RuntimeError('Proposal has no prepared sandbox.')
+            builder = SelfDevelopmentBuilder(Path(proposal.sandbox_path), self.policy)
+            written = builder.apply(changes)
+            proposal.changed_files = sorted(set(proposal.changed_files) | {item.path for item in written})
+            existing = dict(proposal.test_summary or {})
+            existing['build_changes'] = [item.as_dict() for item in written]
+            proposal.test_summary = existing
+            proposal.touch(ProposalStatus.SANDBOX_READY)
+            self.store.save(proposal)
+            return proposal
 
-    def run_tests(self, proposal_id: str) -> ImprovementProposal:
-        proposal = self._require(
-            self.store.get(proposal_id),
-            {ProposalStatus.SANDBOX_READY, ProposalStatus.FAILED},
-        )
-        if not proposal.sandbox_path:
-            raise RuntimeError('Proposal has no prepared sandbox.')
-        proposal.touch(ProposalStatus.TESTING)
-        self.store.save(proposal)
-        report = self.tester.run_regression(Path(proposal.sandbox_path))
-        existing_build = dict(proposal.test_summary)
-        existing_build['regression'] = report.as_dict()
-        proposal.test_summary = existing_build
-        proposal.touch(ProposalStatus.TESTED if report.ok else ProposalStatus.FAILED)
-        self.store.save(proposal)
-        return proposal
+    def run_tests(self, proposal_id: str, *, _lease_token: str | None = None) -> ImprovementProposal:
+        with self.operation(proposal_id, 'run-tests', lease_token=_lease_token) as token:
+            proposal = self._require(
+                self.store.get(proposal_id),
+                {ProposalStatus.SANDBOX_READY, ProposalStatus.FAILED},
+            )
+            if not proposal.sandbox_path:
+                raise RuntimeError('Proposal has no prepared sandbox.')
+            proposal.touch(ProposalStatus.TESTING)
+            self.store.save(proposal)
+            self.leases.refresh(proposal.id, token, operation='run-tests')
+            report = self.tester.run_regression(Path(proposal.sandbox_path))
+            existing_build = dict(proposal.test_summary)
+            existing_build['regression'] = report.as_dict()
+            proposal.test_summary = existing_build
+            proposal.touch(ProposalStatus.TESTED if report.ok else ProposalStatus.FAILED)
+            self.store.save(proposal)
+            return proposal
 
-    def review(self, proposal_id: str) -> ImprovementProposal:
-        proposal = self._require(self.store.get(proposal_id), {ProposalStatus.TESTED})
-        worktree = Path(proposal.sandbox_path)
-        files, lines = self.sandbox.git.diff_stats(worktree)
-        check = self.policy.validate_change_set(files, lines)
-        diff = self.sandbox.git.diff(worktree)
-        code_changed = any(path.endswith(('.py', '.js', '.ts', '.tsx', '.jsx', '.ps1', '.bat', '.sh')) for path in files)
-        tests_changed = any(path.replace('\\', '/').startswith('tests/') for path in files)
-        reasons = list(check.reasons)
-        if not files:
-            reasons.append('No sandbox changes exist.')
-        if code_changed and not tests_changed:
-            reasons.append('Code changed without a changed/added regression test.')
+    def review(self, proposal_id: str, *, _lease_token: str | None = None) -> ImprovementProposal:
+        with self.operation(proposal_id, 'review', lease_token=_lease_token):
+            proposal = self._require(self.store.get(proposal_id), {ProposalStatus.TESTED})
+            worktree = Path(proposal.sandbox_path)
+            files, lines = self.sandbox.git.diff_stats(worktree)
+            check = self.policy.validate_change_set(files, lines)
+            diff = self.sandbox.git.diff(worktree)
+            code_changed = any(path.endswith(('.py', '.js', '.ts', '.tsx', '.jsx', '.ps1', '.bat', '.sh')) for path in files)
+            tests_changed = any(path.replace('\\', '/').startswith('tests/') for path in files)
+            reasons = list(check.reasons)
+            if not files:
+                reasons.append('No sandbox changes exist.')
+            if code_changed and not tests_changed:
+                reasons.append('Code changed without a changed/added regression test.')
 
-        tests_ok = bool((proposal.test_summary.get('regression') or {}).get('ok'))
-        policy_ok = check.allowed and not reasons
-        evaluation = self.evaluator.compare({}, {}, tests_passed=tests_ok, policy_passed=policy_ok)
-        proposal.changed_files = files
-        proposal.policy_summary = {
-            **proposal.policy_summary,
-            'change_check': check.as_dict(),
-            'review_reasons': reasons,
-            'tests_changed': tests_changed,
-            'code_changed': code_changed,
-        }
-        proposal.evaluation_summary = evaluation.as_dict()
-        proposal.diff_summary = diff[:200000]
-        if tests_ok and policy_ok and evaluation.passed:
-            proposal.touch(ProposalStatus.AWAITING_APPROVAL)
-        else:
-            proposal.touch(ProposalStatus.FAILED)
-        self.store.save(proposal)
-        return proposal
+            tests_ok = bool((proposal.test_summary.get('regression') or {}).get('ok'))
+            policy_ok = check.allowed and not reasons
+            evaluation = self.evaluator.compare({}, {}, tests_passed=tests_ok, policy_passed=policy_ok)
+            proposal.changed_files = files
+            proposal.policy_summary = {
+                **proposal.policy_summary,
+                'change_check': check.as_dict(),
+                'review_reasons': reasons,
+                'tests_changed': tests_changed,
+                'code_changed': code_changed,
+            }
+            proposal.evaluation_summary = evaluation.as_dict()
+            proposal.diff_summary = diff[:200000]
+            if tests_ok and policy_ok and evaluation.passed:
+                proposal.touch(ProposalStatus.AWAITING_APPROVAL)
+            else:
+                proposal.touch(ProposalStatus.FAILED)
+            self.store.save(proposal)
+            return proposal
 
-    def approve(self, proposal_id: str, *, explicit_user_approval: bool) -> ImprovementProposal:
-        proposal = self._require(self.store.get(proposal_id), {ProposalStatus.AWAITING_APPROVAL})
-        if not self.policy.can_activate_production(explicit_user_approval=explicit_user_approval):
-            raise PermissionError('Explicit production approval is required. No code was deployed.')
-        proposal.touch(ProposalStatus.APPROVED)
-        self.store.save(proposal)
-        return proposal
+    def approve(
+        self,
+        proposal_id: str,
+        *,
+        explicit_user_approval: bool,
+        _lease_token: str | None = None,
+    ) -> ImprovementProposal:
+        with self.operation(proposal_id, 'approve', lease_token=_lease_token):
+            proposal = self._require(self.store.get(proposal_id), {ProposalStatus.AWAITING_APPROVAL})
+            if not self.policy.can_activate_production(explicit_user_approval=explicit_user_approval):
+                raise PermissionError('Explicit production approval is required. No code was deployed.')
+            proposal.touch(ProposalStatus.APPROVED)
+            self.store.save(proposal)
+            return proposal
 
-    def reject(self, proposal_id: str) -> ImprovementProposal:
-        proposal = self._require(
-            self.store.get(proposal_id),
-            {ProposalStatus.PROPOSED, ProposalStatus.SANDBOX_READY, ProposalStatus.TESTED, ProposalStatus.AWAITING_APPROVAL},
-        )
-        proposal.touch(ProposalStatus.REJECTED)
-        self.store.save(proposal)
-        return proposal
+    def reject(self, proposal_id: str, *, _lease_token: str | None = None) -> ImprovementProposal:
+        with self.operation(proposal_id, 'reject', lease_token=_lease_token):
+            proposal = self._require(
+                self.store.get(proposal_id),
+                {
+                    ProposalStatus.PROPOSED,
+                    ProposalStatus.SANDBOX_READY,
+                    ProposalStatus.TESTED,
+                    ProposalStatus.AWAITING_APPROVAL,
+                },
+            )
+            proposal.touch(ProposalStatus.REJECTED)
+            self.store.save(proposal)
+            return proposal
 
     def get(self, proposal_id: str) -> dict | None:
         proposal = self.store.get(proposal_id)
