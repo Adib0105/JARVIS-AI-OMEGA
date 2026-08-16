@@ -25,8 +25,15 @@ def main() -> None:
     except Exception as exc:
         results.append(check('Rich terminal UI', False, str(exc)))
     try:
+        import pyttsx3
+        results.append(check('Spoken reply engine', True, getattr(pyttsx3, '__version__', 'installed')))
+    except Exception as exc:
+        results.append(check('Spoken reply engine', False, str(exc)))
+    try:
         from jarvis.config import settings
         results.append(check('API key configured', bool(settings.api_key and settings.api_key != 'put_your_api_key_here'), settings.model))
+        results.append(check('Voice output enabled', settings.enable_voice_output, f'rate={settings.voice_rate}, volume={settings.voice_volume}'))
+        results.append(check('Microphone input', True, 'not installed by design'))
         results.append(check('Database folder writable', os.access(settings.db_path.parent, os.W_OK) if settings.db_path.parent.exists() else True, str(settings.db_path)))
         roots = [str(p) for p in settings.allowed_file_roots if p.exists()]
         results.append(check('Local roots', bool(roots), '; '.join(roots) or 'none'))
