@@ -62,7 +62,13 @@ def assess_public_url(url: str, *, resolve_dns: bool = False) -> BrowserTrustRes
     host = (parsed.hostname or '').strip().lower().rstrip('.')
     reasons: list[str] = []
     if parsed.scheme not in {'http', 'https'} or not host:
-        return BrowserTrustResult(False, host, parsed.scheme or '', 'BLOCKED', ('invalid http/https URL',))
+        return BrowserTrustResult(
+            False,
+            host,
+            parsed.scheme or '',
+            'BLOCKED',
+            ('Only valid HTTP/HTTPS URLs are allowed.',),
+        )
     if parsed.username or parsed.password:
         reasons.append('URLs containing embedded credentials are blocked')
     if host == 'localhost' or host.endswith('.localhost') or host.endswith('.local'):
