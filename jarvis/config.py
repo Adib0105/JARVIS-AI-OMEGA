@@ -67,6 +67,23 @@ class Settings:
     local_ai_model: str = os.getenv('LOCAL_AI_MODEL', '').strip()
     local_ai_api_key: str = os.getenv('LOCAL_AI_API_KEY', 'local').strip() or 'local'
 
+    # Controlled V7.5 self-development. Sandbox work is enabled by default;
+    # production self-modification remains disabled and explicit approval is mandatory.
+    self_development_enabled: bool = _bool('SELF_DEVELOPMENT_ENABLED', True)
+    offline_development_enabled: bool = _bool('OFFLINE_DEVELOPMENT_ENABLED', False)
+    auto_test_enabled: bool = _bool('AUTO_TEST_ENABLED', True)
+    auto_rollback_enabled: bool = _bool('AUTO_ROLLBACK_ENABLED', False)
+    production_self_modification: bool = _bool('PRODUCTION_SELF_MODIFICATION', False)
+    require_approval_for_production: bool = _bool('REQUIRE_APPROVAL_FOR_PRODUCTION', True)
+    max_self_repair_attempts: int = _int('MAX_SELF_REPAIR_ATTEMPTS', 3)
+    max_files_changed: int = _int('MAX_FILES_CHANGED', 20)
+    max_lines_changed: int = _int('MAX_LINES_CHANGED', 1200)
+    max_build_time: int = _int('MAX_BUILD_TIME', 300)
+    max_cpu_usage: float = _float('MAX_CPU_USAGE', 80.0)
+    max_memory_usage: float = _float('MAX_MEMORY_USAGE', 80.0)
+    local_model_provider: str = os.getenv('LOCAL_MODEL_PROVIDER', 'openai-compatible').strip().lower()
+    self_evaluation_interval: int = _int('SELF_EVALUATION_INTERVAL', 0)
+
     creator_name: str = os.getenv('CREATOR_NAME', 'Adib Azam').strip() or 'Adib Azam'
     user_name: str = os.getenv('USER_NAME', 'Adib').strip() or 'Adib'
     assistant_name: str = os.getenv('JARVIS_NAME', 'JARVIS OMEGA').strip() or 'JARVIS OMEGA'
