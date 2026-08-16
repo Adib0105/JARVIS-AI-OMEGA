@@ -24,9 +24,13 @@ def confirmer(tool: str, args: dict) -> bool:
 
 def banner() -> None:
     title = Text('J A R V I S   O M E G A', style='bold cyan')
-    subtitle = f'Type commands • Spoken AI replies • Creator: {settings.creator_name} • Model: {settings.model}'
+    provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
+    subtitle = (
+        f'Type commands • Spoken AI replies • Creator: {settings.creator_name} • '
+        f'Provider: {provider} • Model: {settings.model}'
+    )
     console.print(Panel.fit(Text.assemble(title, '\n', subtitle), border_style='cyan'))
-    console.print('[dim]Type /help for commands. Microphone/voice input is not installed; you type, JARVIS speaks its reply.[/dim]\n')
+    console.print('[dim]Microphone input is not installed; you type, JARVIS speaks its reply.[/dim]\n')
 
 
 def help_table() -> Table:
@@ -36,7 +40,7 @@ def help_table() -> Table:
     for cmd, desc in [
         ('/help', 'Show this command list'),
         ('/new', 'Start a fresh conversation session'),
-        ('/status', 'Show model/features/session status'),
+        ('/status', 'Show provider/model/features/session status'),
         ('/remember <text>', 'Save a fact to local long-term memory'),
         ('/recall <query>', 'Search local long-term memory'),
         ('/sessions', 'Show recent chat sessions'),
@@ -75,9 +79,12 @@ def run_cli() -> None:
             console.print(f'[green]New session:[/green] {sid}')
             continue
         if low == '/status':
+            provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
             console.print(Panel(
-                f'Model: {settings.model}\nReasoning: {settings.reasoning_effort}\n'
-                f'Web search: {settings.enable_web_search}\nCode Interpreter: {settings.enable_code_interpreter}\n'
+                f'Provider: {provider}\nConfigured model: {settings.model}\nLast model used: {jarvis.last_model_used}\n'
+                f'Reasoning setting: {settings.reasoning_effort if settings.provider == "openai" else "provider-managed"}\n'
+                f'Hosted web search: {settings.hosted_web_search_enabled}\n'
+                f'Code Interpreter: {settings.code_interpreter_enabled}\n'
                 f'Local tools: {settings.enable_local_tools}\nVoice output: {settings.enable_voice_output}\n'
                 f'Microphone input: False\nSession: {jarvis.session_id}\n'
                 f'Last latency: {jarvis.last_latency:.2f}s',
