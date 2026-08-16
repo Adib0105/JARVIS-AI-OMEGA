@@ -50,6 +50,47 @@ DEFAULT_POLICIES: dict[Capability, PermissionPolicy] = {
 }
 
 
+# Trusted Local Mode removes repetitive prompts for ordinary LOW/MEDIUM local
+# actions while retaining the capability sandbox and audit trail. It does not
+# grant arbitrary shell access, secret-path access, destructive writes, email
+# sending, calendar writes, keyboard/mouse control, or other HIGH-risk actions.
+TRUSTED_LOCAL_CAPABILITIES = frozenset({
+    Capability.SYSTEM_READ,
+    Capability.MEMORY_READ,
+    Capability.MEMORY_WRITE,
+    Capability.FILE_READ,
+    Capability.DOCUMENT_READ,
+    Capability.BROWSER_READ,
+    Capability.BROWSER_CONTROL,
+    Capability.APP_CONTROL,
+    Capability.CODE_READ,
+    Capability.CODE_TEST,
+    Capability.GIT_READ,
+    Capability.WEB_READ,
+})
+
+
+def trusted_local_mode_enabled() -> bool:
+    return os.getenv('TRUSTED_LOCAL_MODE', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def trusted_local_auto_allowed(
+    profile: ToolSecurityProfile,
+    capabilities: tuple[Capability, ...],
+    policies: dict[str, PermissionPolicy],
+) -> bool:
+    if not trusted_local_mode_enabled():
+        return False
+    if profile.risk not in {RiskLevel.LOW, RiskLevel.MEDIUM}:
+        return False
+    if not capabilities or not set(capabilities).issubset(TRUSTED_LOCAL_CAPABILITIES):
+        return False
+    # Explicit deny and ALWAYS_ASK always beat trusted mode.
+    if any(policies[cap.value] in {PermissionPolicy.DENY, PermissionPolicy.ALWAYS_ASK} for cap in capabilities):
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class ApprovalRequest:
     tool_name: str
@@ -142,7 +183,7 @@ def normalize_decision(value) -> ApprovalDecision:
 
 
 class CapabilityPermissionGate:
-    """Granular V7 capability gate with backward-compatible Decision-like results."""
+    """Granular V7 capability gate with Trusted Local Mode and audit-friendly outcomes."""
 
     def __init__(
         self,
@@ -191,12 +232,24 @@ class CapabilityPermissionGate:
                 f'Denied by V7 capability policy: {names}',
             )
 
+        # Explicitly requested ordinary local operations should not interrupt the
+        # user with repetitive popups. The tool remains allowlisted, sandboxed,
+        # audited and restricted by its existing handler/root protections.
+        if trusted_local_auto_allowed(profile, capabilities, policies):
+            return self._outcome(
+                True, ApprovalDecision.ALLOW_ONCE, profile,
+                'Allowed by V7 Trusted Local Mode.',
+            )
+
         with self._lock:
             granted = set(self._session_grants)
         requires_always = [cap for cap in capabilities if policies[cap.value] == PermissionPolicy.ALWAYS_ASK]
         requires_ask = [cap for cap in capabilities if policies[cap.value] == PermissionPolicy.ASK and cap not in granted]
         needs_prompt = bool(requires_always or requires_ask)
-        if not self.require_approval and not requires_always:
+
+        # Legacy REQUIRE_LOCAL_APPROVAL=false may reduce prompts for LOW/MEDIUM
+        # actions, but it never silently bypasses HIGH/CRITICAL risk controls.
+        if not self.require_approval and not requires_always and profile.risk in {RiskLevel.LOW, RiskLevel.MEDIUM}:
             needs_prompt = False
 
         if not needs_prompt:
@@ -226,7 +279,6 @@ class CapabilityPermissionGate:
             with self._lock:
                 self._session_grants.update(grantable)
             if requires_always:
-                # ALWAYS_ASK permissions are allowed only for this action and never persisted.
                 decision = ApprovalDecision.ALLOW_ONCE
 
         if decision in {ApprovalDecision.ALLOW_ONCE, ApprovalDecision.ALLOW_SESSION}:
