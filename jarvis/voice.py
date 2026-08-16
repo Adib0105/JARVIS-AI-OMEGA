@@ -58,7 +58,7 @@ def choose_voice(text: str) -> str:
 
 
 class VoiceOutput:
-    """Neural TTS with offline fallback and state callbacks for the V6 ARC HUD."""
+    """Neural TTS with offline fallback and state callbacks for the V7 ARC HUD."""
 
     def __init__(self, on_state_change: Callable[[str], None] | None = None) -> None:
         self.enabled = settings.enable_voice_output
@@ -98,9 +98,9 @@ class VoiceOutput:
 
     def test(self, mode: str = 'hinglish') -> None:
         samples = {
-            'hindi': 'नमस्ते आदिब। मैं जार्विस ओमेगा वर्जन सिक्स हूँ। सिस्टम ऑनलाइन है।',
-            'english': 'Hello Adib. JARVIS OMEGA version six is online. All core systems are ready.',
-            'hinglish': 'Adib bhai, JARVIS OMEGA version six online hai. ARC core ready hai.',
+            'hindi': 'नमस्ते आदिब। मैं जार्विस ओमेगा वर्जन सेवन हूँ। सिस्टम ऑनलाइन है।',
+            'english': 'Hello Adib. JARVIS OMEGA version seven is online. All core systems are ready.',
+            'hinglish': 'Adib bhai, JARVIS OMEGA version seven online hai. ARC core ready hai.',
         }
         self.speak(samples.get(mode, samples['hinglish']))
 
