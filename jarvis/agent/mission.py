@@ -54,6 +54,8 @@ class MissionStep:
     error: str = ''
     tool_events: list[dict] = field(default_factory=list)
     verification: VerificationResult | None = None
+    recovered: bool = False
+    recovered_by: list[str] = field(default_factory=list)
     started_at: str | None = None
     completed_at: str | None = None
 
