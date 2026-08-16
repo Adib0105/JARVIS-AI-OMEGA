@@ -1,5 +1,7 @@
 # JARVIS OMEGA V7 — Memory & Context
 
+**Phase status:** implementation complete; considered complete only after the current V7 regression suite is green.
+
 ## Goals
 
 V7 memory is designed around four separate questions:
