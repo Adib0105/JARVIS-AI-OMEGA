@@ -1,9 +1,9 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-title JARVIS AI OMEGA V5 - Terminal
+title JARVIS AI OMEGA V6 - Terminal Agent
 if not exist ".venv\Scripts\python.exe" (
-  echo JARVIS environment not found. Run setup_windows.ps1 first.
+  echo JARVIS V6 environment not found. Run setup_windows.ps1 first.
   pause
   exit /b 1
 )
