@@ -7,6 +7,7 @@ from pathlib import Path
 
 from jarvis.capability_registry import CapabilityRegistry
 from jarvis.config import ROOT, settings
+from jarvis.memory_lifecycle import MemoryLifecycleManager
 from jarvis.observability import JarvisHealthSystem, ObservabilityManager
 from jarvis.self_development.offline import OfflineDevelopmentRuntime
 from jarvis.self_development.policies import SelfDevelopmentPolicy
@@ -69,16 +70,29 @@ def main() -> int:
     try:
         current = SchemaMigrator(settings.db_path).current_version()
         report(current >= 1, 'Database schema', f'version={current}')
-        integrity = BackupManager(settings.db_path).integrity(settings.db_path)
+        integrity = BackupManager(settings.db_path).integrity_check()
         report(integrity['ok'], 'Database integrity', integrity['result'])
+        lifecycle = MemoryLifecycleManager(settings.db_path)
+        columns = lifecycle._columns()
+        report('status' in columns, 'Memory lifecycle', f"status-column={'present' if 'status' in columns else 'missing'}")
     except Exception as exc:
         failures += 1
-        line('FAIL', 'Database', f'{type(exc).__name__}: {exc}')
+        line('FAIL', 'Database / memory lifecycle', f'{type(exc).__name__}: {exc}')
 
     git = shutil.which('git')
     report(bool(git), 'Git', git or 'not installed', required=False)
     repo_checkout = (ROOT / '.git').exists()
     report(repo_checkout, 'Repository checkout', str(ROOT), required=False)
+
+    try:
+        from jarvis.self_development.release import ControlledReleaseEngine
+        from jarvis.skills import SkillRegistry
+        from jarvis.skills.activation import SkillActivationEngine
+        _ = (ControlledReleaseEngine, SkillRegistry, SkillActivationEngine)
+        report(True, 'Controlled release + skill gates', 'release/rollback and deployed-only skill activation modules loaded')
+    except Exception as exc:
+        failures += 1
+        line('FAIL', 'Controlled release + skills', f'{type(exc).__name__}: {exc}')
 
     try:
         policy = SelfDevelopmentPolicy()
@@ -92,6 +106,19 @@ def main() -> int:
         line('FAIL', 'Self-development policy', f'{type(exc).__name__}: {exc}')
 
     try:
+        from jarvis.computer_use.visual_fallback import VisualTargetBackend
+        visual = VisualTargetBackend().status()
+        report(
+            visual.available,
+            'Computer Use V2 local OCR fallback',
+            visual.detail,
+            required=False,
+        )
+    except Exception as exc:
+        warnings += 1
+        line('WARN', 'Computer Use V2 local OCR fallback', f'{type(exc).__name__}: {exc}')
+
+    try:
         offline = OfflineDevelopmentRuntime().status().as_dict()
         if offline['configured'] and offline['enabled']:
             line('PASS', 'Offline development', f"{offline['provider']} / {offline['model']}")
@@ -101,6 +128,11 @@ def main() -> int:
     except Exception as exc:
         warnings += 1
         line('WARN', 'Offline development', f'{type(exc).__name__}: {exc}')
+
+    package_script = ROOT / 'build_windows.ps1'
+    installer_script = ROOT / 'build_installer.ps1'
+    report(package_script.is_file(), 'Windows build script', str(package_script))
+    report(installer_script.is_file(), 'Windows installer script', str(installer_script))
 
     print('=' * 64)
     print(json.dumps({
