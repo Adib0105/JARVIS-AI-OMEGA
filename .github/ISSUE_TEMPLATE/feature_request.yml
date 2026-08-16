@@ -1,0 +1,63 @@
+name: Feature request
+description: Propose a focused improvement for JARVIS V7/V7.5
+title: "[FEATURE] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Good feature requests explain the user problem, measurable benefit, permissions and verification strategy — not only the UI idea.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / user need
+      description: What real problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful implementation.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Agent / missions
+        - Voice / UI
+        - Computer use
+        - Browser / web
+        - Memory / RAG / documents
+        - Provider / model routing
+        - Security / permissions
+        - Observability / health
+        - Self-development / skills
+        - Packaging / installer
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: How should success be verified?
+      description: Explain the observable evidence or test that proves the feature works.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Permissions / security impact
+      description: Note any file writes, keyboard/mouse control, credentials, network access, email/calendar actions or other sensitive effects.
+  - type: checkboxes
+    id: guardrails
+    attributes:
+      label: Guardrails
+      options:
+        - label: This request does not rely on unrestricted shell/credential scraping/security bypass.
+          required: true
+        - label: I understand high-risk actions may require capability gates and verification.
+          required: true

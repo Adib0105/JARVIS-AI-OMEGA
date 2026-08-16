@@ -1,46 +1,56 @@
-$ErrorActionPreference = "Stop"
-Write-Host "=== JARVIS OMEGA V6 - Windows EXE Build ===" -ForegroundColor Cyan
-
-if (-not (Test-Path ".venv\Scripts\python.exe")) {
-    throw "Run setup_windows.ps1 first."
-}
-
-$python = Join-Path $PWD ".venv\Scripts\python.exe"
-& $python -m pip install -r requirements-build.txt
-if ($LASTEXITCODE -ne 0) { throw "Build dependency installation failed." }
-
-Remove-Item -Recurse -Force ".\build" -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force ".\dist\JARVIS-OMEGA-V6" -ErrorAction SilentlyContinue
-
-$hidden = @(
-    "--hidden-import=edge_playback",
-    "--hidden-import=speech_recognition",
-    "--hidden-import=sounddevice",
-    "--hidden-import=pyautogui",
-    "--hidden-import=pypdf",
-    "--hidden-import=docx",
-    "--hidden-import=openpyxl"
+param(
+    [switch]$Clean = $true
 )
 
-$args = @(
-    "-m", "PyInstaller",
-    "--noconfirm",
-    "--clean",
-    "--onedir",
-    "--windowed",
-    "--name", "JARVIS-OMEGA-V6"
-) + $hidden + @("desktop_app.py")
+$ErrorActionPreference = 'Stop'
+$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location $Root
 
-& $python @args
-if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
+$Python = Join-Path $Root '.venv\Scripts\python.exe'
+if (-not (Test-Path $Python)) {
+    $Python = (Get-Command python -ErrorAction Stop).Source
+}
 
-$dist = Join-Path $PWD "dist\JARVIS-OMEGA-V6"
-Copy-Item ".env.example" (Join-Path $dist ".env.example") -Force
-Copy-Item "README.md" (Join-Path $dist "README.md") -Force
-Copy-Item "LICENSE" (Join-Path $dist "LICENSE") -Force
+Write-Host 'JARVIS AI OMEGA V7 // Windows Build' -ForegroundColor Cyan
+Write-Host "Python: $Python"
 
-Write-Host ""
-Write-Host "Build complete: $dist" -ForegroundColor Green
-Write-Host "IMPORTANT: API keys are NOT bundled." -ForegroundColor Yellow
-Write-Host "Copy .env.example to .env inside the built folder and add your own provider key before running." -ForegroundColor Yellow
-Write-Host "To make an installer, install Inno Setup and run .\build_installer.ps1" -ForegroundColor Cyan
+& $Python -c "import PyInstaller" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    throw 'PyInstaller is not installed. Install it deliberately with: .\.venv\Scripts\python.exe -m pip install pyinstaller'
+}
+
+& $Python -m compileall -f -q .
+if ($LASTEXITCODE -ne 0) { throw 'compileall failed; build stopped.' }
+
+& $Python -m unittest discover -s tests -v
+if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed; build stopped.' }
+
+if ($Clean) {
+    Remove-Item -Recurse -Force (Join-Path $Root 'build') -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force (Join-Path $Root 'dist\JARVIS-OMEGA-V7') -ErrorAction SilentlyContinue
+}
+
+$Args = @(
+    '-m', 'PyInstaller',
+    '--noconfirm', '--clean', '--windowed',
+    '--name', 'JARVIS-OMEGA-V7',
+    '--collect-submodules', 'jarvis',
+    '--collect-submodules', 'edge_tts',
+    '--collect-submodules', 'speech_recognition',
+    'desktop_app.py'
+)
+& $Python @Args
+if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed.' }
+
+$Dist = Join-Path $Root 'dist\JARVIS-OMEGA-V7'
+$Exe = Join-Path $Dist 'JARVIS-OMEGA-V7.exe'
+if (-not (Test-Path $Exe)) { throw "Expected executable was not created: $Exe" }
+
+# Public documentation/config template only. Never copy the operator's .env,
+# Google OAuth files, tokens, database, logs or other private runtime data.
+Copy-Item (Join-Path $Root '.env.example') (Join-Path $Dist '.env.example') -Force
+Copy-Item (Join-Path $Root 'README.md') (Join-Path $Dist 'README.md') -Force
+Copy-Item (Join-Path $Root 'LICENSE') (Join-Path $Dist 'LICENSE') -Force
+
+Write-Host "Build ready: $Exe" -ForegroundColor Green
+Write-Host 'Private .env / OAuth / database files were NOT bundled.' -ForegroundColor Yellow

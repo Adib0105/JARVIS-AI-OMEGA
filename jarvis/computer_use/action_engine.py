@@ -1,0 +1,239 @@
+from __future__ import annotations
+
+import time
+
+from .targets import TargetMatch, choose_target
+from .visual_fallback import VisualTargetBackend
+from .windows_ui import WindowsUIBackend
+
+
+class ComputerActionEngine:
+    def __init__(
+        self,
+        backend: WindowsUIBackend | None = None,
+        confidence_threshold: float = 0.82,
+        *,
+        visual_backend: VisualTargetBackend | None = None,
+        visual_threshold: float = 0.88,
+    ) -> None:
+        self.backend = backend or WindowsUIBackend()
+        self.visual_backend = visual_backend or VisualTargetBackend()
+        self.confidence_threshold = max(0.5, min(0.99, float(confidence_threshold)))
+        self.visual_threshold = max(self.confidence_threshold, min(0.99, float(visual_threshold)))
+
+    def status(self) -> dict:
+        status = self.backend.status()
+        visual = self.visual_backend.status()
+        return {
+            'available': bool(status.available or visual.available),
+            'backend': status.backend,
+            'detail': status.detail,
+            'confidence_threshold': self.confidence_threshold,
+            'visual_fallback': visual.as_dict(),
+            'visual_threshold': self.visual_threshold,
+        }
+
+    @staticmethod
+    def _is_ambiguous(match: TargetMatch) -> bool:
+        return 'ambiguous' in str(match.reason).lower()
+
+    @staticmethod
+    def _is_visual(match: TargetMatch) -> bool:
+        return bool(match.target and match.target.control_type == 'OCRText')
+
+    def resolve(self, target: str, *, window_hint: str = '') -> TargetMatch:
+        """Resolve UIA first and use OCR only when UIA cannot identify a target.
+
+        An ambiguous UIA result is never bypassed by OCR because doing so could turn
+        uncertainty into an unintended click. OCR itself has a stricter threshold.
+        """
+        targets = self.backend.enumerate_targets(window_hint=window_hint)
+        semantic = choose_target(
+            target,
+            targets,
+            window_hint=window_hint,
+            threshold=self.confidence_threshold,
+        )
+        if semantic.resolved or self._is_ambiguous(semantic):
+            return semantic
+
+        visual = self.visual_backend.resolve(target, threshold=self.visual_threshold)
+        if visual.resolved:
+            return visual
+        alternatives = tuple(list(semantic.alternatives) + list(visual.alternatives))[:8]
+        confidence = max(float(semantic.confidence), float(visual.confidence))
+        return TargetMatch(
+            None,
+            confidence,
+            f'UIA: {semantic.reason} OCR: {visual.reason}',
+            alternatives,
+        )
+
+    def list_targets(self, query: str = '', *, window_hint: str = '', limit: int = 20) -> dict:
+        targets = self.backend.enumerate_targets(window_hint=window_hint)
+        if query.strip():
+            from .targets import rank_targets
+            ranked = rank_targets(query, targets, window_hint=window_hint, limit=limit)
+            items = [{'confidence': round(score, 4), **target.safe_dict()} for score, target in ranked]
+        else:
+            items = [target.safe_dict() for target in targets[: max(1, min(int(limit), 50))]]
+        return {'backend': self.status(), 'count': len(items), 'targets': items}
+
+    def _visual_click(self, match: TargetMatch) -> dict:
+        assert match.target is not None
+        try:
+            import pyautogui
+            x, y = match.target.center
+            pyautogui.click(x=x, y=y, button='left')
+        except Exception as exc:
+            return {
+                'ok': False,
+                'error': f'OCR-target click failed: {type(exc).__name__}: {exc}',
+                'target': match.target.safe_dict(),
+                'confidence': round(match.confidence, 4),
+                'resolution_backend': 'local-ocr',
+            }
+        return {
+            'ok': True,
+            'target': match.target.safe_dict(),
+            'confidence': round(match.confidence, 4),
+            'resolution_backend': 'local-ocr',
+            'action': 'click',
+            'verification': {
+                'status': 'PARTIAL',
+                'verified': False,
+                'evidence': {
+                    'ocr_label_resolved': True,
+                    'clicked_center': list(match.target.center),
+                    'reason': 'OCR target location was confident, but the higher-level UI outcome was not independently observed.',
+                },
+            },
+        }
+
+    def semantic_click(self, target: str, *, window_hint: str = '') -> dict:
+        match = self.resolve(target, window_hint=window_hint)
+        if not match.resolved:
+            return {
+                'ok': False,
+                'error': "I can't confidently identify the target. I will not guess.",
+                'confidence': round(match.confidence, 4),
+                'reason': match.reason,
+                'alternatives': list(match.alternatives),
+            }
+        if self._is_visual(match):
+            return self._visual_click(match)
+
+        assert match.target is not None
+        before = self.backend.observe(match.target)
+        after = self.backend.click(match.target)
+        time.sleep(0.08)
+        observed = self.backend.observe(match.target)
+        verification = self._verify_click(before, after, observed)
+        return {
+            'ok': True,
+            'target': match.target.safe_dict(),
+            'confidence': round(match.confidence, 4),
+            'resolution_backend': 'windows-uia',
+            'action': 'click',
+            'verification': verification,
+        }
+
+    def semantic_type(self, target: str, text: str, *, window_hint: str = '', interval: float = 0.01) -> dict:
+        match = self.resolve(target, window_hint=window_hint)
+        if not match.resolved:
+            return {
+                'ok': False,
+                'error': "I can't confidently identify the target. I will not guess.",
+                'confidence': round(match.confidence, 4),
+                'reason': match.reason,
+                'alternatives': list(match.alternatives),
+            }
+        assert match.target is not None
+        visual = self._is_visual(match)
+        try:
+            import pyautogui
+            if visual:
+                x, y = match.target.center
+                pyautogui.click(x=x, y=y, button='left')
+            else:
+                self.backend.focus(match.target)
+            pyautogui.write(str(text), interval=max(0.0, min(float(interval), 0.2)))
+        except Exception as exc:
+            return {
+                'ok': False,
+                'error': f'Typing failed: {type(exc).__name__}: {exc}',
+                'target': match.target.safe_dict(),
+                'confidence': round(match.confidence, 4),
+                'resolution_backend': 'local-ocr' if visual else 'windows-uia',
+            }
+
+        if visual:
+            return {
+                'ok': True,
+                'target': match.target.safe_dict(),
+                'confidence': round(match.confidence, 4),
+                'resolution_backend': 'local-ocr',
+                'action': 'type',
+                'verification': {
+                    'status': 'PARTIAL',
+                    'verified': False,
+                    'evidence': {
+                        'ocr_label_resolved': True,
+                        'typed_after_click': True,
+                        'value_readback': 'unavailable',
+                    },
+                },
+            }
+
+        time.sleep(0.08)
+        observed = self.backend.observe(match.target)
+        value = observed.get('value')
+        if isinstance(value, str):
+            verified = value.endswith(str(text)) or str(text) in value
+            verification = {
+                'status': 'VERIFIED' if verified else 'FAILED',
+                'verified': verified,
+                'evidence': {'focused': observed.get('focused'), 'value_contains_text': verified},
+            }
+        else:
+            verification = {
+                'status': 'PARTIAL',
+                'verified': False,
+                'evidence': {'focused': observed.get('focused'), 'value_readback': 'unavailable'},
+            }
+        return {
+            'ok': verification['status'] != 'FAILED',
+            'target': match.target.safe_dict(),
+            'confidence': round(match.confidence, 4),
+            'resolution_backend': 'windows-uia',
+            'action': 'type',
+            'verification': verification,
+        }
+
+    @staticmethod
+    def _verify_click(before: dict, after: dict, observed: dict) -> dict:
+        if observed.get('focused') is True or observed.get('selected') is True:
+            return {
+                'status': 'VERIFIED',
+                'verified': True,
+                'evidence': {
+                    'focused': observed.get('focused'),
+                    'selected': observed.get('selected'),
+                    'exists': observed.get('exists'),
+                },
+            }
+        if observed.get('exists') is False:
+            return {
+                'status': 'PARTIAL',
+                'verified': False,
+                'evidence': {'target_disappeared_after_click': True},
+            }
+        return {
+            'status': 'PARTIAL',
+            'verified': False,
+            'evidence': {
+                'focused': observed.get('focused'),
+                'selected': observed.get('selected'),
+                'exists': observed.get('exists'),
+            },
+        }

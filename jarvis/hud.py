@@ -12,6 +12,7 @@ class ArcReactorHUD(tk.Canvas):
         'thinking': '#ffd166',
         'speaking': '#6affb8',
         'listening': '#d98cff',
+        'paused': '#86a8b8',
         'error': '#ff5c73',
     }
 
@@ -58,7 +59,6 @@ class ArcReactorHUD(tk.Canvas):
         color = self.COLORS[self.state]
         c = self.size / 2
 
-        # Radar grid / crosshair.
         self.create_oval(8, 8, self.size - 8, self.size - 8, outline='#12394a', width=1)
         self.create_line(c, 5, c, self.size - 5, fill='#0c2c3a')
         self.create_line(5, c, self.size - 5, c, fill='#0c2c3a')
@@ -75,7 +75,6 @@ class ArcReactorHUD(tk.Canvas):
         self.create_oval(c - 32, c - 32, c + 32, c + 32, fill='#092431', outline='#b9f6ff', width=2)
         self.create_oval(c - 18, c - 18, c + 18, c + 18, fill=color, outline='#e8fdff', width=2)
 
-        # Animated energy spokes.
         for i in range(12):
             a = math.radians(i * 30 + self.phase * 0.35)
             r1, r2 = 58, 72
@@ -84,10 +83,9 @@ class ArcReactorHUD(tk.Canvas):
             self.create_line(x1, y1, x2, y2, fill=color, width=2)
 
         self.create_text(c, c - 4, text='JARVIS', fill='#041017', font=('Consolas', 9, 'bold'))
-        self.create_text(c, c + 12, text='V6', fill='#041017', font=('Consolas', 8, 'bold'))
+        self.create_text(c, c + 12, text='V7', fill='#041017', font=('Consolas', 8, 'bold'))
         self.create_text(c, self.size - 17, text=self.state.upper(), fill=color, font=('Consolas', 9, 'bold'))
 
-        # Speaking/listening waveform.
         if self.state in {'speaking', 'listening', 'thinking'}:
             base_y = self.size - 38
             for i in range(15):

@@ -6,6 +6,8 @@ from typing import Callable
 from .automation import browser_search, click_screen, hotkey, open_local_path, press_key, type_text
 from .coding_tools import CodingWorkspace
 from .config import settings
+from .contracts import PermissionChecker
+from .document_index import DocumentIndexStore
 from .documents import DocumentReader
 from .git_tools import GitWorkspace
 from .google_workspace import GoogleWorkspace
@@ -32,14 +34,23 @@ def _fn(name: str, description: str, properties: dict | None = None, required: l
 
 
 class ToolRegistry:
-    def __init__(self, memory: MemoryStore, confirmer: Callable[[str, dict], bool] | None = None):
+    def __init__(
+        self,
+        memory: MemoryStore,
+        confirmer: Callable[[str, dict], bool] | None = None,
+        *,
+        permission_checker: PermissionChecker | None = None,
+    ):
         self.memory = memory
         self.files = LocalFiles()
         self.documents = DocumentReader(self.files)
+        self.document_index = DocumentIndexStore(memory.db_path)
         self.coding = CodingWorkspace(self.files)
         self.git = GitWorkspace(self.files)
         self.google = GoogleWorkspace(settings.google_credentials_file, settings.google_token_file)
-        self.permissions = PermissionGate(confirmer)
+        # V6 callers retain the legacy gate by default. V7 injects the capability
+        # gate explicitly so there is one permission authority for the runtime.
+        self.permissions: PermissionChecker = permission_checker or PermissionGate(confirmer)
 
     def schemas(self, include_local: bool = True) -> list[dict]:
         s = {'type': 'string'}
@@ -94,7 +105,7 @@ class ToolRegistry:
         if settings.enable_document_intelligence:
             tools += [
                 _fn('read_document', 'Extract text from an approved PDF, DOCX, XLSX/XLSM, CSV, TXT or Markdown file. Requires approval.', {'file_path': s, 'max_chars': {'type': 'integer', 'minimum': 2000, 'maximum': 250000}}, ['file_path', 'max_chars']),
-                _fn('index_document', 'Extract an approved document and add it to local knowledge. Requires approval.', {'file_path': s}, ['file_path']),
+                _fn('index_document', 'Extract an approved document and add it to local knowledge with content-hash deduplication. Requires approval.', {'file_path': s}, ['file_path']),
             ]
 
         tools += [
@@ -129,8 +140,47 @@ class ToolRegistry:
 
     def _index_document(self, file_path: str) -> dict:
         doc = self.documents.extract(file_path, 200000)
+        decision = self.document_index.decide(doc['path'], doc['content_sha256'])
+        if decision.action == 'UNCHANGED':
+            return {
+                'document': doc['metadata'],
+                'index': {
+                    'source': doc['path'],
+                    'chunks': decision.chunks or 0,
+                    'status': 'unchanged',
+                    'content_sha256': doc['content_sha256'],
+                },
+            }
+        if decision.action == 'DUPLICATE':
+            return {
+                'document': doc['metadata'],
+                'index': {
+                    'source': doc['path'],
+                    'chunks': decision.chunks or 0,
+                    'status': 'duplicate',
+                    'duplicate_of': decision.duplicate_of,
+                    'content_sha256': doc['content_sha256'],
+                },
+            }
+
         result = self.memory.index_knowledge(doc['path'], doc['text'])
-        return {'document': doc['metadata'], 'index': result}
+        self.document_index.record(
+            source=doc['path'],
+            content_hash=doc['content_sha256'],
+            size_bytes=doc['size_bytes'],
+            mtime_ns=doc['mtime_ns'],
+            chunks=int(result.get('chunks') or 0),
+            metadata=doc['metadata'],
+            status='active',
+        )
+        return {
+            'document': doc['metadata'],
+            'index': result | {
+                'status': 'updated' if decision.action == 'UPDATE' else 'indexed',
+                'content_sha256': doc['content_sha256'],
+                'previous_hash': decision.previous_hash,
+            },
+        }
 
     def _open_local_path(self, path: str) -> str:
         target = self.coding._safe(path)

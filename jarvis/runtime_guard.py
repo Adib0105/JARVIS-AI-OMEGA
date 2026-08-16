@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import time
 import unicodedata
 from typing import Callable
@@ -25,19 +26,15 @@ _CAPABILITY_PATTERNS = (
 
 
 def local_identity_answer(text: str) -> str | None:
-    """Return a deterministic identity answer so routing can never corrupt creator attribution."""
     lower = ' '.join(text.lower().split())
-    creator_intent = any(pattern in lower for pattern in _CREATOR_PATTERNS)
-    if not creator_intent:
+    if not any(pattern in lower for pattern in _CREATOR_PATTERNS):
         return None
-
     creator = settings.creator_name or 'Adib Azam'
     assistant = settings.assistant_name or 'JARVIS OMEGA'
     wants_capabilities = any(pattern in lower for pattern in _CAPABILITY_PATTERNS)
-    base = f'{creator} ne mujhe banaya hai. Main {assistant} V6 hoon.'
+    base = f'{creator} ne mujhe banaya hai. Main {assistant} V7 hoon.'
     if not wants_capabilities:
         return base
-
     return (
         f'{base}\n\n'
         'Main ye kaam kar sakta hoon:\n'
@@ -45,16 +42,15 @@ def local_identity_answer(text: str) -> str | None:
         '• Image upload aur permission-based Screen Vision\n'
         '• PDF, DOCX, XLSX, CSV aur text documents ko samajhna\n'
         '• Web/news research aur local knowledge/memory search\n'
-        '• Todos, reminders, notes aur mission planning\n'
+        '• Todos, reminders, notes aur verified mission planning\n'
         '• Approved Windows apps, browser search, typing, hotkeys aur clicks\n'
         '• Approved coding projects inspect/edit karna aur unit tests chalana\n'
         '• Voice reply, push-to-talk aur optional “Hey Jarvis” wake-word mode\n\n'
-        'Sensitive computer actions permission ke bina execute nahi hote.'
+        'Sensitive computer actions capability policy aur approval ke bina execute nahi hote.'
     )
 
 
 def clean_display_text(text: str) -> str:
-    """Convert common Markdown/model artifacts into readable desktop-console text."""
     if not text:
         return ''
     value = unicodedata.normalize('NFKC', str(text)).replace('\r\n', '\n').replace('\r', '\n')
@@ -73,14 +69,9 @@ def clean_display_text(text: str) -> str:
 
 
 def looks_garbled(answer: str, user_text: str = '') -> bool:
-    """Conservative detector for the kind of mixed-script/router corruption seen in free-router output."""
-    if not answer or len(answer.strip()) < 2:
+    if not answer or len(answer.strip()) < 2 or '\ufffd' in answer:
         return True
-    if '\ufffd' in answer:
-        return True
-    if re.search(r'[\u3040-\u30ff\u4e00-\u9fff]', answer) and not re.search(
-        r'[\u3040-\u30ff\u4e00-\u9fff]', user_text
-    ):
+    if re.search(r'[\u3040-\u30ff\u4e00-\u9fff]', answer) and not re.search(r'[\u3040-\u30ff\u4e00-\u9fff]', user_text):
         return True
     if len(re.findall(r'</?[A-Za-z][A-Za-z0-9_-]*\s*/?>', answer)) >= 2:
         return True
@@ -111,53 +102,40 @@ def preferred_text_model(configured_model: str, kind: str = 'chat') -> str:
 
 
 def _repair_answer(self, user_text: str, bad_answer: str) -> str:
-    """Retry once without tools using the stable text model when a completion is visibly corrupted."""
     if settings.provider != 'openrouter':
         return bad_answer
     try:
-        response = self.client.chat.completions.create(
+        turn = self.provider.chat(
+            system=(
+                f'You are {settings.assistant_name} V7, created by {settings.creator_name}. '
+                'Answer directly in clean Hinglish/English matching the user. Use only Latin and Devanagari '
+                'unless another script was requested. Do not output broken HTML/template tokens.'
+            ),
+            messages=[{'role': 'user', 'content': user_text}],
             model=STABLE_FREE_TEXT_MODEL,
-            messages=[
-                {
-                    'role': 'system',
-                    'content': (
-                        f'You are {settings.assistant_name} V6, created by {settings.creator_name}. '
-                        'Answer the user directly in clean Hinglish/English matching the user. '
-                        'Use only Latin and Devanagari scripts unless the user explicitly requests another script. '
-                        'Do not output HTML/XML tags or broken template tokens. Do not mention this repair instruction.'
-                    ),
-                },
-                {'role': 'user', 'content': user_text},
-            ],
             timeout=settings.ai_timeout_seconds,
         )
-        self.last_model_used = getattr(response, 'model', STABLE_FREE_TEXT_MODEL) or STABLE_FREE_TEXT_MODEL
+        self.last_model_used = turn.model or STABLE_FREE_TEXT_MODEL
         self.last_provider_used = 'openrouter-quality-retry'
-        content = response.choices[0].message.content
-        repaired = content.strip() if isinstance(content, str) else str(content or '').strip()
-        return repaired or bad_answer
+        return turn.text.strip() or bad_answer
     except Exception:
         return bad_answer
 
 
 def install_runtime_guards() -> None:
-    """Patch the runtime at app startup without changing the core agent/tool architecture."""
+    """Quality compatibility layer around the provider-neutral V7.5 router."""
     from .core import JarvisOmega
-
-    if getattr(JarvisOmega, '_v6_runtime_guard_installed', False):
+    if getattr(JarvisOmega, '_v7_runtime_guard_installed', False):
         return
-
     original_select = JarvisOmega._select_model
 
     def guarded_select(self, text: str, kind: str = 'chat') -> str:
-        model = original_select(self, text, kind)
-        return preferred_text_model(model, kind)
+        return preferred_text_model(original_select(self, text, kind), kind)
 
     def guarded_chat(self, text: str) -> str:
         text = text.strip()
         if not text:
             return ''
-
         self.last_request_kind = 'chat'
         self._active_model = self._select_model(text, 'chat')
         self.last_provider_used = settings.provider
@@ -172,13 +150,12 @@ def install_runtime_guards() -> None:
                 self.last_tool_mode = 'identity-guard'
             else:
                 try:
-                    answer = self._chat_openrouter() if settings.provider == 'openrouter' else self._chat_openai()
+                    answer = self._chat_provider()
                 except Exception as exc:
                     answer = self._chat_local_fallback(exc)
                 if looks_garbled(answer, text):
                     answer = _repair_answer(self, text, answer)
                 answer = clean_display_text(answer)
-
             self.memory.add_message(self.session_id, 'assistant', answer)
             self._maybe_auto_summary()
             return answer
@@ -187,13 +164,104 @@ def install_runtime_guards() -> None:
 
     JarvisOmega._select_model = guarded_select
     JarvisOmega.chat = guarded_chat
-    JarvisOmega._v6_runtime_guard_installed = True
+    JarvisOmega._v7_runtime_guard_installed = True
+
+
+def _rebrand_widget_tree(widget) -> None:
+    try:
+        text = widget.cget('text')
+        if isinstance(text, str) and 'V6' in text:
+            widget.configure(text=text.replace('V6', 'V7'))
+    except Exception:
+        pass
+    try:
+        for child in widget.winfo_children():
+            _rebrand_widget_tree(child)
+    except Exception:
+        pass
+
+
+def _rebrand_chat_history(app) -> None:
+    chat = getattr(app, 'chat', None)
+    if chat is None:
+        return
+    try:
+        previous_state = str(chat.cget('state'))
+        chat.configure(state='normal')
+        start = '1.0'
+        while True:
+            index = chat.search('V6', start, stopindex='end')
+            if not index:
+                break
+            chat.delete(index, f'{index}+2c')
+            chat.insert(index, 'V7')
+            start = f'{index}+2c'
+        chat.configure(state=previous_state)
+    except Exception:
+        pass
+
+
+def _install_security_gui_hooks(gui_module) -> None:
+    from .security.approval_ui import ask_approval
+    from .security.audit_ui import show_audit_viewer
+    from .security.policy import ApprovalDecision
+    from .ui_command_center import show_command_center
+
+    def v7_confirm_tool(self, tool: str, args: dict):
+        event = threading.Event()
+        result = {'decision': ApprovalDecision.DENY.value}
+
+        def ask() -> None:
+            try:
+                if isinstance(args, dict) and '__approval__' in args:
+                    result['decision'] = ask_approval(self.root, tool, args)
+                else:
+                    from tkinter import messagebox
+                    allowed = messagebox.askyesno(
+                        'JARVIS V7 // Permission Gate',
+                        f'Allow this local action?\n\nTool: {tool}\n\nArguments:\n{args}\n\nOnly approve if this matches your request.'
+                    )
+                    result['decision'] = ApprovalDecision.ALLOW_ONCE.value if allowed else ApprovalDecision.DENY.value
+                if result['decision'] == ApprovalDecision.CANCEL_MISSION.value:
+                    try:
+                        self.jarvis.cancel_mission()
+                    except Exception:
+                        pass
+            finally:
+                event.set()
+
+        self.root.after(0, ask)
+        event.wait()
+        return result['decision']
+
+    gui_module.JarvisDesktop._confirm_tool = v7_confirm_tool
+
+    original_right = gui_module.JarvisDesktop._build_right_panel
+
+    def v75_right_panel(self, parent):
+        original_right(self, parent)
+
+        def open_command_center() -> None:
+            show_command_center(self.root, self.jarvis)
+
+        def open_audit() -> None:
+            store = getattr(getattr(self.jarvis, 'tools', None), 'audit', None)
+            show_audit_viewer(self.root, store)
+
+        self._button(parent, 'COMMAND CENTER', open_command_center, gui_module.CYAN).pack(
+            fill='x', padx=10, pady=(2, 1), before=self.status
+        )
+        self._button(parent, 'AUDIT VIEWER', open_audit, gui_module.GOLD).pack(
+            fill='x', padx=10, pady=(2, 1), before=self.status
+        )
+
+    gui_module.JarvisDesktop._build_right_panel = v75_right_panel
 
 
 def run_adaptive_gui() -> None:
-    """Launch a readable, balanced V6 layout on common laptop displays."""
     import tkinter as tk
     from . import gui as gui_module
+    from .ui_command_center import show_command_center
 
     root = tk.Tk()
     screen_w = max(800, root.winfo_screenwidth())
@@ -201,15 +269,11 @@ def run_adaptive_gui() -> None:
     compact = screen_h <= 820 or screen_w <= 1400
 
     if compact:
-        # Preserve the user's native Windows DPI instead of forcing the old 0.86 scale.
-        # Only reduce it slightly so a 1366x768 screen remains readable while controls still fit.
         try:
-            native_scale = float(root.tk.call('tk', 'scaling'))
-            balanced_scale = max(1.0, native_scale * 0.93)
-            root.tk.call('tk', 'scaling', balanced_scale)
+            current_scale = float(root.tk.call('tk', 'scaling'))
+            root.tk.call('tk', 'scaling', max(1.0, current_scale * 0.93))
         except Exception:
             pass
-
         original_hud = gui_module.ArcReactorHUD
 
         class CompactArcReactorHUD(original_hud):
@@ -220,27 +284,23 @@ def run_adaptive_gui() -> None:
 
         def compact_button(parent, text: str, command: Callable, accent: str = gui_module.CYAN):
             return tk.Button(
-                parent,
-                text=text,
-                command=command,
-                bg='#0b2a3a',
-                fg=accent,
-                activebackground='#12445b',
-                activeforeground='white',
-                relief='flat',
-                cursor='hand2',
-                padx=8,
-                pady=3,
-                font=('Segoe UI', 8, 'bold'),
-                highlightthickness=1,
+                parent, text=text, command=command, bg='#0b2a3a', fg=accent,
+                activebackground='#12445b', activeforeground='white', relief='flat', cursor='hand2',
+                padx=8, pady=4, font=('Segoe UI', 8, 'bold'), highlightthickness=1,
                 highlightbackground='#123f51',
             )
-
         gui_module.JarvisDesktop._button = staticmethod(compact_button)
 
-    gui_module.JarvisDesktop(root)
+    _install_security_gui_hooks(gui_module)
+    app = gui_module.JarvisDesktop(root)
+    root.title('JARVIS AI OMEGA V7 // RELIABLE ARC DESKTOP AGENT')
+    _rebrand_widget_tree(root)
+    _rebrand_chat_history(app)
+    root.bind('<Control-Shift-A>', lambda _event: __import__('jarvis.security.audit_ui', fromlist=['show_audit_viewer']).show_audit_viewer(root, getattr(getattr(app.jarvis, 'tools', None), 'audit', None)))
+    root.bind('<Control-Shift-C>', lambda _event: show_command_center(root, app.jarvis))
+
     if compact:
-        root.minsize(min(1020, screen_w - 40), min(620, screen_h - 90))
+        root.minsize(min(1040, screen_w - 40), min(620, screen_h - 100))
     try:
         if os.name == 'nt':
             root.state('zoomed')

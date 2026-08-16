@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from typing import Callable
 
 import pyttsx3
@@ -30,6 +31,7 @@ _HINGLISH_HINTS = {
     'wala', 'wali', 'ye', 'yeh', 'wo', 'woh', 'abhi', 'phir', 'fir', 'sab', 'ek',
     'se', 'me', 'mein', 'ko', 'ka', 'ki', 'ke', 'aur', 'lekin', 'agar', 'agr',
 }
+_SENTINEL = object()
 
 
 def clean_for_speech(text: str) -> str:
@@ -57,20 +59,80 @@ def choose_voice(text: str) -> str:
     return settings.voice_english
 
 
+def _parse_rate_percent(value: str) -> int:
+    match = re.search(r'([+-]?\d+)', str(value or '0'))
+    return int(match.group(1)) if match else 0
+
+
+def edge_rate_for_speed(base_rate: str, speed: float) -> str:
+    """Translate a human speed multiplier into the Edge-TTS percentage rate."""
+    base = _parse_rate_percent(base_rate)
+    adjusted = round(base + ((float(speed) - 1.0) * 100))
+    adjusted = max(-50, min(100, adjusted))
+    return f'{adjusted:+d}%'
+
+
 class VoiceOutput:
-    """Neural TTS with offline fallback and state callbacks for the V6 ARC HUD."""
+    """Interruptible neural TTS controller for the V7 ARC HUD.
+
+    Media controls are runtime-only by design:
+    - stop() interrupts the current speech and clears queued speech.
+    - pause()/resume() pause by interrupting and replaying the current utterance
+      from its beginning when resumed. This is reliable across Edge playback and
+      the pyttsx3 fallback without depending on a specific audio player backend.
+    - play() resumes a paused utterance or replays the last utterance after STOP.
+    - speed changes restart the current utterance at the new rate.
+    - shutdown() terminates current playback before the desktop window exits.
+    """
+
+    MIN_SPEED = 0.6
+    MAX_SPEED = 2.0
+    SPEED_STEP = 0.1
 
     def __init__(self, on_state_change: Callable[[str], None] | None = None) -> None:
         self.enabled = settings.enable_voice_output
         self.muted = False
         self.on_state_change = on_state_change or (lambda _state: None)
-        self._queue: queue.Queue[str | None] = queue.Queue()
+        self._queue: queue.Queue[str | object] = queue.Queue()
         self._thread: threading.Thread | None = None
+        self._lock = threading.RLock()
+        self._condition = threading.Condition(self._lock)
+        self._shutdown = False
+        self._paused = False
+        self._state = 'idle'
+        self._speed = 1.0
+        self._cancel_epoch = 0
+        self._interrupt_reason: str | None = None
+        self._current_text: str | None = None
+        self._last_text: str | None = None
+        self._process: subprocess.Popen | None = None
+        self._offline_engine = None
         if self.enabled:
             self._thread = threading.Thread(target=self._worker, daemon=True, name='jarvis-tts')
             self._thread.start()
 
+    @property
+    def state(self) -> str:
+        with self._lock:
+            return self._state
+
+    @property
+    def paused(self) -> bool:
+        with self._lock:
+            return self._paused
+
+    @property
+    def speed(self) -> float:
+        with self._lock:
+            return self._speed
+
+    @property
+    def speed_label(self) -> str:
+        return f'{self.speed:.1f}x'
+
     def _emit(self, state: str) -> None:
+        with self._lock:
+            self._state = state
         try:
             self.on_state_change(state)
         except Exception:
@@ -80,37 +142,187 @@ class VoiceOutput:
         if not self.enabled or self.muted:
             return
         spoken = clean_for_speech(text)
-        if spoken:
-            self._queue.put(spoken)
+        if not spoken:
+            return
+        with self._lock:
+            if self._shutdown:
+                return
+            self._last_text = spoken
+        self._queue.put(spoken)
+
+    def play(self) -> bool:
+        """Resume paused speech, or replay the last utterance after STOP."""
+        with self._condition:
+            if self._shutdown or not self.enabled or self.muted:
+                return False
+            if self._paused:
+                self._paused = False
+                self._interrupt_reason = None
+                self._condition.notify_all()
+                return True
+            if self._current_text:
+                return True
+            last = self._last_text
+        if last:
+            self._queue.put(last)
+            return True
+        return False
+
+    def pause(self) -> bool:
+        with self._condition:
+            if self._shutdown or self._paused or not self._current_text:
+                return False
+            self._paused = True
+            self._interrupt_reason = 'pause'
+            process = self._process
+            engine = self._offline_engine
+        self._terminate_process(process)
+        self._stop_offline_engine(engine)
+        self._emit('paused')
+        return True
+
+    def resume(self) -> bool:
+        with self._condition:
+            if not self._paused or self._shutdown:
+                return False
+            self._paused = False
+            self._interrupt_reason = None
+            self._condition.notify_all()
+        return True
+
+    def toggle_pause(self) -> str:
+        if self.paused:
+            self.resume()
+            return 'playing'
+        if self.pause():
+            return 'paused'
+        return 'playing' if self.play() else 'idle'
+
+    def _drain_queue(self) -> None:
+        while True:
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                return
+
+    def stop(self) -> None:
+        """Immediate media STOP. Worker remains alive for future speech."""
+        with self._condition:
+            self._cancel_epoch += 1
+            self._paused = False
+            self._interrupt_reason = 'stop'
+            process = self._process
+            engine = self._offline_engine
+            self._condition.notify_all()
+        self._drain_queue()
+        self._terminate_process(process)
+        self._stop_offline_engine(engine)
+        self._emit('idle')
 
     def mute(self) -> None:
         self.muted = True
-        self._emit('idle')
+        self.stop()
 
     def unmute(self) -> None:
         self.muted = False
 
     def toggle(self) -> bool:
-        self.muted = not self.muted
         if self.muted:
-            self._emit('idle')
-        return not self.muted
+            self.unmute()
+            return True
+        self.mute()
+        return False
+
+    def _set_speed(self, value: float) -> float:
+        value = round(max(self.MIN_SPEED, min(self.MAX_SPEED, float(value))), 1)
+        with self._condition:
+            changed = value != self._speed
+            self._speed = value
+            process = self._process
+            engine = self._offline_engine
+            should_restart = changed and bool(self._current_text) and not self._paused and not self._shutdown
+            if should_restart:
+                self._interrupt_reason = 'restart'
+        if should_restart:
+            self._terminate_process(process)
+            self._stop_offline_engine(engine)
+        return value
+
+    def speed_up(self) -> float:
+        return self._set_speed(self.speed + self.SPEED_STEP)
+
+    def speed_down(self) -> float:
+        return self._set_speed(self.speed - self.SPEED_STEP)
+
+    def reset_speed(self) -> float:
+        return self._set_speed(1.0)
 
     def test(self, mode: str = 'hinglish') -> None:
         samples = {
-            'hindi': 'नमस्ते आदिब। मैं जार्विस ओमेगा वर्जन सिक्स हूँ। सिस्टम ऑनलाइन है।',
-            'english': 'Hello Adib. JARVIS OMEGA version six is online. All core systems are ready.',
-            'hinglish': 'Adib bhai, JARVIS OMEGA version six online hai. ARC core ready hai.',
+            'hindi': 'नमस्ते आदिब। मैं जार्विस ओमेगा वर्जन सेवन हूँ। सिस्टम ऑनलाइन है।',
+            'english': 'Hello Adib. JARVIS OMEGA version seven is online. All core systems are ready.',
+            'hinglish': 'Adib bhai, JARVIS OMEGA version seven online hai. ARC core ready hai.',
         }
         self.speak(samples.get(mode, samples['hinglish']))
 
-    def stop(self) -> None:
-        if self.enabled:
-            self._queue.put(None)
+    def shutdown(self, wait: bool = True) -> None:
+        """Stop audio and terminate the TTS worker; call before destroying the UI."""
+        with self._condition:
+            if self._shutdown:
+                return
+            self._shutdown = True
+            self._cancel_epoch += 1
+            self._paused = False
+            self._interrupt_reason = 'shutdown'
+            process = self._process
+            engine = self._offline_engine
+            self._condition.notify_all()
+        self._drain_queue()
+        self._terminate_process(process)
+        self._stop_offline_engine(engine)
+        self._queue.put(_SENTINEL)
+        if wait and self._thread and self._thread.is_alive() and threading.current_thread() is not self._thread:
+            self._thread.join(timeout=3.0)
+        self._emit('idle')
 
-    def _speak_edge(self, text: str) -> None:
+    @staticmethod
+    def _terminate_process(process: subprocess.Popen | None) -> None:
+        if process is None or process.poll() is not None:
+            return
+        try:
+            if os.name == 'nt':
+                subprocess.run(
+                    ['taskkill', '/PID', str(process.pid), '/T', '/F'],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=3,
+                    check=False,
+                )
+            else:
+                process.terminate()
+                try:
+                    process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _stop_offline_engine(engine) -> None:
+        if engine is None:
+            return
+        try:
+            engine.stop()
+        except Exception:
+            pass
+
+    def _speak_edge(self, text: str) -> str:
         voice = choose_voice(text)
         path = None
+        process = None
         try:
             with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.txt', delete=False) as handle:
                 handle.write(text)
@@ -120,56 +332,125 @@ class VoiceOutput:
                 '-m',
                 'edge_playback',
                 '--voice', voice,
-                f'--rate={settings.edge_voice_rate}',
+                f'--rate={edge_rate_for_speed(settings.edge_voice_rate, self.speed)}',
                 f'--volume={settings.edge_voice_volume}',
                 f'--pitch={settings.edge_voice_pitch}',
                 '--file', path,
             ]
-            subprocess.run(
+            creationflags = 0
+            if os.name == 'nt' and hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP'):
+                creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+            process = subprocess.Popen(
                 command,
-                check=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=180,
+                creationflags=creationflags,
             )
+            with self._lock:
+                self._process = process
+            try:
+                return_code = process.wait(timeout=180)
+            except subprocess.TimeoutExpired:
+                self._terminate_process(process)
+                return 'failed'
+            with self._lock:
+                interrupted = self._interrupt_reason in {'pause', 'stop', 'shutdown', 'restart'}
+            if interrupted:
+                return 'interrupted'
+            return 'completed' if return_code == 0 else 'failed'
         finally:
+            with self._lock:
+                if self._process is process:
+                    self._process = None
             if path:
                 try:
                     os.unlink(path)
                 except OSError:
                     pass
 
-    @staticmethod
-    def _build_offline_engine():
+    def _build_offline_engine(self):
         engine = pyttsx3.init()
-        engine.setProperty('rate', settings.voice_rate)
+        engine.setProperty('rate', int(max(80, min(360, settings.voice_rate * self.speed))))
         engine.setProperty('volume', settings.voice_volume)
         return engine
 
+    def _speak_offline(self, text: str) -> str:
+        engine = None
+        try:
+            engine = self._build_offline_engine()
+            with self._lock:
+                self._offline_engine = engine
+            engine.say(text)
+            engine.runAndWait()
+            with self._lock:
+                interrupted = self._interrupt_reason in {'pause', 'stop', 'shutdown', 'restart'}
+            return 'interrupted' if interrupted else 'completed'
+        except Exception:
+            return 'failed'
+        finally:
+            with self._lock:
+                if self._offline_engine is engine:
+                    self._offline_engine = None
+
+    def _play_text(self, text: str) -> str:
+        if settings.voice_engine == 'edge':
+            try:
+                result = self._speak_edge(text)
+            except Exception:
+                result = 'failed'
+            if result != 'failed':
+                return result
+        return self._speak_offline(text)
+
     def _worker(self) -> None:
-        offline_engine = None
         while True:
-            text = self._queue.get()
-            if text is None:
-                self._emit('idle')
+            item = self._queue.get()
+            if item is _SENTINEL:
+                break
+            text = str(item)
+            with self._condition:
+                if self._shutdown:
+                    break
+                epoch = self._cancel_epoch
+                self._current_text = text
+                self._interrupt_reason = None
+
+            while True:
+                with self._condition:
+                    while self._paused and epoch == self._cancel_epoch and not self._shutdown:
+                        self._condition.wait(timeout=0.25)
+                    if self._shutdown or epoch != self._cancel_epoch:
+                        break
+                    self._interrupt_reason = None
+
+                self._emit('speaking')
+                result = self._play_text(text)
+
+                with self._condition:
+                    reason = self._interrupt_reason
+                    cancelled = epoch != self._cancel_epoch
+                    paused = self._paused
+                    shutting_down = self._shutdown
+
+                if shutting_down or cancelled or reason in {'stop', 'shutdown'}:
+                    break
+                if paused or reason == 'pause':
+                    self._emit('paused')
+                    continue
+                if reason == 'restart':
+                    # Speed changed while speaking: replay current utterance at new speed.
+                    time.sleep(0.03)
+                    continue
+                if result == 'failed':
+                    self._emit('error')
                 break
 
-            self._emit('speaking')
-            spoken = False
-            if settings.voice_engine == 'edge':
-                try:
-                    self._speak_edge(text)
-                    spoken = True
-                except Exception:
-                    spoken = False
+            with self._condition:
+                if self._current_text == text:
+                    self._current_text = None
+                if not self._paused:
+                    self._interrupt_reason = None
+            if not self._shutdown and not self._paused:
+                self._emit('idle')
 
-            if not spoken:
-                try:
-                    if offline_engine is None:
-                        offline_engine = self._build_offline_engine()
-                    offline_engine.say(text)
-                    offline_engine.runAndWait()
-                except Exception:
-                    self._emit('error')
-                    continue
-            self._emit('idle')
+        self._emit('idle')

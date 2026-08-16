@@ -1,6 +1,6 @@
 import unittest
 
-from jarvis.voice import clean_for_speech, detect_speech_mode
+from jarvis.voice import clean_for_speech, detect_speech_mode, edge_rate_for_speed
 
 
 class VoiceCleaningTests(unittest.TestCase):
@@ -25,6 +25,17 @@ class VoiceCleaningTests(unittest.TestCase):
 
     def test_plain_english_detects_english(self):
         self.assertEqual(detect_speech_mode("Explain this Python function clearly"), "english")
+
+    def test_edge_speed_keeps_configured_base_at_normal_speed(self):
+        self.assertEqual(edge_rate_for_speed('-2%', 1.0), '-2%')
+
+    def test_edge_speed_converts_multiplier_to_rate(self):
+        self.assertEqual(edge_rate_for_speed('-2%', 1.2), '+18%')
+        self.assertEqual(edge_rate_for_speed('-2%', 0.8), '-22%')
+
+    def test_edge_speed_is_clamped_to_provider_safe_range(self):
+        self.assertEqual(edge_rate_for_speed('+0%', 0.1), '-50%')
+        self.assertEqual(edge_rate_for_speed('+0%', 3.0), '+100%')
 
 
 if __name__ == '__main__':

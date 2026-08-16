@@ -1,326 +1,293 @@
+"""Public JARVIS OMEGA V7/V7.5 compatibility core.
+
+`JarvisOmega` preserves the established public API while layering verified missions,
+security, memory, capability awareness, evaluation, observability, skill proposals
+and bounded self-development over the provider-neutral core.
+"""
+
 from __future__ import annotations
 
 import json
 import re
 import time
-from pathlib import Path
 from typing import Callable
 
-from openai import OpenAI
-
-from .attachments import image_data_url, normalize_image_paths
+from .agent.context import ContextManager
+from .agent.orchestrator_memory import MemoryAwareMissionOrchestrator
+from .agent.tool_runtime import RecordingToolRegistry
+from .capability_registry import CapabilityRegistry
 from .config import settings
-from .memory import MemoryStore
+from .core_v7 import JarvisOmega as _ProviderCore
+from .evaluation import CapabilityGapDetector, SelfEvaluationEngine
+from .memory_v7 import MemoryKind, V7MemoryStore
+from .observability import JarvisHealthSystem, ObservabilityManager
 from .prompt import system_prompt
-from .tools import ToolRegistry
+from .providers.observed import ObservedProvider
+from .providers.router import ModelRouter
+from .skills import SkillRegistry, WorkflowLearningEngine
 
 
-class JarvisOmega:
-    SMART_HINTS = {
-        'analyze', 'analyse', 'debug', 'error', 'architecture', 'plan', 'mission', 'compare',
-        'reason', 'why', 'code', 'project', 'security', 'document', 'review', 'research',
-        'समझाओ', 'क्यों', 'विश्लेषण', 'problem', 'issue', 'fix', 'advance', 'advanced',
-    }
+class JarvisOmega(_ProviderCore):
+    def __init__(self, confirmer: Callable[[str, dict], object] | None = None):
+        super().__init__(confirmer=confirmer)
+        db_path = self.memory.db_path
+        self.memory = V7MemoryStore(db_path)
+        self.context_manager = ContextManager(self.memory)
+        self.capability_registry = CapabilityRegistry()
+        self.model_router = ModelRouter()
+        self.observability = ObservabilityManager(db_path)
 
-    def __init__(self, confirmer: Callable[[str, dict], bool] | None = None):
-        if settings.provider not in {'openrouter', 'openai'}:
-            raise RuntimeError("AI_PROVIDER must be 'openrouter' or 'openai'.")
-        if not settings.api_key:
-            key_name = 'OPENROUTER_API_KEY' if settings.provider == 'openrouter' else 'OPENAI_API_KEY'
-            raise RuntimeError(f'{key_name} is missing. Add it to your .env file.')
+        # Wrap already-created providers instead of rewriting the stable provider core.
+        # The wrapper records normalized success/failure/latency/usage and explicit
+        # provider-reported cost only. It never stores prompts or secrets.
+        self.provider = ObservedProvider(
+            self.provider,
+            self.observability,
+            context_provider=self._model_observability_context,
+            fallback=False,
+        )
+        if self.local_provider is not None:
+            self.local_provider = ObservedProvider(
+                self.local_provider,
+                self.observability,
+                context_provider=self._model_observability_context,
+                fallback=True,
+            )
 
-        client_kwargs = {
-            'api_key': settings.api_key,
-            'timeout': max(settings.ai_timeout_seconds, settings.vision_timeout_seconds),
-            'max_retries': max(0, settings.api_max_retries),
-        }
-        if settings.provider == 'openrouter':
-            client_kwargs.update({
-                'base_url': settings.openrouter_base_url,
-                'default_headers': {
-                    'HTTP-Referer': settings.openrouter_app_url,
-                    'X-OpenRouter-Title': settings.openrouter_app_title,
-                },
-            })
-        self.client = OpenAI(**client_kwargs)
-        self._local_client: OpenAI | None = None
+        self.tools = RecordingToolRegistry(
+            self.memory,
+            confirmer,
+            context_provider=self._tool_audit_context,
+        )
+        self.orchestrator = MemoryAwareMissionOrchestrator(self)
+        self.evaluation = SelfEvaluationEngine(
+            db_path,
+            mission_store=self.orchestrator.store,
+            audit_store=self.tools.audit,
+            capability_registry=self.capability_registry,
+        )
+        self.gap_detector = CapabilityGapDetector(
+            db_path,
+            evaluation=self.evaluation,
+            missions=self.orchestrator.store,
+            audit=self.tools.audit,
+            registry=self.capability_registry,
+        )
+        self.health_system = JarvisHealthSystem(db_path, registry=self.capability_registry)
+        self.skill_registry = SkillRegistry(db_path)
+        self.workflow_learning = WorkflowLearningEngine(db_path, audit_store=self.tools.audit)
 
-        self.memory = MemoryStore()
-        self.tools = ToolRegistry(self.memory, confirmer)
-        self.session_id = self.memory.new_session('JARVIS OMEGA V6 session')
-        self.last_latency = 0.0
-        self.last_model_used = settings.model
-        self.last_provider_used = settings.provider
-        self.last_route = 'default'
-        self.last_tool_mode = 'full'
-        self.last_request_kind = 'chat'
-        self.last_plan: list[str] = []
-        self._active_model = settings.model
-
-    def new_session(self) -> str:
-        self.session_id = self.memory.new_session('JARVIS OMEGA V6 session')
-        return self.session_id
+        # Self-development stays lazy because packaged/frozen installs may not have
+        # Git or a repository checkout. Normal chat must not depend on those tools.
+        self._self_development_engine = None
+        self.last_mission_id: str | None = None
+        self.last_context_stats: dict = {}
 
     def _select_model(self, text: str, kind: str = 'chat') -> str:
-        if kind == 'image':
-            self.last_route = 'vision'
-            return settings.routed_vision_model
-        if kind in {'mission', 'summary', 'review'}:
-            self.last_route = 'smart'
-            return settings.routed_smart_model
-        if settings.model_routing not in {'auto', 'on', 'true'}:
-            self.last_route = 'default'
-            return settings.model
-        lower = text.lower()
-        smart = len(text) > 700 or any(hint in lower for hint in self.SMART_HINTS)
-        self.last_route = 'smart' if smart else 'fast'
-        return settings.routed_smart_model if smart else settings.routed_fast_model
+        """Use the V7.5 category router while keeping the V6/V7 method contract."""
+        route = self.model_router.select(text, kind)
+        self.last_route = route.category.lower()
+        return route.model or settings.model
+
+    def _latest_user_request(self) -> str:
+        try:
+            for role, content in reversed(self.memory.recent_messages(self.session_id, 12)):
+                if role == 'user':
+                    return str(content)
+        except Exception:
+            pass
+        return ''
 
     def _system_instructions(self) -> str:
         prompt = system_prompt()
-        summary = self.memory.get_session_summary(self.session_id)
-        if summary:
-            prompt += (
-                '\n\nSESSION CONTINUITY SUMMARY (locally stored, may be incomplete):\n'
-                + summary[:12000]
-                + '\nUse it only as conversation context; current user messages override stale summary details.'
-            )
-        return prompt
-
-    def _openai_model_tools(self) -> list[dict]:
-        tools = self.tools.schemas(include_local=settings.enable_local_tools)
-        if settings.hosted_web_search_enabled:
-            tools.append({'type': 'web_search'})
-        if settings.code_interpreter_enabled:
-            tools.append({'type': 'code_interpreter', 'container': {'type': 'auto'}})
-        return tools
-
-    def _openrouter_model_tools(self) -> list[dict]:
-        converted = []
-        for spec in self.tools.schemas(include_local=settings.enable_local_tools):
-            converted.append({
-                'type': 'function',
-                'function': {
-                    'name': spec['name'],
-                    'description': spec['description'],
-                    'parameters': spec['parameters'],
-                },
-            })
-        return converted
-
-    def _history(self) -> list[dict]:
-        return [
-            {'role': role, 'content': content}
-            for role, content in self.memory.recent_messages(self.session_id)
-        ]
-
-    @staticmethod
-    def _dump_item(item):
-        return item.model_dump(exclude_none=True) if hasattr(item, 'model_dump') else item
-
-    @staticmethod
-    def _status_code(exc: Exception) -> int | None:
-        status = getattr(exc, 'status_code', None)
         try:
-            return int(status) if status is not None else None
-        except (TypeError, ValueError):
-            return None
+            prompt += '\n\nV7 CAPABILITY REGISTRY:\n' + self.capability_registry.summary_for_prompt()
+        except Exception:
+            # Capability inspection must never make normal chat unavailable.
+            pass
 
-    def _friendly_error(self, exc: Exception) -> RuntimeError:
-        status = self._status_code(exc)
-        raw = str(exc)
-        lower = raw.lower()
-        provider = 'OpenRouter' if settings.provider == 'openrouter' else 'OpenAI'
-
-        if status == 401 or 'invalid api key' in lower or 'authentication' in lower:
-            return RuntimeError(f'{provider} API key reject ho gayi. .env me key check/recreate karo.')
-        if status == 429 or 'rate limit' in lower:
-            return RuntimeError(f'{provider} rate limit/quota hit hua. Thodi der baad retry karo.')
-        if status in {402, 403}:
-            return RuntimeError(f'{provider} request permission/credit policy ki wajah se block hui.')
-        if 'no endpoints found' in lower or 'model not found' in lower:
-            return RuntimeError('Configured AI model abhi available nahi hai. Model setting check karo.')
-        if 'image' in lower and any(word in lower for word in ('unsupported', 'modality', 'vision')):
-            return RuntimeError('Selected/free model image vision support nahi kar raha. Retry karo ya vision-capable model choose karo.')
-        if 'timeout' in lower or 'timed out' in lower:
-            return RuntimeError('AI provider response timeout hua. Internet/free-model availability check karke retry karo.')
-        return RuntimeError(f'{provider} request failed: {raw[:500]}')
-
-    def _can_local_fallback(self) -> bool:
-        return bool(settings.enable_local_fallback and settings.local_ai_base_url and settings.local_ai_model)
-
-    def _get_local_client(self) -> OpenAI:
-        if self._local_client is None:
-            self._local_client = OpenAI(
-                api_key=settings.local_ai_api_key,
-                base_url=settings.local_ai_base_url,
-                timeout=settings.ai_timeout_seconds,
-                max_retries=0,
-            )
-        return self._local_client
-
-    def _chat_local_fallback(self, primary_error: Exception) -> str:
-        if not self._can_local_fallback():
-            raise self._friendly_error(primary_error) from primary_error
-        try:
-            response = self._get_local_client().chat.completions.create(
-                model=settings.local_ai_model,
-                messages=[{'role': 'system', 'content': self._system_instructions()}] + self._history(),
-                timeout=settings.ai_timeout_seconds,
-            )
-            self.last_provider_used = 'local-fallback'
-            self.last_model_used = getattr(response, 'model', settings.local_ai_model) or settings.local_ai_model
-            self.last_tool_mode = 'local-fallback-no-tools'
-            content = response.choices[0].message.content
-            answer = content.strip() if isinstance(content, str) else str(content or '').strip()
-            return answer or 'Local fallback model returned no text output.'
-        except Exception as local_exc:
-            friendly = self._friendly_error(primary_error)
-            raise RuntimeError(f'{friendly}\nLocal fallback also failed: {local_exc}') from local_exc
-
-    def chat(self, text: str) -> str:
-        text = text.strip()
-        if not text:
-            return ''
-
-        self.last_request_kind = 'chat'
-        self._active_model = self._select_model(text, 'chat')
-        self.last_provider_used = settings.provider
-        started = time.perf_counter()
-        self.memory.add_message(self.session_id, 'user', text)
-        try:
+        request = self._latest_user_request()
+        orchestrator = getattr(self, 'orchestrator', None)
+        mission_id = getattr(orchestrator, 'current_mission_id', None) or ''
+        if request:
             try:
-                if settings.provider == 'openrouter':
-                    answer = self._chat_openrouter()
-                else:
-                    answer = self._chat_openai()
-            except Exception as exc:
-                answer = self._chat_local_fallback(exc)
-            self.memory.add_message(self.session_id, 'assistant', answer)
-            self._maybe_auto_summary()
-            return answer
-        finally:
-            self.last_latency = time.perf_counter() - started
-
-    def analyze_image(self, image_path: str | Path, prompt: str) -> str:
-        return self.analyze_images([image_path], prompt)
-
-    def analyze_images(self, image_paths: list[str | Path], prompt: str) -> str:
-        paths = normalize_image_paths(image_paths)
-        user_prompt = prompt.strip() or (
-            'Analyze the attached image(s). Explain what is visible, identify important details or errors, '
-            'and tell me what I should do next.'
-        )
-        self.last_request_kind = 'image'
-        self._active_model = self._select_model(user_prompt, 'image')
-        self.last_provider_used = settings.provider
-        started = time.perf_counter()
-        names = ', '.join(path.name for path in paths)
-        self.memory.add_message(self.session_id, 'user', f'[IMAGE ATTACHMENT: {names}] {user_prompt}')
-
-        content: list[dict] = [{'type': 'text', 'text': user_prompt}]
-        for path in paths:
-            content.append({'type': 'image_url', 'image_url': {'url': image_data_url(path)}})
-
-        try:
-            response = self.client.chat.completions.create(
-                model=self._active_model,
-                messages=[
-                    {'role': 'system', 'content': self._system_instructions()},
-                    {'role': 'user', 'content': content},
-                ],
-                timeout=settings.vision_timeout_seconds,
-            )
-            self.last_model_used = getattr(response, 'model', self._active_model) or self._active_model
-            self.last_tool_mode = f'vision-{len(paths)}-image'
-            message = response.choices[0].message
-            answer = message.content.strip() if isinstance(message.content, str) else str(message.content or '').strip()
-            answer = answer or 'Image analysis completed but no text answer was returned.'
-            self.memory.add_message(self.session_id, 'assistant', answer)
-            return answer
-        except Exception as exc:
-            raise self._friendly_error(exc) from exc
-        finally:
-            self.last_latency = time.perf_counter() - started
-
-    def _one_shot_text(self, instruction: str, prompt: str, kind: str = 'smart') -> str:
-        model = self._select_model(prompt, kind if kind in {'mission', 'summary', 'review'} else 'mission')
-        try:
-            if settings.provider == 'openrouter':
-                response = self.client.chat.completions.create(
-                    model=model,
-                    messages=[
-                        {'role': 'system', 'content': instruction},
-                        {'role': 'user', 'content': prompt},
-                    ],
-                    timeout=settings.ai_timeout_seconds,
+                bundle = self.context_manager.build(
+                    session_id=self.session_id,
+                    current_request=request,
+                    mission_id=mission_id,
                 )
-                self.last_provider_used = settings.provider
-                self.last_model_used = getattr(response, 'model', model) or model
-                content = response.choices[0].message.content
-                return content.strip() if isinstance(content, str) else str(content or '').strip()
-
-            response = self.client.responses.create(
-                model=model,
-                reasoning={'effort': settings.reasoning_effort},
-                instructions=instruction,
-                input=prompt,
-                store=False,
-                timeout=settings.ai_timeout_seconds,
-            )
-            self.last_provider_used = settings.provider
-            self.last_model_used = getattr(response, 'model', model) or model
-            return (response.output_text or '').strip()
-        except Exception as exc:
-            if self._can_local_fallback():
-                try:
-                    response = self._get_local_client().chat.completions.create(
-                        model=settings.local_ai_model,
-                        messages=[
-                            {'role': 'system', 'content': instruction},
-                            {'role': 'user', 'content': prompt},
-                        ],
-                        timeout=settings.ai_timeout_seconds,
-                    )
-                    self.last_provider_used = 'local-fallback'
-                    self.last_model_used = getattr(response, 'model', settings.local_ai_model) or settings.local_ai_model
-                    content = response.choices[0].message.content
-                    return content.strip() if isinstance(content, str) else str(content or '').strip()
-                except Exception:
-                    pass
-            raise self._friendly_error(exc) from exc
-
-    def summarize_session(self) -> str:
-        rows = self.memory.session_messages(self.session_id, 250)
-        if not rows:
-            return 'No conversation to summarize.'
-        transcript_parts = []
-        for row in rows:
-            label = 'USER' if row['role'] == 'user' else 'JARVIS'
-            transcript_parts.append(f'{label}: {row["content"]}')
-        transcript = '\n'.join(transcript_parts)
-        if len(transcript) > 60000:
-            transcript = transcript[-60000:]
-        summary = self._one_shot_text(
-            'Create a compact factual continuity summary for a future AI turn. Preserve user preferences, decisions, '
-            'project state, unresolved tasks, important tool outcomes, and constraints. Do not include private chain-of-thought. '
-            'Do not store passwords/API keys/secrets. Output plain concise text.',
-            transcript,
-            'summary',
-        )
-        self.memory.set_session_summary(self.session_id, summary)
-        return summary
-
-    def _maybe_auto_summary(self) -> None:
-        if not settings.auto_summarize:
-            return
-        threshold = max(20, settings.summarize_after_messages)
-        count = self.memory.message_count(self.session_id)
-        if count >= threshold and count % threshold in {0, 1}:
-            try:
-                self.summarize_session()
+                self.last_context_stats = {
+                    'characters': bundle.characters,
+                    'memory_count': bundle.memory_count,
+                    'knowledge_count': bundle.knowledge_count,
+                }
+                if bundle.text:
+                    prompt += '\n\nV7 LOCAL CONTEXT BUNDLE:\n' + bundle.text
             except Exception:
                 pass
+        return prompt
+
+    def capability_status(self, *, refresh: bool = True) -> list[dict]:
+        return self.capability_registry.snapshot(refresh=refresh)
+
+    def evaluate_self(self, *, mission_limit: int = 100, audit_limit: int = 1000, persist: bool = True) -> dict:
+        return self.evaluation.evaluate(
+            mission_limit=mission_limit,
+            audit_limit=audit_limit,
+            persist=persist,
+        ).as_dict()
+
+    def evaluation_history(self, limit: int = 50) -> list[dict]:
+        return self.evaluation.history(limit)
+
+    def detect_capability_gaps(self, *, mission_limit: int = 100, audit_limit: int = 1000, persist: bool = True) -> list[dict]:
+        return [
+            gap.as_dict() for gap in self.gap_detector.detect(
+                mission_limit=mission_limit,
+                audit_limit=audit_limit,
+                persist=persist,
+            )
+        ]
+
+    def capability_gap_history(self, limit: int = 100) -> list[dict]:
+        return self.gap_detector.list_open(limit)
+
+    def observability_snapshot(self) -> dict:
+        return self.observability.dashboard_snapshot()
+
+    def model_usage(self, period: str = 'today', *, mission_id: str | None = None) -> dict:
+        return self.observability.usage_summary(period, mission_id=mission_id)
+
+    def health_check(self) -> dict:
+        return self.health_system.run().as_dict()
+
+    def detect_repeated_workflows(self, *, audit_limit: int = 1000, min_occurrences: int = 3, persist: bool = True) -> list[dict]:
+        return [
+            item.as_dict() for item in self.workflow_learning.detect(
+                audit_limit=audit_limit,
+                min_occurrences=min_occurrences,
+                persist=persist,
+            )
+        ]
+
+    def workflow_proposals(self, limit: int = 100) -> list[dict]:
+        return self.workflow_learning.recent(limit)
+
+    def propose_skill_from_gap(self, gap: dict) -> dict:
+        """Create only a persisted inactive skill proposal; no skill is silently activated."""
+        return self.skill_registry.propose_from_gap(dict(gap)).as_dict()
+
+    def skill_proposals(self, limit: int = 100) -> list[dict]:
+        return self.skill_registry.recent(limit)
+
+    def _get_self_development_engine(self):
+        if not settings.self_development_enabled:
+            raise RuntimeError('Controlled self-development is disabled by configuration.')
+        if self._self_development_engine is None:
+            from .self_development import SelfDevelopmentEngine
+            try:
+                self._self_development_engine = SelfDevelopmentEngine(self.memory.db_path)
+            except Exception as exc:
+                raise RuntimeError(
+                    'Self-development sandbox is unavailable in this installation. '
+                    f'Git/repository/workspace check failed: {type(exc).__name__}: {exc}'
+                ) from exc
+        return self._self_development_engine
+
+    def propose_improvement(self, gap: dict) -> dict:
+        proposal = self._get_self_development_engine().proposal_from_gap(dict(gap))
+        self.observability.record(
+            category='SELF_DEVELOPMENT', event_type='proposal.created', status='SUCCESS',
+            session_id=self.session_id, mission_id=self.last_mission_id,
+            metadata={'proposal_id': proposal.id, 'capability': proposal.capability, 'risk': proposal.risk},
+        )
+        return proposal.as_dict()
+
+    def prepare_improvement_sandbox(self, proposal_id: str) -> dict:
+        proposal = self._get_self_development_engine().prepare_sandbox(proposal_id)
+        self.observability.record(
+            category='SELF_DEVELOPMENT', event_type='sandbox.prepared', status='SUCCESS',
+            session_id=self.session_id, metadata={'proposal_id': proposal.id, 'branch': proposal.branch},
+        )
+        return proposal.as_dict()
+
+    def run_self_coding(self, proposal_id: str) -> dict:
+        """Generate/repair code in the proposal sandbox; production is never merged here."""
+        from .self_development.coding import SelfCodingEngine
+
+        engine = self._get_self_development_engine()
+
+        def reasoner(system: str, user: str) -> str:
+            return self._one_shot_text(system, user, 'coding')
+
+        started = time.perf_counter()
+        try:
+            result = SelfCodingEngine(engine, reasoner).run(proposal_id)
+            self.observability.record(
+                category='SELF_DEVELOPMENT', event_type='self_coding.completed', status=result.status.value,
+                session_id=self.session_id,
+                latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                metadata={'proposal_id': proposal_id, 'changed_files': len(result.changed_files)},
+            )
+            return result.as_dict()
+        except Exception as exc:
+            self.observability.record(
+                category='SELF_DEVELOPMENT', event_type='self_coding.failed', status='FAILED',
+                session_id=self.session_id,
+                latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                metadata={'proposal_id': proposal_id, 'error_type': type(exc).__name__},
+            )
+            raise
+
+    def offline_development_status(self) -> dict:
+        from .self_development.offline import OfflineDevelopmentRuntime
+        return OfflineDevelopmentRuntime().status().as_dict()
+
+    def run_offline_self_coding(self, proposal_id: str) -> dict:
+        from .self_development.coding import SelfCodingEngine
+        from .self_development.offline import OfflineDevelopmentRuntime
+
+        engine = self._get_self_development_engine()
+        offline = OfflineDevelopmentRuntime()
+        offline.require_ready()
+        result = SelfCodingEngine(engine, offline.reason).run(proposal_id)
+        return result.as_dict()
+
+    def self_development_proposals(self, limit: int = 50) -> list[dict]:
+        return self._get_self_development_engine().recent(limit)
+
+    def self_development_proposal(self, proposal_id: str) -> dict | None:
+        return self._get_self_development_engine().get(proposal_id)
+
+    def approve_improvement_for_release(self, proposal_id: str, *, explicit_user_approval: bool) -> dict:
+        """Mark reviewed proposal approved; this still does not deploy it to production."""
+        proposal = self._get_self_development_engine().approve(
+            proposal_id,
+            explicit_user_approval=explicit_user_approval,
+        )
+        return proposal.as_dict()
+
+    def reject_improvement(self, proposal_id: str) -> dict:
+        return self._get_self_development_engine().reject(proposal_id).as_dict()
+
+    def _model_observability_context(self) -> dict:
+        orchestrator = getattr(self, 'orchestrator', None)
+        return {
+            'session_id': getattr(self, 'session_id', None),
+            'mission_id': getattr(orchestrator, 'current_mission_id', None),
+            'route': getattr(self, 'last_route', ''),
+        }
+
+    def _tool_audit_context(self) -> dict:
+        request_summary = self._latest_user_request()[:800]
+        orchestrator = getattr(self, 'orchestrator', None)
+        return {
+            'session_id': self.session_id,
+            'mission_id': getattr(orchestrator, 'current_mission_id', None),
+            'request_summary': request_summary,
+            'provider': getattr(self, 'last_provider_used', None),
+            'model': getattr(self, 'last_model_used', None),
+        }
 
     @staticmethod
     def _extract_plan(raw: str, max_steps: int) -> list[str]:
@@ -330,160 +297,75 @@ class JarvisOmega:
             if isinstance(parsed, dict):
                 parsed = parsed.get('steps', [])
             if isinstance(parsed, list):
-                steps = [str(x).strip() for x in parsed if str(x).strip()]
-                if steps:
-                    return steps[:max_steps]
+                return [str(item).strip() for item in parsed if str(item).strip()][:max_steps]
         except Exception:
             pass
-        steps = []
-        for line in raw.splitlines():
-            line = re.sub(r'^\s*(?:[-*]|\d+[.)])\s*', '', line).strip()
-            if line:
-                steps.append(line)
-        return steps[:max_steps] or [raw.strip()[:600]]
-
-    def plan_mission(self, goal: str) -> list[str]:
-        goal = goal.strip()
-        if not goal:
-            return []
-        self.last_request_kind = 'mission-plan'
-        raw = self._one_shot_text(
-            'You are JARVIS OMEGA V6 Planner. Produce only a JSON array of short executable high-level steps. '
-            'Do not include private reasoning. Prefer the smallest safe plan. Never plan credential access, security bypass, '
-            'arbitrary shell execution, deletion, persistence, or actions outside the available JARVIS tools.',
-            f'Goal: {goal}\nMaximum steps: {settings.mission_max_steps}',
-            'mission',
-        )
-        self.last_plan = self._extract_plan(raw, max(1, settings.mission_max_steps))
-        return self.last_plan
+        return _ProviderCore._extract_plan(raw, max_steps)
 
     def run_mission(self, goal: str, progress: Callable[[str], None] | None = None) -> str:
-        """Planner -> tool-capable executor -> reviewer. Approval gates remain active on every local action."""
-        progress = progress or (lambda _msg: None)
         started = time.perf_counter()
-        self.last_request_kind = 'mission'
-        plan = self.plan_mission(goal)
-        if not plan:
-            return 'Mission plan could not be created.'
-        progress('PLAN: ' + ' | '.join(plan))
-
-        results: list[str] = []
-        for index, step in enumerate(plan, 1):
-            progress(f'EXECUTING {index}/{len(plan)}: {step}')
-            prompt = (
-                f'JARVIS OMEGA V6 MISSION\nOverall goal: {goal}\n'
-                f'Current step {index}/{len(plan)}: {step}\n'
-                'Execute this step using available tools only when needed. Respect every permission gate. '
-                'Return a concise result for this step.'
-            )
-            self._active_model = settings.routed_smart_model
-            result = self.chat(prompt)
-            results.append(result)
-            progress(f'COMPLETED {index}/{len(plan)}')
-
-        joined = '\n\n'.join(f'Step {i + 1}: {r}' for i, r in enumerate(results))
-        progress('REVIEWING MISSION...')
-        review = self._one_shot_text(
-            'You are JARVIS OMEGA V6 Reviewer. Review the supplied mission results. Do not invent tool outcomes. '
-            'Give a concise final status, what was completed, any blockers, and exact next action if needed.',
-            f'Goal: {goal}\nPlan: {json.dumps(plan, ensure_ascii=False)}\nExecution results:\n{joined}',
-            'review',
+        self.observability.record(
+            category='MISSION', event_type='mission.started', status='RUNNING',
+            session_id=self.session_id, metadata={'goal_chars': len(str(goal))},
         )
-        self.memory.add_message(self.session_id, 'assistant', f'[MISSION REVIEW]\n{review}')
-        self.last_latency = time.perf_counter() - started
-        return review
-
-    def _chat_openrouter(self) -> str:
-        messages = [{'role': 'system', 'content': self._system_instructions()}] + self._history()
-        tools = self._openrouter_model_tools()
-        self.last_tool_mode = 'full' if tools else 'no-tools'
-
-        for _ in range(settings.max_tool_rounds):
-            kwargs = {'model': self._active_model, 'messages': messages}
-            if tools:
-                kwargs['tools'] = tools
-
-            try:
-                response = self.client.chat.completions.create(**kwargs, timeout=settings.ai_timeout_seconds)
-            except Exception as exc:
-                status = self._status_code(exc)
-                lower = str(exc).lower()
-                tool_problem = (
-                    tools and status in {400, 404, 422}
-                    and any(word in lower for word in ('tool', 'function', 'unsupported', 'parameter', 'schema'))
-                )
-                if tool_problem:
-                    tools = []
-                    self.last_tool_mode = 'fallback-no-tools'
-                    continue
-                raise exc
-
-            self.last_model_used = getattr(response, 'model', self._active_model) or self._active_model
-            message = response.choices[0].message
-            calls = list(message.tool_calls or [])
-            if not calls:
-                content = message.content
-                return (content.strip() if isinstance(content, str) else str(content or '').strip()) or 'I completed the turn but received no text output.'
-
-            assistant_tool_calls = []
-            for call in calls:
-                assistant_tool_calls.append({
-                    'id': call.id,
-                    'type': 'function',
-                    'function': {'name': call.function.name, 'arguments': call.function.arguments or '{}'},
-                })
-            messages.append({'role': 'assistant', 'content': message.content or '', 'tool_calls': assistant_tool_calls})
-
-            for call in calls:
-                try:
-                    args = json.loads(call.function.arguments or '{}')
-                except json.JSONDecodeError:
-                    args = {}
-                result = self.tools.call(call.function.name, args)
-                messages.append({'role': 'tool', 'tool_call_id': call.id, 'content': result})
-
-        return 'I hit the configured tool-round limit and stopped safely.'
-
-    def _chat_openai(self) -> str:
-        input_items = self._history()
         try:
-            response = self.client.responses.create(
-                model=self._active_model,
-                reasoning={'effort': settings.reasoning_effort},
-                instructions=self._system_instructions(),
-                input=input_items,
-                tools=self._openai_model_tools(),
-                store=False,
-                timeout=settings.ai_timeout_seconds,
+            mission = self.orchestrator.run(goal, progress)
+            self.last_mission_id = mission.id
+            self.memory.add_message(
+                self.session_id,
+                'assistant',
+                f'[V7 MISSION {mission.id}]\n{mission.final_report}',
             )
+            try:
+                self.memory.remember_v7(
+                    mission.final_report,
+                    kind=MemoryKind.EPISODIC,
+                    importance=0.8,
+                    confidence=0.95 if mission.final_verification and mission.final_verification.verified else 0.65,
+                    source=f'mission:{mission.id}',
+                    metadata={
+                        'mission_id': mission.id,
+                        'status': mission.status.value,
+                        'verification': mission.final_verification.status if mission.final_verification else 'UNKNOWN',
+                    },
+                    verified=bool(mission.final_verification and mission.final_verification.verified),
+                )
+            except Exception:
+                pass
+            self.observability.record(
+                category='MISSION', event_type='mission.finished', status=mission.status.value,
+                session_id=self.session_id, mission_id=mission.id,
+                latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                metadata={
+                    'retry_count': mission.retry_count,
+                    'recovery_count': mission.recovery_count,
+                    'verification': mission.final_verification.status if mission.final_verification else 'UNKNOWN',
+                },
+            )
+            return mission.final_report
         except Exception as exc:
-            raise exc
-        self.last_model_used = getattr(response, 'model', self._active_model) or self._active_model
-        self.last_tool_mode = 'full'
-
-        for _ in range(settings.max_tool_rounds):
-            calls = [x for x in response.output if getattr(x, 'type', None) == 'function_call']
-            if not calls:
-                return (response.output_text or '').strip() or 'I completed the turn but received no text output.'
-
-            input_items.extend(self._dump_item(item) for item in response.output)
-            for call in calls:
-                try:
-                    args = json.loads(call.arguments or '{}')
-                except json.JSONDecodeError:
-                    args = {}
-                result = self.tools.call(call.name, args)
-                input_items.append({'type': 'function_call_output', 'call_id': call.call_id, 'output': result})
-
-            response = self.client.responses.create(
-                model=self._active_model,
-                reasoning={'effort': settings.reasoning_effort},
-                instructions=self._system_instructions(),
-                input=input_items,
-                tools=self._openai_model_tools(),
-                store=False,
-                timeout=settings.ai_timeout_seconds,
+            self.observability.record(
+                category='MISSION', event_type='mission.failed', status='FAILED',
+                session_id=self.session_id,
+                latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                metadata={'error_type': type(exc).__name__},
             )
-            self.last_model_used = getattr(response, 'model', self._active_model) or self._active_model
+            raise
 
-        return 'I hit the configured tool-round limit and stopped safely.'
+    def cancel_mission(self, mission_id: str | None = None) -> bool:
+        return self.orchestrator.cancel(mission_id)
+
+    def pause_mission(self, mission_id: str | None = None) -> bool:
+        return self.orchestrator.pause(mission_id)
+
+    def resume_mission(self, mission_id: str | None = None) -> bool:
+        return self.orchestrator.resume(mission_id)
+
+    def get_mission(self, mission_id: str):
+        return self.orchestrator.get(mission_id)
+
+    def recent_missions(self, limit: int = 20) -> list[dict]:
+        return self.orchestrator.recent(limit)
+
+
+__all__ = ['JarvisOmega']

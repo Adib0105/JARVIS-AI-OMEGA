@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 from pathlib import Path
 
@@ -26,10 +27,20 @@ class DocumentReader:
             raise PermissionError(f'Unsupported document type: {path.suffix}')
         return path
 
+    @staticmethod
+    def _sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open('rb') as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+                digest.update(chunk)
+        return digest.hexdigest()
+
     def extract(self, file_path: str, max_chars: int = 120000) -> dict:
         path = self._safe_path(file_path)
         cap = max(2000, min(int(max_chars), 250000))
         suffix = path.suffix.lower()
+        stat = path.stat()
+        content_sha256 = self._sha256(path)
 
         if suffix == '.pdf':
             text, meta = self._pdf(path, cap)
@@ -43,12 +54,23 @@ class DocumentReader:
             text = path.read_text(encoding='utf-8', errors='replace')[:cap]
             meta = {'type': suffix.lstrip('.'), 'characters': len(text)}
 
+        extracted = text[:cap]
+        extracted_sha256 = hashlib.sha256(extracted.encode('utf-8', errors='replace')).hexdigest()
+        meta = dict(meta)
+        meta.update({
+            'content_sha256': content_sha256,
+            'extracted_sha256': extracted_sha256,
+            'mtime_ns': int(stat.st_mtime_ns),
+        })
         return {
             'path': str(path),
             'name': path.name,
-            'size_bytes': path.stat().st_size,
+            'size_bytes': stat.st_size,
+            'mtime_ns': int(stat.st_mtime_ns),
+            'content_sha256': content_sha256,
+            'extracted_sha256': extracted_sha256,
             'metadata': meta,
-            'text': text[:cap],
+            'text': extracted,
         }
 
     @staticmethod
@@ -87,20 +109,23 @@ class DocumentReader:
         from openpyxl import load_workbook
 
         wb = load_workbook(path, read_only=True, data_only=True)
-        out = io.StringIO()
-        row_count = 0
-        for ws in wb.worksheets[:20]:
-            out.write(f'\n--- SHEET: {ws.title} ---\n')
-            for row in ws.iter_rows(values_only=True):
-                values = [str(v) if v is not None else '' for v in row]
-                out.write('\t'.join(values).rstrip() + '\n')
-                row_count += 1
+        try:
+            out = io.StringIO()
+            row_count = 0
+            for ws in wb.worksheets[:20]:
+                out.write(f'\n--- SHEET: {ws.title} ---\n')
+                for row in ws.iter_rows(values_only=True):
+                    values = [str(v) if v is not None else '' for v in row]
+                    out.write('\t'.join(values).rstrip() + '\n')
+                    row_count += 1
+                    if out.tell() >= cap or row_count >= 10000:
+                        break
                 if out.tell() >= cap or row_count >= 10000:
                     break
-            if out.tell() >= cap or row_count >= 10000:
-                break
-        text = out.getvalue()[:cap]
-        return text, {'type': 'xlsx', 'sheets': len(wb.sheetnames), 'rows_read': row_count, 'characters': len(text)}
+            text = out.getvalue()[:cap]
+            return text, {'type': 'xlsx', 'sheets': len(wb.sheetnames), 'rows_read': row_count, 'characters': len(text)}
+        finally:
+            wb.close()
 
     @staticmethod
     def _csv(path: Path, cap: int) -> tuple[str, dict]:

@@ -39,9 +39,9 @@ def main() -> None:
     try:
         from PIL import Image, ImageGrab, ImageTk
         _ = (Image, ImageGrab, ImageTk)
-        results.append(check('V6 image upload + screen vision', True, 'Pillow installed'))
+        results.append(check('V7 image upload + screen vision', True, 'Pillow installed'))
     except Exception as exc:
-        results.append(check('V6 image upload + screen vision', False, str(exc)))
+        results.append(check('V7 image upload + screen vision', False, str(exc)))
 
     try:
         import edge_tts
@@ -59,6 +59,47 @@ def main() -> None:
     except Exception as exc:
         results.append(check('Animated ARC desktop GUI', False, str(exc)))
 
+    try:
+        from jarvis.providers import AIProvider, create_primary_provider
+        _ = (AIProvider, create_primary_provider)
+        results.append(check('V7 provider abstraction', True, 'provider-neutral contracts loaded'))
+    except Exception as exc:
+        results.append(check('V7 provider abstraction', False, str(exc)))
+
+    try:
+        from jarvis.errors import ErrorCategory, classify_exception
+        _ = classify_exception(TimeoutError('test timeout'))
+        results.append(check('V7 error taxonomy', ErrorCategory.TIMEOUT.value == 'TIMEOUT', 'typed failure categories loaded'))
+    except Exception as exc:
+        results.append(check('V7 error taxonomy', False, str(exc)))
+
+    try:
+        from jarvis.security import AuditStore, Capability
+        _ = (AuditStore, Capability)
+        results.append(check('V7 capability security + audit', True, 'security primitives loaded'))
+    except Exception as exc:
+        results.append(check('V7 capability security + audit', False, str(exc)))
+
+    # V7.5 engineering foundations: imports should be deterministic and must not
+    # require a live AI request or destructive action.
+    foundation_checks = [
+        ('V7.5 Capability Registry', 'jarvis.capability_registry', 'CapabilityRegistry'),
+        ('V7.5 Self Evaluation', 'jarvis.evaluation', 'SelfEvaluationEngine'),
+        ('V7.5 Gap Detection', 'jarvis.evaluation', 'CapabilityGapDetector'),
+        ('V7.5 Observability', 'jarvis.observability', 'ObservabilityManager'),
+        ('V7.5 Health System', 'jarvis.observability', 'JarvisHealthSystem'),
+        ('V7.5 Self Development', 'jarvis.self_development', 'SelfDevelopmentEngine'),
+        ('V7.5 Skill Registry', 'jarvis.skills', 'SkillRegistry'),
+        ('V7.5 Backup Manager', 'jarvis.storage', 'BackupManager'),
+    ]
+    for label, module_name, attr in foundation_checks:
+        try:
+            module = __import__(module_name, fromlist=[attr])
+            getattr(module, attr)
+            results.append(check(label, True, f'{module_name}.{attr} loaded'))
+        except Exception as exc:
+            results.append(check(label, False, str(exc)))
+
     # Optional Windows modules: text chat remains usable if these are missing.
     try:
         import pyautogui
@@ -73,29 +114,95 @@ def main() -> None:
         optional('Push-to-talk / wake-word microphone', False, f'optional: {exc}')
 
     try:
-        from jarvis import __version__
-        from jarvis.config import settings
+        from jarvis.computer_use.visual_fallback import VisualTargetBackend
+        visual = VisualTargetBackend().status()
+        optional(
+            'Computer Use V2 OCR fallback',
+            visual.available,
+            visual.detail if visual.available else f'optional local OCR unavailable: {visual.detail}',
+        )
+    except Exception as exc:
+        optional('Computer Use V2 OCR fallback', False, f'optional: {exc}')
 
-        results.append(check('JARVIS version', __version__ == settings.app_version == '6.0.0', __version__))
+    try:
+        from jarvis import __version__
+        from jarvis.capability_registry import CapabilityRegistry
+        from jarvis.config import settings
+        from jarvis.config_validation import ValidationLevel, validate_settings
+        from jarvis.memory_lifecycle import MemoryLifecycleManager
+        from jarvis.memory_v7 import V7MemoryStore
+        from jarvis.observability import ObservabilityManager
+        from jarvis.storage import BackupManager, TARGET_SCHEMA_VERSION
+
+        results.append(check('JARVIS version', __version__ == settings.app_version == '7.0.0', __version__))
+        findings = validate_settings(settings)
+        for finding in findings:
+            if finding.level == ValidationLevel.FAIL:
+                results.append(check(f'Config {finding.key}', False, finding.message))
+            elif finding.level == ValidationLevel.WARNING:
+                optional(f'Config {finding.key}', False, finding.message)
+
         provider_ok = settings.provider in {'openrouter', 'openai'}
         results.append(check('AI provider', provider_ok, settings.provider))
 
-        placeholder = 'put_your_openrouter_key_here' if settings.provider == 'openrouter' else 'put_your_api_key_here'
-        key_ok = bool(settings.api_key and settings.api_key != placeholder)
+        placeholders = {'put_your_openrouter_key_here', 'put_your_api_key_here', 'YAHAN_APNI_OPENROUTER_KEY'}
+        key_ok = bool(settings.api_key and settings.api_key not in placeholders)
         key_name = 'OPENROUTER_API_KEY' if settings.provider == 'openrouter' else 'OPENAI_API_KEY'
         results.append(check(f'{key_name} configured', key_ok, settings.model))
 
         if settings.provider == 'openrouter':
-            results.append(check('Free test model', settings.model == 'openrouter/free' or ':free' in settings.model, settings.model))
+            optional('Free/test model route', settings.model == 'openrouter/free' or ':free' in settings.model, settings.model)
 
         results.append(check('Public web tools', settings.enable_public_web_tools, 'DDGS metasearch'))
-        results.append(check('Desktop automation config', settings.enable_desktop_automation, 'approval-gated'))
+        results.append(check('Desktop automation config', settings.enable_desktop_automation, 'capability-policy gated'))
         results.append(check('Document intelligence config', settings.enable_document_intelligence, 'PDF/DOCX/XLSX/CSV'))
         results.append(check('Coding workspace config', settings.enable_coding_tools, 'safe writes + unittest'))
         results.append(check('Mission planner config', settings.mission_max_steps >= 1, f'max steps={settings.mission_max_steps}'))
         results.append(check('Image attachments', settings.max_image_attachments >= 1, f'max={settings.max_image_attachments}'))
         results.append(check('AI timeout', settings.ai_timeout_seconds > 0, f'{settings.ai_timeout_seconds}s'))
         results.append(check('Vision timeout', settings.vision_timeout_seconds > 0, f'{settings.vision_timeout_seconds}s'))
+
+        memory = V7MemoryStore(settings.db_path)
+        memory_stats = memory.v7_stats()
+        results.append(check(
+            'V7 SQLite schema migration',
+            memory_stats.get('schema_version') == TARGET_SCHEMA_VERSION,
+            f"schema={memory_stats.get('schema_version')} target={TARGET_SCHEMA_VERSION}",
+        ))
+        results.append(check(
+            'V7 layered memory tables',
+            isinstance(memory_stats.get('memory_layers'), dict),
+            f"layers={memory_stats.get('memory_layers', {})}; working={memory_stats.get('working_memory_items', 0)}",
+        ))
+        lifecycle = MemoryLifecycleManager(settings.db_path)
+        lifecycle_columns = lifecycle._columns()
+        results.append(check(
+            'V7.5 memory lifecycle schema',
+            'status' in lifecycle_columns,
+            f"status-column={'present' if 'status' in lifecycle_columns else 'missing'}",
+        ))
+        optional(
+            'Hybrid embedding reranker',
+            bool(memory_stats.get('embedding_reranker_configured')),
+            'explicitly configured' if memory_stats.get('embedding_reranker_configured') else 'off by default; local BM25+sparse retrieval remains active',
+        )
+        optional(
+            'Pre-V7 database backup',
+            bool(memory.migration_result.get('backup')),
+            memory.migration_result.get('backup') or 'not needed/already migrated',
+        )
+
+        capabilities = CapabilityRegistry().snapshot(refresh=True)
+        broken = [item['name'] for item in capabilities if item['status'] == 'BROKEN']
+        results.append(check('V7.5 capability registry runtime', not broken, f'capabilities={len(capabilities)}; broken={broken}'))
+
+        observability = ObservabilityManager(settings.db_path)
+        usage = observability.usage_summary('today')
+        results.append(check('V7.5 observability database', isinstance(usage, dict), f"requests_today={usage.get('requests', 0)}"))
+
+        backup = BackupManager(settings.db_path)
+        integrity = backup.integrity_check()
+        results.append(check('Database integrity', integrity.get('ok') is True, str(integrity.get('result') or integrity)))
 
         voice_detail = (
             f'engine={settings.voice_engine}, hindi={settings.voice_hindi}, '
@@ -111,10 +218,16 @@ def main() -> None:
         results.append(check('Export folder configured', True, str(settings.export_dir)))
         roots = [str(p) for p in settings.allowed_file_roots if p.exists()]
         results.append(check('Local roots', bool(roots), '; '.join(roots) or 'none'))
-    except Exception as exc:
-        results.append(check('JARVIS config', False, str(exc)))
 
-    print('\nJARVIS OMEGA V6:', 'READY' if all(results) else 'NEEDS ATTENTION')
+        optional(
+            'Production self-modification',
+            settings.production_self_modification,
+            'enabled deliberately' if settings.production_self_modification else 'OFF by default — sandbox development remains available',
+        )
+    except Exception as exc:
+        results.append(check('JARVIS config/memory/V7.5 diagnostics', False, str(exc)))
+
+    print('\nJARVIS OMEGA V7 / V7.5 ENGINEERING CORE:', 'READY' if all(results) else 'NEEDS ATTENTION')
 
 
 if __name__ == '__main__':

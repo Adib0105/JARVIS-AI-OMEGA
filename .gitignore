@@ -6,6 +6,9 @@ __pycache__/
 *.db
 *.sqlite*
 data/
+workspace/
+build/
+dist/
 .pytest_cache/
 .coverage
 htmlcov/
