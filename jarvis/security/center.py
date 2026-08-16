@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from dataclasses import asdict
 
 from .audit import AuditStore
 from .capabilities import TOOL_SECURITY, RiskLevel
@@ -55,9 +54,18 @@ class SecurityCenter:
             row for row in audit_rows
             if str(row.get('approval_status', '')).upper() not in {'AUTO_ALLOWED', 'NOT_RECORDED', ''}
         ]
+        try:
+            integrity = self.audit.verify_integrity()
+        except Exception as exc:
+            integrity = {
+                'ok': False,
+                'status': 'ERROR',
+                'reason': f'{type(exc).__name__}: {exc}',
+            }
         return {
             'trusted_local_mode': trusted_local_mode_enabled(),
             'require_local_approval': os.getenv('REQUIRE_LOCAL_APPROVAL', 'true').strip().lower() in {'1', 'true', 'yes', 'on'},
+            'audit_integrity': integrity,
             'policies': self.policies(),
             'dangerous_tools': self.dangerous_capabilities(),
             'recent_blocked': blocked[:50],
