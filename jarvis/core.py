@@ -1,8 +1,8 @@
 """Public JARVIS OMEGA V7 compatibility core.
 
 `JarvisOmega` keeps the existing import/API surface while layering V7 orchestration,
-security, layered memory, capability awareness, self-evaluation and bounded context
-over the provider-neutral core.
+security, layered memory, capability awareness, self-evaluation, gap detection and
+bounded context over the provider-neutral core.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from .agent.orchestrator_memory import MemoryAwareMissionOrchestrator
 from .agent.tool_runtime import RecordingToolRegistry
 from .capability_registry import CapabilityRegistry
 from .core_v7 import JarvisOmega as _ProviderCore
-from .evaluation import SelfEvaluationEngine
+from .evaluation import CapabilityGapDetector, SelfEvaluationEngine
 from .memory_v7 import MemoryKind, V7MemoryStore
 from .prompt import system_prompt
 
@@ -39,6 +39,13 @@ class JarvisOmega(_ProviderCore):
             mission_store=self.orchestrator.store,
             audit_store=self.tools.audit,
             capability_registry=self.capability_registry,
+        )
+        self.gap_detector = CapabilityGapDetector(
+            db_path,
+            evaluation=self.evaluation,
+            missions=self.orchestrator.store,
+            audit=self.tools.audit,
+            registry=self.capability_registry,
         )
         self.last_mission_id: str | None = None
         self.last_context_stats: dict = {}
@@ -95,6 +102,19 @@ class JarvisOmega(_ProviderCore):
 
     def evaluation_history(self, limit: int = 50) -> list[dict]:
         return self.evaluation.history(limit)
+
+    def detect_capability_gaps(self, *, mission_limit: int = 100, audit_limit: int = 1000, persist: bool = True) -> list[dict]:
+        """Return evidence-backed engineering gaps; this never modifies production code."""
+        return [
+            gap.as_dict() for gap in self.gap_detector.detect(
+                mission_limit=mission_limit,
+                audit_limit=audit_limit,
+                persist=persist,
+            )
+        ]
+
+    def capability_gap_history(self, limit: int = 100) -> list[dict]:
+        return self.gap_detector.list_open(limit)
 
     def _tool_audit_context(self) -> dict:
         request_summary = self._latest_user_request()[:800]
