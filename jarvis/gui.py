@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import threading
 import tkinter as tk
-from tkinter import messagebox, scrolledtext
+from tkinter import messagebox, scrolledtext, simpledialog
 
 from .config import settings
 from .core import JarvisOmega
+from .vision import capture_screen
 from .voice import VoiceOutput
 
 
@@ -40,6 +41,7 @@ class JarvisDesktop:
         toolbar = tk.Frame(self.root, bg='#050b12', padx=14, pady=8)
         toolbar.pack(fill='x')
         self._button(toolbar, 'NEW CHAT', self._new_chat).pack(side='left', padx=4)
+        self._button(toolbar, 'SCREEN VISION', self._screen_vision).pack(side='left', padx=4)
         self.voice_button = self._button(toolbar, 'MUTE VOICE', self._toggle_voice)
         self.voice_button.pack(side='left', padx=4)
         self._button(toolbar, 'VOICE TEST', lambda: self.voice.test('hinglish')).pack(side='left', padx=4)
@@ -136,6 +138,42 @@ class JarvisDesktop:
         self._append('JARVIS', answer)
         self.voice.speak(answer)
 
+    def _screen_vision(self) -> None:
+        if self.busy:
+            return
+        if settings.provider != 'openrouter':
+            messagebox.showwarning('Screen Vision', 'Screen vision is currently configured for OpenRouter mode.')
+            return
+        prompt = simpledialog.askstring(
+            'Screen Vision',
+            'What should JARVIS inspect on your screen?',
+            initialvalue='Analyze my screen, identify any errors or important UI state, and tell me what to do next.'
+        )
+        if prompt is None:
+            return
+        if not messagebox.askyesno('Screen Capture Permission', 'Allow JARVIS to capture the current screen and send it to the AI provider for analysis?'):
+            return
+        self.busy = True
+        self.status.configure(text='VISION...', fg='#d98cff')
+        threading.Thread(target=self._vision_worker, args=(prompt,), daemon=True).start()
+
+    def _vision_worker(self, prompt: str) -> None:
+        try:
+            screenshot = capture_screen()
+            answer = self.jarvis.analyze_image(screenshot, prompt)
+            self.root.after(0, lambda: self._vision_done(answer, screenshot.name, None))
+        except Exception as exc:
+            self.root.after(0, lambda: self._vision_done('', '', str(exc)))
+
+    def _vision_done(self, answer: str, name: str, error: str | None) -> None:
+        self.busy = False
+        self.status.configure(text='READY', fg='#66ffb2')
+        if error:
+            self._append('JARVIS', f'SCREEN VISION ERROR: {error}')
+            return
+        self._append('JARVIS', f'[Screen: {name}]\n{answer}')
+        self.voice.speak(answer)
+
     def _new_chat(self) -> None:
         sid = self.jarvis.new_session()
         self._append('JARVIS', f'New session started: {sid}')
@@ -153,6 +191,7 @@ class JarvisDesktop:
             'OMEGA V3 Status',
             f'Provider: {provider}\nModel: {settings.model}\nLast model: {self.jarvis.last_model_used}\n'
             f'Tool mode: {self.jarvis.last_tool_mode}\nFree web tools: {settings.enable_public_web_tools}\n'
+            f'Screen vision: {settings.provider == "openrouter"}\n'
             f'Voice: {settings.voice_engine}, pitch {settings.edge_voice_pitch}\n'
             f'Sessions: {stats["sessions"]}\nMessages: {stats["messages"]}\nKnowledge docs: {stats["knowledge_docs"]}'
         )
