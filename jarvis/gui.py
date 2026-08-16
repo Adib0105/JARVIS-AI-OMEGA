@@ -27,7 +27,7 @@ class JarvisDesktop:
 
     def _build(self) -> None:
         header = tk.Frame(self.root, bg='#081521', padx=18, pady=14)
-        header.pack(fill='x')
+        header.pack(side='top', fill='x')
         tk.Label(
             header, text='J A R V I S   O M E G A   V3',
             bg='#081521', fg='#53e7ff', font=('Segoe UI', 18, 'bold')
@@ -39,9 +39,11 @@ class JarvisDesktop:
         ).pack(side='right')
 
         toolbar = tk.Frame(self.root, bg='#050b12', padx=14, pady=8)
-        toolbar.pack(fill='x')
-        self._button(toolbar, 'NEW CHAT', self._new_chat).pack(side='left', padx=4)
-        self._button(toolbar, 'SCREEN VISION', self._screen_vision).pack(side='left', padx=4)
+        toolbar.pack(side='top', fill='x')
+        self.new_button = self._button(toolbar, 'NEW CHAT', self._new_chat)
+        self.new_button.pack(side='left', padx=4)
+        self.vision_button = self._button(toolbar, 'SCREEN VISION', self._screen_vision)
+        self.vision_button.pack(side='left', padx=4)
         self.voice_button = self._button(toolbar, 'MUTE VOICE', self._toggle_voice)
         self.voice_button.pack(side='left', padx=4)
         self._button(toolbar, 'VOICE TEST', lambda: self.voice.test('hinglish')).pack(side='left', padx=4)
@@ -52,19 +54,10 @@ class JarvisDesktop:
         )
         self.status.pack(side='right', padx=8)
 
-        self.chat = scrolledtext.ScrolledText(
-            self.root, wrap='word', bg='#071019', fg='#d9f7ff', insertbackground='#53e7ff',
-            selectbackground='#14445a', relief='flat', padx=18, pady=18,
-            font=('Segoe UI', 11), spacing1=4, spacing3=8
-        )
-        self.chat.pack(fill='both', expand=True, padx=14, pady=(0, 10))
-        self.chat.tag_configure('you', foreground='#6affb8', font=('Segoe UI', 11, 'bold'))
-        self.chat.tag_configure('jarvis', foreground='#53e7ff', font=('Segoe UI', 11, 'bold'))
-        self.chat.tag_configure('body', foreground='#e6f5fa')
-        self.chat.configure(state='disabled')
-
+        # Pack the composer at the bottom BEFORE the expanding chat panel so it can never
+        # be pushed off-screen by the ScrolledText widget.
         bottom = tk.Frame(self.root, bg='#081521', padx=14, pady=12)
-        bottom.pack(fill='x')
+        bottom.pack(side='bottom', fill='x')
         self.entry = tk.Entry(
             bottom, bg='#0d1d29', fg='white', insertbackground='#53e7ff',
             relief='flat', font=('Segoe UI', 12)
@@ -73,9 +66,23 @@ class JarvisDesktop:
         self.entry.bind('<Return>', lambda _event: self._send())
         self.send_button = self._button(bottom, 'SEND', self._send)
         self.send_button.pack(side='right')
-        self.entry.focus_set()
 
-        self._append('JARVIS', 'OMEGA V3 online. Type your message. Mic input is disabled; replies can be spoken.')
+        self.chat = scrolledtext.ScrolledText(
+            self.root, wrap='word', bg='#071019', fg='#d9f7ff', insertbackground='#53e7ff',
+            selectbackground='#14445a', relief='flat', padx=18, pady=18,
+            font=('Segoe UI', 11), spacing1=4, spacing3=8
+        )
+        self.chat.pack(side='top', fill='both', expand=True, padx=14, pady=(0, 10))
+        self.chat.tag_configure('you', foreground='#6affb8', font=('Segoe UI', 11, 'bold'))
+        self.chat.tag_configure('jarvis', foreground='#53e7ff', font=('Segoe UI', 11, 'bold'))
+        self.chat.tag_configure('body', foreground='#e6f5fa')
+        self.chat.configure(state='disabled')
+
+        self.entry.focus_set()
+        self._append(
+            'JARVIS',
+            'OMEGA V3 online. Type below and press Enter/SEND. Mic input is disabled; replies can be spoken.'
+        )
 
     @staticmethod
     def _button(parent, text: str, command):
@@ -92,6 +99,17 @@ class JarvisDesktop:
         self.chat.insert('end', f'{text}\n', 'body')
         self.chat.configure(state='disabled')
         self.chat.see('end')
+
+    def _set_busy(self, busy: bool, label: str = 'READY', color: str = '#66ffb2') -> None:
+        self.busy = busy
+        self.status.configure(text=label, fg=color)
+        state = 'disabled' if busy else 'normal'
+        self.send_button.configure(state=state)
+        self.vision_button.configure(state=state)
+        self.new_button.configure(state=state)
+        self.entry.configure(state=state)
+        if not busy:
+            self.entry.focus_set()
 
     def _confirm_tool(self, tool: str, args: dict) -> bool:
         event = threading.Event()
@@ -116,9 +134,7 @@ class JarvisDesktop:
             return
         self.entry.delete(0, 'end')
         self._append('YOU', text)
-        self.busy = True
-        self.status.configure(text='THINKING...', fg='#ffd166')
-        self.send_button.configure(state='disabled')
+        self._set_busy(True, 'THINKING...', '#ffd166')
         threading.Thread(target=self._answer_worker, args=(text,), daemon=True).start()
 
     def _answer_worker(self, text: str) -> None:
@@ -129,9 +145,7 @@ class JarvisDesktop:
             self.root.after(0, lambda: self._answer_done('', str(exc)))
 
     def _answer_done(self, answer: str, error: str | None) -> None:
-        self.busy = False
-        self.send_button.configure(state='normal')
-        self.status.configure(text='READY', fg='#66ffb2')
+        self._set_busy(False)
         if error:
             self._append('JARVIS', f'ERROR: {error}')
             return
@@ -151,10 +165,13 @@ class JarvisDesktop:
         )
         if prompt is None:
             return
-        if not messagebox.askyesno('Screen Capture Permission', 'Allow JARVIS to capture the current screen and send it to the AI provider for analysis?'):
+        if not messagebox.askyesno(
+            'Screen Capture Permission',
+            'Allow JARVIS to capture the current screen and send a compressed screenshot to the AI provider?'
+        ):
             return
-        self.busy = True
-        self.status.configure(text='VISION...', fg='#d98cff')
+        self._append('JARVIS', f'Screen vision started. Free router ko up to {settings.ai_timeout_seconds:.0f}s lag sakte hain...')
+        self._set_busy(True, f'VISION... ≤{settings.ai_timeout_seconds:.0f}s', '#d98cff')
         threading.Thread(target=self._vision_worker, args=(prompt,), daemon=True).start()
 
     def _vision_worker(self, prompt: str) -> None:
@@ -166,8 +183,7 @@ class JarvisDesktop:
             self.root.after(0, lambda: self._vision_done('', '', str(exc)))
 
     def _vision_done(self, answer: str, name: str, error: str | None) -> None:
-        self.busy = False
-        self.status.configure(text='READY', fg='#66ffb2')
+        self._set_busy(False)
         if error:
             self._append('JARVIS', f'SCREEN VISION ERROR: {error}')
             return
@@ -175,6 +191,8 @@ class JarvisDesktop:
         self.voice.speak(answer)
 
     def _new_chat(self) -> None:
+        if self.busy:
+            return
         sid = self.jarvis.new_session()
         self._append('JARVIS', f'New session started: {sid}')
 
@@ -191,7 +209,7 @@ class JarvisDesktop:
             'OMEGA V3 Status',
             f'Provider: {provider}\nModel: {settings.model}\nLast model: {self.jarvis.last_model_used}\n'
             f'Tool mode: {self.jarvis.last_tool_mode}\nFree web tools: {settings.enable_public_web_tools}\n'
-            f'Screen vision: {settings.provider == "openrouter"}\n'
+            f'Screen vision: {settings.provider == "openrouter"}\nAPI timeout: {settings.ai_timeout_seconds:.0f}s\n'
             f'Voice: {settings.voice_engine}, pitch {settings.edge_voice_pitch}\n'
             f'Sessions: {stats["sessions"]}\nMessages: {stats["messages"]}\nKnowledge docs: {stats["knowledge_docs"]}'
         )
