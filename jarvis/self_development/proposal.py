@@ -92,6 +92,36 @@ class ProposalStore:
             conn.execute('CREATE INDEX IF NOT EXISTS idx_v75_proposals_status ON v75_improvement_proposals(status, updated_at)')
             conn.commit()
 
+    def create(
+        self,
+        *,
+        title: str,
+        capability: str,
+        problem: str,
+        objective: str,
+        evidence: list[str] | tuple[str, ...],
+        risk: str = 'MEDIUM',
+        source_gap_id: str | None = None,
+        plan: list[str] | tuple[str, ...] | None = None,
+    ) -> ImprovementProposal:
+        """Create and persist a proposal through the same canonical store path.
+
+        This convenience API keeps evaluation/skill/self-development callers from
+        constructing partially persisted proposal objects by hand.
+        """
+        proposal = ImprovementProposal(
+            title=str(title).strip()[:300] or 'Untitled improvement',
+            capability=str(capability).strip()[:200] or 'Unknown',
+            problem=str(problem).strip()[:4000],
+            objective=str(objective).strip()[:4000],
+            evidence=[str(item)[:2000] for item in evidence if str(item).strip()][:100],
+            risk=str(risk or 'MEDIUM').strip().upper()[:20],
+            source_gap_id=(str(source_gap_id).strip()[:120] if source_gap_id else None),
+            plan=[str(item)[:1500] for item in (plan or []) if str(item).strip()][:100],
+        )
+        self.save(proposal)
+        return proposal
+
     def save(self, proposal: ImprovementProposal) -> None:
         proposal.touch()
         payload = json.dumps(proposal.as_dict(), ensure_ascii=False, default=str)
