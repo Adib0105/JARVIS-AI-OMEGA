@@ -31,3 +31,29 @@ jobs:
           path: test-output.txt
           if-no-files-found: error
           retention-days: 7
+
+  windows-regression:
+    name: windows-regression (3.14)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - run: python -m compileall -q .
+      - name: Run Windows unit tests
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -v *>&1 | Tee-Object -FilePath test-output-windows.txt
+          $code = $LASTEXITCODE
+          if ($code -ne 0) { exit $code }
+      - name: Upload Windows test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-output-windows-3.14
+          path: test-output-windows.txt
+          if-no-files-found: error
+          retention-days: 7
