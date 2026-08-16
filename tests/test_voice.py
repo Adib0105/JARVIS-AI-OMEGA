@@ -14,6 +14,9 @@ class VoiceCleaningTests(unittest.TestCase):
         self.assertIn("Code block speech me skip kiya gaya.", spoken)
         self.assertNotIn("print", spoken)
 
+    def test_emoji_removed_from_speech(self):
+        self.assertEqual(clean_for_speech('Main theek hoon 😊 bhai'), 'Main theek hoon bhai')
+
     def test_devanagari_detects_hindi(self):
         self.assertEqual(detect_speech_mode("नमस्ते आदिब, आप कैसे हैं?"), "hindi")
 
