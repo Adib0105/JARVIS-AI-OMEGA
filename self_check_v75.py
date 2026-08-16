@@ -9,6 +9,7 @@ from jarvis.capability_registry import CapabilityRegistry
 from jarvis.config import ROOT, settings
 from jarvis.memory_lifecycle import MemoryLifecycleManager
 from jarvis.observability import JarvisHealthSystem, ObservabilityManager
+from jarvis.readiness import ReleaseReadinessCertifier
 from jarvis.self_development.offline import OfflineDevelopmentRuntime
 from jarvis.self_development.policies import SelfDevelopmentPolicy
 from jarvis.storage import BackupManager, SchemaMigrator
@@ -134,6 +135,30 @@ def main() -> int:
     report(package_script.is_file(), 'Windows build script', str(package_script))
     report(installer_script.is_file(), 'Windows installer script', str(installer_script))
 
+    readiness_summary = None
+    try:
+        readiness_summary = ReleaseReadinessCertifier().certify().as_dict()
+        report(
+            readiness_summary['software_ready'],
+            'Automated release readiness',
+            f"failures={readiness_summary['failures']}; warnings={readiness_summary['warnings']}",
+        )
+        pending_live = [
+            item['name'] for item in readiness_summary['checks']
+            if item['required'] and item['status'] == 'NOT_VERIFIED'
+        ]
+        if pending_live:
+            warnings += 1
+            line(
+                'WARN', 'Final release live evidence',
+                'NOT VERIFIED: ' + ', '.join(pending_live),
+            )
+        else:
+            line('PASS', 'Final release live evidence', 'all required live checks have evidence')
+    except Exception as exc:
+        failures += 1
+        line('FAIL', 'Release readiness certifier', f'{type(exc).__name__}: {exc}')
+
     print('=' * 64)
     print(json.dumps({
         'failures': failures,
@@ -141,11 +166,17 @@ def main() -> int:
         'production_self_modification': settings.production_self_modification,
         'self_development_enabled': settings.self_development_enabled,
         'offline_development_enabled': settings.offline_development_enabled,
+        'final_release_ready': (
+            readiness_summary.get('final_release_ready') if readiness_summary else False
+        ),
     }, indent=2))
     if failures:
         print('JARVIS OMEGA V7.5: NOT READY')
         return 1
-    print('JARVIS OMEGA V7.5: READY WITH WARNINGS' if warnings else 'JARVIS OMEGA V7.5: READY')
+    if readiness_summary and readiness_summary.get('final_release_ready'):
+        print('JARVIS OMEGA V7.5: RELEASE READY')
+    else:
+        print('JARVIS OMEGA V7.5: SOFTWARE READY / LIVE SMOKE EVIDENCE PENDING')
     return 0
 
 
