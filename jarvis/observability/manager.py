@@ -17,6 +17,35 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_USAGE_SECRET_KEYS = {
+    'api_key', 'apikey', 'authorization', 'password', 'passwd', 'secret',
+    'access_token', 'refresh_token', 'id_token', 'oauth_token', 'bearer_token',
+    # A singular token value may be a credential. Plural *_tokens fields below are
+    # usage counters and are intentionally preserved.
+    'token',
+}
+
+
+def _sanitize_usage(value: Any, *, key: str = '') -> Any:
+    """Redact credentials while preserving harmless token-count telemetry.
+
+    The generic log redactor intentionally treats any key containing "token" as
+    sensitive. Provider usage objects also use names such as `total_tokens`, which
+    are numeric counters rather than credentials. Observability needs a narrower
+    sanitizer so those counters remain measurable without exposing secrets.
+    """
+    key_lower = str(key).strip().lower()
+    if key_lower in _USAGE_SECRET_KEYS or key_lower.endswith('_api_key'):
+        return '[REDACTED]'
+    if isinstance(value, dict):
+        return {str(k): _sanitize_usage(v, key=str(k)) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_sanitize_usage(item, key=key) for item in value]
+    if isinstance(value, str):
+        return redact_text(value)
+    return value
+
+
 def _explicit_provider_cost(usage: dict | None) -> tuple[float | None, str | None]:
     """Return only an explicit provider-reported cost; never infer pricing."""
     if not isinstance(usage, dict):
@@ -130,7 +159,7 @@ class ObservabilityManager:
         category = str(category).upper().strip()
         if category not in self.ALLOWED_CATEGORIES:
             category = 'INFO'
-        safe_usage = redact_value(usage or {})
+        safe_usage = _sanitize_usage(usage or {})
         safe_meta = redact_value(metadata or {})
         cost, cost_source = _explicit_provider_cost(safe_usage if isinstance(safe_usage, dict) else {})
         event = ObservabilityEvent(
@@ -310,7 +339,7 @@ class ObservabilityManager:
                 usage = {}
             for key in ('prompt_tokens', 'completion_tokens', 'total_tokens', 'input_tokens', 'output_tokens'):
                 value = usage.get(key)
-                if isinstance(value, (int, float)):
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
                     usage_totals[key] = usage_totals.get(key, 0.0) + float(value)
         return {
             'period': period,
