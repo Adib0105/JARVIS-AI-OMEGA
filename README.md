@@ -1,77 +1,77 @@
-# JARVIS AI OMEGA
+# JARVIS AI OMEGA V3
 
-> **A typed-input, spoken-reply personal AI agent created by Adib Azam.**
+> **A typed-input, spoken-reply personal AI agent created by Adib Azam — now with free web search, persistent knowledge, tool fallback, a desktop dashboard, and a deeper Indian neural voice.**
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Free Test](https://img.shields.io/badge/OpenRouter-openrouter%2Ffree-purple)
+![Web](https://img.shields.io/badge/Web-DDGS%20Free%20Search-cyan)
+![Voice](https://img.shields.io/badge/Voice-Deep%20Neural%20Hindi%2FHinglish-teal)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Voice](https://img.shields.io/badge/Voice-Spoken%20Replies%20Only-cyan)
 
-JARVIS AI OMEGA is a public personal AI project with **free testing mode through OpenRouter**, persistent local memory, multi-step local tool calling, safe local file intelligence, permission-gated Windows actions, and local text-to-speech output.
+JARVIS AI OMEGA V3 is a public personal-AI project focused on **powerful typed interaction with spoken replies**. It combines an OpenRouter free-model testing mode, optional OpenAI mode, multi-step tools, free public web/news search, persistent local memory, a local document knowledge base, permission-gated Windows actions, a terminal interface, and an optional futuristic desktop chat UI.
 
-There is **no microphone or speech-recognition input** in this release. You type; JARVIS displays and speaks its reply.
+There is **no microphone or wake-word input** in this release. You type; JARVIS reasons, uses approved tools when needed, displays the answer, and speaks it.
+
+## What V3 adds
+
+- **Free public web search** using the DDGS metasearch library
+- **Recent news search** and webpage text extraction
+- **Persistent local knowledge base**: index safe text/code files, then ask JARVIS about them later
+- **Chat export** to Markdown
+- **Chat history + memory/knowledge statistics**
+- **OpenRouter tool-support fallback** so free-router model changes are less likely to kill the chat loop
+- **Friendlier provider errors** for key, rate-limit, model and timeout failures
+- **Deeper/heavier Indian neural voice** with configurable pitch/rate/volume
+- **Automatic Hindi / Hinglish / English voice selection**
+- **Offline pyttsx3 fallback** if neural TTS fails
+- **Runtime mute/unmute and voice-test commands**
+- **Futuristic Tkinter desktop dashboard** in addition to the Rich terminal UI
+- Existing permission gates, secret-path blocking and read-only local file rules remain in place
 
 ## Default free testing mode
-
-The project now defaults to:
 
 ```env
 AI_PROVIDER=openrouter
 OPENROUTER_MODEL=openrouter/free
 ```
 
-`openrouter/free` automatically routes requests to currently available free models. Free models can have lower rate limits, changing availability, and variable latency/quality, so this mode is intended for testing, demos, learning, and low-volume personal use.
+OpenAI mode remains optional for later. In free OpenRouter mode, JARVIS can still use its own free custom web-search tools, local memory, indexed knowledge, and approved computer/file tools.
 
-OpenAI mode remains available as an optional provider for later.
-
-## Features
-
-- **OpenRouter Free Models Router** by default
-- Optional OpenAI provider mode
-- Hinglish + English auto style matching
-- Typed prompts + spoken JARVIS replies
-- No microphone dependency
-- Background offline TTS queue
-- Persistent SQLite memory and sessions
-- Multi-step custom function calling
-- Safe local file search/read tools
-- Permission-gated app and URL opening
-- System information + local time tools
-- Rich terminal UI
-- No arbitrary host shell
-- No credential extraction, file deletion, stealth control, or security-bypass tools
-- Automated GitHub Actions CI
-
-### Provider differences
+## Provider comparison
 
 | Capability | OpenRouter free mode | OpenAI mode |
 |---|---:|---:|
 | General chat | ✅ | ✅ |
-| Local memory/tools | ✅ | ✅ |
-| Spoken reply output | ✅ | ✅ |
-| Free-model testing | ✅ | — |
+| Local memory | ✅ | ✅ |
+| Local document knowledge base | ✅ | ✅ |
+| Free custom web/news search | ✅ | ✅ |
+| Local file/app tools | ✅ | ✅ |
+| Deep spoken replies | ✅ | ✅ |
+| Desktop dashboard | ✅ | ✅ |
 | Hosted OpenAI web search | — | ✅ when enabled |
 | Hosted OpenAI Code Interpreter | — | ✅ when enabled |
-
-OpenRouter free mode uses only the tools that are portable across providers. Hosted OpenAI-specific tools are automatically disabled in free mode.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    U[User - Typed Text] --> UI[Rich CLI]
-    UI --> CORE[JARVIS OMEGA Core]
+    U[User - Typed Text] --> UI{Interface}
+    UI --> CLI[Rich Terminal]
+    UI --> GUI[Tkinter Desktop Dashboard]
+    CLI --> CORE[JARVIS OMEGA V3 Core]
+    GUI --> CORE
     CORE --> ROUTER{AI Provider}
-    ROUTER --> OR[OpenRouter / openrouter-free]
+    ROUTER --> OR[OpenRouter Free Router]
     ROUTER --> OA[OpenAI Optional]
-    OR --> TOOLS[Local Function Tools]
-    OA --> TOOLS
+    CORE --> TOOLS[Function Tools]
+    TOOLS --> WEB[Free Web + News Search]
+    TOOLS --> MEM[SQLite Memory]
+    TOOLS --> KB[Local Knowledge Base]
+    TOOLS --> FILES[Read-only Local Files]
     TOOLS --> GATE[Permission Gate]
-    GATE --> MEM[SQLite Memory]
-    GATE --> FILES[Read-only Local Files]
-    GATE --> SYS[System Info / App & URL Launch]
-    CORE --> UI
-    UI --> TTS[Local Spoken Reply Output]
+    GATE --> SYS[Allowlisted Windows Actions]
+    CORE --> TTS[Deep Neural Hindi/Hinglish Voice]
+    TTS --> FALLBACK[Offline TTS Fallback]
 ```
 
 ## Project structure
@@ -81,6 +81,7 @@ JARVIS-AI-OMEGA/
 ├── jarvis/
 │   ├── config.py
 │   ├── core.py
+│   ├── gui.py
 │   ├── local_files.py
 │   ├── memory.py
 │   ├── permissions.py
@@ -88,10 +89,12 @@ JARVIS-AI-OMEGA/
 │   ├── system_tools.py
 │   ├── tools.py
 │   ├── ui.py
-│   └── voice.py
+│   ├── voice.py
+│   └── web_tools.py
 ├── tests/
 ├── .github/workflows/ci.yml
 ├── .env.example
+├── desktop_app.py
 ├── main.py
 ├── self_check.py
 ├── setup_windows.ps1
@@ -101,32 +104,38 @@ JARVIS-AI-OMEGA/
 
 ## Windows quick start
 
-Clone/pull the repository and run:
+Pull the latest code and install/update dependencies:
 
 ```powershell
+git pull
 Set-ExecutionPolicy -Scope Process Bypass
 .\setup_windows.ps1
 ```
 
-### Configure free mode
-
-Open `.env` and set:
+If `.env` already exists, setup keeps it unchanged. For free mode, make sure it contains:
 
 ```env
 AI_PROVIDER=openrouter
 OPENROUTER_API_KEY=your_openrouter_key_here
 OPENROUTER_MODEL=openrouter/free
+ENABLE_PUBLIC_WEB_TOOLS=true
 ```
 
-If you already had an older `.env`, setup intentionally keeps it unchanged, so add the OpenRouter lines manually.
+### Deeper voice profile
 
-Spoken replies are enabled by default:
+These are the new V3 defaults:
 
 ```env
-ENABLE_VOICE_OUTPUT=true
-VOICE_RATE=185
-VOICE_VOLUME=1.0
+VOICE_ENGINE=edge
+VOICE_HINDI=hi-IN-MadhurNeural
+VOICE_HINGLISH=en-IN-PrabhatNeural
+VOICE_ENGLISH=en-IN-PrabhatNeural
+EDGE_VOICE_RATE=-2%
+EDGE_VOICE_VOLUME=+5%
+EDGE_VOICE_PITCH=-18Hz
 ```
+
+Your old `.env` does not need these lines because V3 has the same values as code defaults. Add them only if you want to tune the voice manually.
 
 Validate:
 
@@ -134,57 +143,66 @@ Validate:
 .\.venv\Scripts\python.exe self_check.py
 ```
 
-Start:
+### Terminal mode
 
 ```powershell
 .\.venv\Scripts\python.exe main.py
 ```
 
-Or double-click `run_jarvis.bat`.
+### Desktop dashboard
 
-## Example
+```powershell
+.\.venv\Scripts\python.exe desktop_app.py
+```
+
+## Power commands
+
+| Command | Purpose |
+|---|---|
+| `/help` | Show all commands |
+| `/status` | Provider, actual model, tools, latency and voice status |
+| `/new` | Start a new chat session |
+| `/web <query>` | Free public web search |
+| `/news <query>` | Recent news search |
+| `/remember <text>` | Save a persistent fact |
+| `/recall <query>` | Search persistent facts |
+| `/learn <file>` | Index an approved local text/code file into JARVIS knowledge |
+| `/knowledge <query>` | Search indexed local knowledge |
+| `/history [n]` | Show recent messages |
+| `/export` | Export the current chat to Markdown |
+| `/stats` | Show sessions/messages/facts/knowledge statistics |
+| `/voice-test [hinglish|hindi|english]` | Test neural voice |
+| `/mute` | Mute spoken replies |
+| `/unmute` | Turn spoken replies back on |
+| `/clear` | Clear terminal screen |
+| `/sessions` | Show recent chat sessions |
+| `/exit` | Close JARVIS |
+
+## Examples
 
 ```text
-YOU: tumhe kisne bnaya
+YOU: tumhe kisne banaya?
 JARVIS: Adib Azam ne mujhe banaya hai.
 ```
 
-The JARVIS answer appears in the terminal and is also spoken through the computer speakers.
-
-## Status command
-
-Type:
-
 ```text
-/status
+/web latest Python release
+/news artificial intelligence India
+/learn "C:\Users\user\Documents\notes.txt"
+/knowledge decorators
+/export
+/voice-test hinglish
 ```
 
-JARVIS shows:
+## Safety model
 
-- active provider
-- configured model/router
-- actual last model returned by the provider
-- hosted-tool availability
-- local tools
-- voice output status
-- session and latency
+OMEGA is intentionally powerful without unrestricted host control. It does **not** expose arbitrary shell execution, credential scraping, password access, file deletion, software installation, persistence, stealth control, or security-bypass tools.
 
-## Optional OpenAI mode later
+Local file reads and knowledge indexing are restricted to approved roots and safe text/code file types; secret-like paths are blocked. Local actions that touch files/apps or open URLs remain permission-gated when configured. Public webpage/search content is treated as untrusted data, not as instructions to the agent.
 
-To switch back later:
+## Security note
 
-```env
-AI_PROVIDER=openai
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-5.6
-REASONING_EFFORT=xhigh
-```
-
-In OpenAI mode the project can also enable its hosted web-search and Code Interpreter integrations.
-
-## Safety
-
-OMEGA is intentionally powerful without unrestricted host control. Local file access is read-only and restricted to approved roots and safe text/code formats. Secret-like paths are blocked. The project does not expose arbitrary shell execution, credential scraping, deletion, installation, persistence, or security-bypass functions.
+Never commit `.env` or API keys. If a key appears in a screenshot, stream, public issue, or public repository, revoke it and generate a new one.
 
 ## License
 
@@ -192,4 +210,4 @@ MIT License — see [LICENSE](LICENSE).
 
 ---
 
-**JARVIS AI OMEGA — Created by Adib Azam**
+**JARVIS AI OMEGA V3 — Created by Adib Azam**
