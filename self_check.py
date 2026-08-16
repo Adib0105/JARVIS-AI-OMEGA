@@ -25,10 +25,15 @@ def main() -> None:
     except Exception as exc:
         results.append(check('Rich terminal UI', False, str(exc)))
     try:
-        import pyttsx3
-        results.append(check('Spoken reply engine', True, getattr(pyttsx3, '__version__', 'installed')))
+        import edge_tts
+        results.append(check('Neural Hindi/Hinglish TTS', True, getattr(edge_tts, '__version__', 'installed')))
     except Exception as exc:
-        results.append(check('Spoken reply engine', False, str(exc)))
+        results.append(check('Neural Hindi/Hinglish TTS', False, str(exc)))
+    try:
+        import pyttsx3
+        results.append(check('Offline TTS fallback', True, getattr(pyttsx3, '__version__', 'installed')))
+    except Exception as exc:
+        results.append(check('Offline TTS fallback', False, str(exc)))
 
     try:
         from jarvis.config import settings
@@ -45,8 +50,11 @@ def main() -> None:
             results.append(check('Free test model', settings.model == 'openrouter/free' or ':free' in settings.model,
                                  settings.model))
 
-        results.append(check('Voice output enabled', settings.enable_voice_output,
-                             f'rate={settings.voice_rate}, volume={settings.voice_volume}'))
+        voice_detail = (
+            f'engine={settings.voice_engine}, hindi={settings.voice_hindi}, '
+            f'hinglish={settings.voice_hinglish}'
+        )
+        results.append(check('Voice output enabled', settings.enable_voice_output, voice_detail))
         results.append(check('Microphone input', True, 'not installed by design'))
         results.append(check('Database folder writable',
                              os.access(settings.db_path.parent, os.W_OK) if settings.db_path.parent.exists() else True,
