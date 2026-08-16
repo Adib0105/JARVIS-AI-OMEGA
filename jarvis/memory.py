@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .config import settings
+from .vector_memory import rank_texts
 
 
 class MemoryStore:
@@ -38,10 +39,22 @@ class MemoryStore:
             )''')
             conn.execute('''CREATE INDEX IF NOT EXISTS idx_messages_session
                             ON messages(session_id, id)''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS session_summaries (
+                session_id TEXT PRIMARY KEY,
+                summary TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )''')
             conn.execute('''CREATE TABLE IF NOT EXISTS facts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 fact TEXT NOT NULL,
                 created_at TEXT NOT NULL
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             )''')
             conn.execute('''CREATE TABLE IF NOT EXISTS knowledge_docs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,6 +126,10 @@ class MemoryStore:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def message_count(self, session_id: str) -> int:
+        with self._lock, self._connect() as conn:
+            return int(conn.execute('SELECT COUNT(*) FROM messages WHERE session_id=?', (session_id,)).fetchone()[0])
+
     def search_messages(self, query: str, limit: int = 20) -> list[dict]:
         query = query.strip()
         if not query:
@@ -124,6 +141,24 @@ class MemoryStore:
                 (f'%{query}%', max(1, min(limit, 50))),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def set_session_summary(self, session_id: str, summary: str) -> None:
+        summary = summary.strip()[:12000]
+        if not summary:
+            return
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                '''INSERT INTO session_summaries(session_id, summary, updated_at)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(session_id) DO UPDATE SET summary=excluded.summary, updated_at=excluded.updated_at''',
+                (session_id, summary, self._now()),
+            )
+            conn.commit()
+
+    def get_session_summary(self, session_id: str) -> str:
+        with self._lock, self._connect() as conn:
+            row = conn.execute('SELECT summary FROM session_summaries WHERE session_id=?', (session_id,)).fetchone()
+        return str(row['summary']) if row else ''
 
     def remember(self, fact: str) -> str:
         fact = fact.strip()
@@ -148,6 +183,41 @@ class MemoryStore:
         with self._lock, self._connect() as conn:
             rows = conn.execute('SELECT fact FROM facts ORDER BY id DESC LIMIT ?', (limit,)).fetchall()
         return [r['fact'] for r in rows]
+
+    def add_note(self, title: str, content: str) -> dict:
+        title = title.strip()[:300] or 'Untitled note'
+        content = content.strip()[:50000]
+        if not content:
+            raise ValueError('Note content is empty.')
+        now = self._now()
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                'INSERT INTO notes(title, content, created_at, updated_at) VALUES (?, ?, ?, ?)',
+                (title, content, now, now),
+            )
+            conn.commit()
+            note_id = cur.lastrowid
+        return {'id': note_id, 'title': title, 'content': content, 'created_at': now}
+
+    def list_notes(self, limit: int = 30) -> list[dict]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                'SELECT id, title, content, created_at, updated_at FROM notes ORDER BY updated_at DESC LIMIT ?',
+                (max(1, min(limit, 100)),),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def search_notes(self, query: str, limit: int = 20) -> list[dict]:
+        query = query.strip()
+        if not query:
+            return self.list_notes(limit)
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                '''SELECT id, title, content, created_at, updated_at FROM notes
+                   WHERE title LIKE ? OR content LIKE ? ORDER BY updated_at DESC LIMIT ?''',
+                (f'%{query}%', f'%{query}%', max(1, min(limit, 50))),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def add_todo(self, title: str) -> dict:
         title = title.strip()[:500]
@@ -232,6 +302,13 @@ class MemoryStore:
             )
             conn.commit()
 
+    def agenda(self, limit: int = 20) -> dict:
+        return {
+            'open_todos': self.list_todos(False, limit),
+            'pending_reminders': self.list_reminders(False, limit),
+            'recent_notes': self.list_notes(min(limit, 10)),
+        }
+
     def list_sessions(self, limit: int = 12) -> list[dict]:
         with self._lock, self._connect() as conn:
             rows = conn.execute(
@@ -245,6 +322,8 @@ class MemoryStore:
             sessions = conn.execute('SELECT COUNT(*) FROM sessions').fetchone()[0]
             messages = conn.execute('SELECT COUNT(*) FROM messages').fetchone()[0]
             facts = conn.execute('SELECT COUNT(*) FROM facts').fetchone()[0]
+            notes = conn.execute('SELECT COUNT(*) FROM notes').fetchone()[0]
+            summaries = conn.execute('SELECT COUNT(*) FROM session_summaries').fetchone()[0]
             docs = conn.execute('SELECT COUNT(*) FROM knowledge_docs').fetchone()[0]
             chunks = conn.execute('SELECT COUNT(*) FROM knowledge_chunks').fetchone()[0]
             todos = conn.execute("SELECT COUNT(*) FROM todos WHERE status='open'").fetchone()[0]
@@ -253,6 +332,8 @@ class MemoryStore:
             'sessions': sessions,
             'messages': messages,
             'facts': facts,
+            'notes': notes,
+            'session_summaries': summaries,
             'knowledge_docs': docs,
             'knowledge_chunks': chunks,
             'open_todos': todos,
@@ -307,23 +388,30 @@ class MemoryStore:
             conn.commit()
         return {'source': source, 'chunks': len(chunks)}
 
-    def search_knowledge(self, query: str, limit: int = 6) -> list[dict]:
-        terms = [t.lower() for t in re.findall(r'[\w-]{2,}', query, flags=re.UNICODE)][:12]
-        if not terms:
-            return []
+    def _knowledge_rows(self, limit: int = 3000) -> list[dict]:
         with self._lock, self._connect() as conn:
             rows = conn.execute('''
                 SELECT kd.source, kc.chunk_index, kc.content
                 FROM knowledge_chunks kc
                 JOIN knowledge_docs kd ON kd.id = kc.doc_id
                 ORDER BY kc.id DESC
-                LIMIT 3000
-            ''').fetchall()
+                LIMIT ?
+            ''', (max(1, min(limit, 10000)),)).fetchall()
+        return [dict(r) for r in rows]
+
+    def search_knowledge(self, query: str, limit: int = 6) -> list[dict]:
+        terms = [t.lower() for t in re.findall(r'[\w-]{2,}', query, flags=re.UNICODE)][:12]
+        if not terms:
+            return []
         scored = []
-        for row in rows:
+        for row in self._knowledge_rows(3000):
             lowered = row['content'].lower()
             score = sum(lowered.count(term) for term in terms)
             if score:
-                scored.append((score, dict(row)))
+                scored.append((score, row))
         scored.sort(key=lambda item: item[0], reverse=True)
         return [item[1] | {'score': item[0]} for item in scored[:max(1, min(limit, 12))]]
+
+    def vector_search_knowledge(self, query: str, limit: int = 8) -> list[dict]:
+        """Local sparse-vector relevance search; no external embeddings/API required."""
+        return rank_texts(query, self._knowledge_rows(3000), 'content', limit)
