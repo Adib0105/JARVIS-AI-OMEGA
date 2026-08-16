@@ -1,17 +1,24 @@
-# JARVIS OMEGA V7 — Agent & Mission Engine
+# JARVIS AI OMEGA V7 / V7.5 — Agent & Mission Engine
 
-## Status
+## Purpose
 
-Phase 2 is implemented on `v7-development` with deterministic unit tests. The V6 `main` branch remains untouched as the stable baseline.
+The V7 mission engine turns a user goal into an auditable, recoverable sequence of actions with explicit verification.
+
+The target behavior is:
+
+```text
+UNDERSTAND → PLAN → PERMISSION → EXECUTE → VERIFY
+                              │             │
+                              │             └→ RECOVER / REPLAN
+                              ▼
+                         SAFE EVIDENCE
+```
+
+A mission should not report success merely because a tool returned without raising an exception.
 
 ## Mission state machine
 
-V7 persists mission state in additive SQLite tables:
-
-- `v7_missions`
-- `v7_mission_events`
-
-Mission states:
+Mission state is persisted in additive SQLite storage. Core states include:
 
 ```text
 IDLE
@@ -28,104 +35,188 @@ FAILED
 CANCELLED
 ```
 
-The current orchestrator records state changes and safe event summaries. It does not expose private chain-of-thought.
+State transitions and safe event summaries are recorded without exposing private chain-of-thought.
 
-## Mission object
+## Mission data
 
-A mission stores:
+A mission can track:
 
 - stable mission ID
-- goal/session ID
-- timestamps/status
+- session ID / user goal
+- created/updated timestamps
+- current status
 - ordered plan steps
-- current step
-- completed/failed step IDs
-- attempts/retry count
-- recovery count
-- tool evidence
-- per-step verification
-- final verification
-- final report
+- step status and attempts
+- safe tool/event summaries
+- verification evidence
+- retry/recovery/replan history
+- pause/cancel control state
 
-Failed steps remain in history. If a later replan successfully replaces a failed step, the old step is marked recovered rather than deleted. Old pending work made obsolete by a replan becomes `SUPERSEDED`.
+## Planning
 
-## Execution rule
+Planning should produce bounded, actionable steps rather than one giant opaque action.
 
-V7's target trust flow is:
+A useful plan separates:
+
+1. understanding the goal;
+2. reading/observing required state;
+3. requesting permission when needed;
+4. executing a specific action;
+5. verifying the result;
+6. recovering or replanning when evidence is insufficient.
+
+## Tool execution
+
+Tool calls run through the capability/security layer. The mission orchestrator does not bypass tool risk policy.
+
+Typical flow:
 
 ```text
-Intent
-  -> Plan
-  -> Permission
-  -> Action
-  -> Verification
-  -> Evidence
-  -> Report
+mission step
+→ tool profile / capabilities
+→ permission decision
+→ execute
+→ safe tool result
+→ verifier
+→ evidence state
 ```
-
-A tool returning without raising an exception is not automatically enough to claim verified success.
-
-## Tool evidence
-
-`RecordingToolRegistry` wraps the existing V6 ToolRegistry without rewriting handlers. It records the tool name, sanitized in-memory arguments, structured tool result, and timestamps for the current agent turn. These events feed step verification.
-
-Persistent audit redaction/capability metadata are Phase 3 responsibilities.
 
 ## Verification
 
-`VerificationEngine` distinguishes:
+Verification can classify outcomes as:
 
-- `VERIFIED` — structured evidence supports the result
-- `PARTIAL` — the action was acknowledged but the external/visible state could not be independently observed
-- `FAILED` — tool output or postcondition verification failed
+```text
+VERIFIED | PARTIAL | FAILED | UNVERIFIED
+```
 
 Examples:
 
-- safe model-only reasoning: verifies that a model result was produced; no external effect is claimed
-- local text write: re-reads the written file and compares expected content
-- unit tests: verifies process return code
-- Gmail send / Calendar create: records provider-returned IDs as provider acknowledgement
-- desktop click/type/app/browser launch: currently `PARTIAL` because V7 cannot yet semantically observe the resulting UI state; stronger semantic UI verification is Phase 5
+- opening an app can be VERIFIED if post-action observation shows the target window;
+- typing can be PARTIAL when the action occurred but field readback is unavailable;
+- an OCR-targeted click remains PARTIAL until the higher-level outcome is independently observed;
+- a failed or denied permission is not retried as if it were a transient error.
 
-A final report explicitly names unverified external actions instead of claiming full success.
+Explicit verification evidence from a tool is preserved rather than overwritten by an optimistic default.
 
-## Retry rules
+## Retry policy
 
-Transient retry policies exist for timeout, network, rate-limit, model and vision failures. Retry uses bounded exponential backoff with jitter.
+Retries are bounded and depend on error type and side-effect risk.
 
-A step containing side-effecting tool evidence is not blindly retried. That prevents duplicate emails, duplicate writes, repeated clicks, and similar unsafe recovery behavior.
+Transient read-only failures such as selected timeouts may be retried. Permission denials and non-retryable validation/security failures stop instead of repeatedly attempting the action.
 
-Permission denial is never retried or bypassed.
+## Recovery and replanning
 
-## Replanning
+Recovery attempts to repair the current step without pretending the original action succeeded.
 
-When a non-permission failure cannot be safely retried:
+Replanning can:
 
-1. preserve completed work
-2. preserve failed-step evidence
-3. ask the V7 replanner for the smallest safe remaining plan
-4. mark obsolete unexecuted steps `SUPERSEDED`
-5. execute only the replacement plan
-6. mark the original failure `RECOVERED` only if its replacement steps complete
+- preserve the failure history;
+- supersede obsolete pending steps;
+- create a revised plan from current evidence;
+- continue only when the new plan is valid and permission policy allows it.
 
-The number of replans is bounded.
+Failure history remains part of the mission record.
 
-## Cancellation and pause/resume
+## Pause / resume / cancel
 
-The orchestrator exposes mission-level control events:
+Missions support control flags for:
 
-- cancel
-- pause
-- resume
+```text
+PAUSE
+RESUME
+CANCEL
+```
 
-Cancellation prevents subsequent mission steps/retries from starting. It cannot retroactively undo an external action already completed before cancellation.
+A paused mission should not silently continue side-effecting work. A cancelled mission becomes terminal unless a new mission is intentionally created.
 
-GUI buttons/timeline wiring for these controls is planned for the product-polish UI phase, while the underlying runtime API exists now.
+## Capability Registry integration
 
-## Known Phase-2 limitations
+The agent receives runtime capability truth instead of assuming every documented feature is available.
 
-- semantic screen/browser post-action verification is not implemented yet
-- approval decisions are still V6 broad tool-name prompts until Phase 3 capability permissions
-- no distributed/background mission executor; one local runtime owns a mission
-- provider requests already in flight cannot always be force-cancelled by Python; cancellation stops future mission work
-- Gmail/Calendar provider acknowledgement is recorded, but deeper read-after-write verification will be strengthened later
+Capability states include:
+
+```text
+AVAILABLE | EXPERIMENTAL | DEGRADED | DISABLED | MISSING | BROKEN
+```
+
+This helps avoid false claims such as promising microphone/OCR/local-model behavior when the dependency or configuration is unavailable.
+
+## Context and memory
+
+The agent context builder combines the current request with bounded relevant memory. Current user intent has priority over stale memory.
+
+The mission layer can use working/episodic/semantic/procedural memory without turning old retrieved text into higher-priority instructions.
+
+## Browser and external-content isolation
+
+Web/search/page content is untrusted data. Browser content cannot replace the mission's security/system rules.
+
+Prompt-like text inside a webpage is evidence/data to analyze, not an instruction to reveal secrets, run commands or disable permissions.
+
+## Computer Use V2 integration
+
+For semantic desktop actions:
+
+```text
+observe controls
+→ score target
+→ confidence / ambiguity gate
+→ optional OCR fallback when appropriate
+→ permission
+→ action
+→ post-action observation
+→ verification
+```
+
+Low-confidence or ambiguous targeting stops safely rather than guessing.
+
+## Observability
+
+The mission engine can feed safe operational events to observability, including:
+
+- mission status/outcome
+- latency
+- retries/recovery/replans
+- provider/model path
+- tool failures
+- verification state
+
+Raw credentials and private chain-of-thought are not observability payloads.
+
+## Self Evaluation integration
+
+V7.5 self-evaluation derives metrics from persisted evidence such as mission outcomes, verification rates, recovery behavior, retries, tool success/failure and latency.
+
+Unsupported metrics remain `N/A` instead of being guessed.
+
+Capability Gap Detection can then use repeated failures/blockers and low measured performance to create improvement proposals.
+
+## Controlled self-development relationship
+
+The mission engine may identify or feed an improvement opportunity, but production source code is not rewritten directly from a normal mission.
+
+Improvement lifecycle:
+
+```text
+measured gap → proposal → isolated sandbox → build/test/debug/evaluate
+→ diff → approval → controlled release
+```
+
+See [V7-SELF-DEVELOPMENT.md](V7-SELF-DEVELOPMENT.md).
+
+## Operator UI
+
+The Agent Command Center can expose safe mission information such as:
+
+- current state
+- plan steps
+- verification status
+- failures/retries
+- pause/resume/cancel controls
+- health/capability context
+
+It should not expose hidden chain-of-thought.
+
+## Invariant
+
+The mission engine optimizes for **reliable completion with evidence**, not maximum action count.
