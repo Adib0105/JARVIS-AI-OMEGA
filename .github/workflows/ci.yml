@@ -89,3 +89,53 @@ jobs:
           name: windows-test-output-3.14
           path: windows-test-output.txt
           if-no-files-found: ignore
+
+  windows-package-smoke:
+    name: windows-package-smoke (3.14)
+    needs: windows-regression
+    runs-on: windows-latest
+    env:
+      OPENROUTER_API_KEY: test-key-not-used
+      AI_PROVIDER: openrouter
+      ENABLE_MIC_INPUT: 'false'
+      ENABLE_GOOGLE_WORKSPACE: 'false'
+      PRODUCTION_SELF_MODIFICATION: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Create isolated build environment
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --upgrade pip
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+      - name: Build V7 Windows application
+        shell: pwsh
+        run: .\build_windows.ps1
+      - name: Verify package and secret exclusion
+        shell: pwsh
+        run: |
+          $dist = '.\dist\JARVIS-OMEGA-V7'
+          $exe = Join-Path $dist 'JARVIS-OMEGA-V7.exe'
+          if (-not (Test-Path $exe)) { throw "Packaged EXE missing: $exe" }
+          $forbidden = Get-ChildItem $dist -Recurse -File | Where-Object {
+            $_.Name -eq '.env' -or
+            $_.Extension -in @('.db', '.sqlite', '.sqlite3') -or
+            $_.Name -in @('google_token.json', 'google_credentials.json')
+          }
+          if ($forbidden) {
+            $forbidden | ForEach-Object { Write-Host "FORBIDDEN BUNDLE FILE: $($_.FullName)" }
+            throw 'Secrets/private runtime data must not be bundled.'
+          }
+          Write-Host "Package smoke PASS: $exe"
+      - name: Upload package smoke artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-OMEGA-V7-windows-smoke
+          path: dist/JARVIS-OMEGA-V7
+          retention-days: 3
