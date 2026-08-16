@@ -52,11 +52,7 @@ class MissionControl:
 
 
 class MissionOrchestrator:
-    """Persisted V7 mission state machine.
-
-    This phase deliberately keeps planning/execution intelligence in the existing
-    core while making state, retries, verification, recovery and reporting explicit.
-    """
+    """Persisted V7 mission state machine with bounded recovery and evidence."""
 
     MAX_REPLANS = 2
 
@@ -116,7 +112,13 @@ class MissionOrchestrator:
     def recent(self, limit: int = 20) -> list[dict]:
         return self.store.list_recent(limit)
 
-    def _transition(self, mission: Mission, status: MissionStatus, progress: Callable[[str], None], detail: str = '') -> None:
+    def _transition(
+        self,
+        mission: Mission,
+        status: MissionStatus,
+        progress: Callable[[str], None],
+        detail: str = '',
+    ) -> None:
         mission.touch(status)
         self.store.save(mission)
         payload = {'status': status.value}
@@ -124,29 +126,27 @@ class MissionOrchestrator:
             payload['detail'] = detail[:1000]
         self.store.add_event(mission.id, 'mission.state', payload)
         log_event('MISSION', 'mission.state', mission_id=mission.id, status=status.value, detail=detail[:500])
-        label = status.value.replace('_', ' ')
-        progress(f'{label}' + (f': {detail}' if detail else ''))
+        progress(status.value.replace('_', ' ') + (f': {detail}' if detail else ''))
 
     def _collect_tool_events(self) -> list[dict]:
-        tools = getattr(self.core, 'tools', None)
-        drain = getattr(tools, 'drain_events', None)
-        if callable(drain):
-            return drain()
-        return []
+        drain = getattr(getattr(self.core, 'tools', None), 'drain_events', None)
+        return drain() if callable(drain) else []
 
     def _clear_tool_events(self) -> None:
-        tools = getattr(self.core, 'tools', None)
-        clear = getattr(tools, 'clear_events', None)
+        clear = getattr(getattr(self.core, 'tools', None), 'clear_events', None)
         if callable(clear):
             clear()
 
     @staticmethod
     def _failure_from_verification(verification: VerificationResult) -> Failure:
-        evidence_text = json.dumps(verification.evidence, ensure_ascii=False, default=str)
-        lower = evidence_text.lower()
-        if 'not approved' in lower or 'permission' in lower:
+        evidence_text = json.dumps(verification.evidence, ensure_ascii=False, default=str).lower()
+        if 'not approved' in evidence_text or 'permission' in evidence_text or 'denied' in evidence_text:
             return Failure(ErrorCategory.PERMISSION_ERROR, verification.summary, retryable=False)
-        return classify_exception(RuntimeError(verification.summary), operation='mission-step-verification')
+        if 'timeout' in evidence_text or 'timed out' in evidence_text:
+            return Failure(ErrorCategory.TIMEOUT, verification.summary, retryable=True)
+        if 'rate limit' in evidence_text:
+            return Failure(ErrorCategory.RATE_LIMIT, verification.summary, retryable=True)
+        return Failure(ErrorCategory.TOOL_ERROR, verification.summary, retryable=False)
 
     def _execute_step(
         self,
@@ -162,12 +162,7 @@ class MissionOrchestrator:
 
         attempt = 0
         while True:
-            if control.cancelled:
-                step.status = StepStatus.CANCELLED
-                step.completed_at = utc_now()
-                self.store.save(mission)
-                return False, Failure(ErrorCategory.UNKNOWN_ERROR, 'Mission cancelled.', retryable=False)
-            if not control.wait_if_paused(progress):
+            if control.cancelled or not control.wait_if_paused(progress):
                 step.status = StepStatus.CANCELLED
                 step.completed_at = utc_now()
                 self.store.save(mission)
@@ -182,8 +177,8 @@ class MissionOrchestrator:
                 f'Overall goal: {mission.goal}\n'
                 f'Current step {step.index}: {step.description}\n'
                 'Use available tools only when needed. Respect every permission gate. '
-                'Do not repeat a side-effecting action just because the prior result is uncertain. '
-                'Return a concise factual step result and never invent tool success.'
+                'Do not repeat a side-effecting action merely because a prior outcome is uncertain. '
+                'Return a concise factual step result. Never invent a tool outcome.'
             )
             try:
                 result = self.core.chat(prompt)
@@ -206,7 +201,8 @@ class MissionOrchestrator:
 
                 if verification.status != 'FAILED':
                     step.status = StepStatus.COMPLETED
-                    mission.completed_steps.append(step.id)
+                    if step.id not in mission.completed_steps:
+                        mission.completed_steps.append(step.id)
                     mission.results.append({
                         'step': step.index,
                         'description': step.description,
@@ -214,17 +210,18 @@ class MissionOrchestrator:
                         'verification': verification.status,
                     })
                     self.store.save(mission)
-                    progress(
-                        f'STEP {step.index} {verification.status}: {verification.summary}'
-                    )
+                    progress(f'STEP {step.index} {verification.status}: {verification.summary}')
                     return True, None
 
                 failure = self._failure_from_verification(verification)
             except Exception as exc:
-                events = self._collect_tool_events()
-                step.tool_events = events
+                step.tool_events = self._collect_tool_events()
                 step.error = f'{type(exc).__name__}: {exc}'[:2000]
-                failure = classify_exception(exc, provider=getattr(self.core, 'last_provider_used', None), operation='mission-step')
+                failure = classify_exception(
+                    exc,
+                    provider=getattr(self.core, 'last_provider_used', None),
+                    operation='mission-step',
+                )
 
             side_effecting = self.verifier.has_unsafe_retry_risk(step.tool_events)
             policy = self.retry.policy_for(failure, side_effecting=side_effecting)
@@ -243,7 +240,8 @@ class MissionOrchestrator:
             step.status = StepStatus.FAILED
             step.completed_at = utc_now()
             step.error = failure.message[:2000]
-            mission.failed_steps.append(step.id)
+            if step.id not in mission.failed_steps:
+                mission.failed_steps.append(step.id)
             mission.last_error = failure.message[:2000]
             self.store.save(mission)
             self.store.add_event(mission.id, 'step.failed', {
@@ -269,7 +267,7 @@ class MissionOrchestrator:
         ]
         raw = self.core._one_shot_text(
             'You are JARVIS OMEGA V7 Replanner. Return only a JSON array of the smallest safe remaining steps. '
-            'Preserve already completed work. Do not repeat uncertain side effects. Do not bypass permissions. '
+            'Preserve completed work. Do not repeat uncertain side effects. Do not bypass permissions. '
             'If recovery is impossible, return an empty JSON array.',
             (
                 f'Goal: {mission.goal}\n'
@@ -277,47 +275,66 @@ class MissionOrchestrator:
                 f'Failed step: {failed_step.description}\n'
                 f'Failure category: {failure.category.value}\n'
                 f'Failure: {failure.message[:1500]}\n'
-                f'Max new steps: {max(1, getattr(self.core, "last_plan", []) and len(self.core.last_plan) or 5)}'
+                'Maximum new steps: 5'
             ),
             'mission',
         )
         descriptions = self.core._extract_plan(raw, 5)
-        if len(descriptions) == 1 and descriptions[0].strip() in {'[]', ''}:
-            descriptions = []
         start = max((step.index for step in mission.plan), default=0) + 1
-        steps = [MissionStep(index=start + i, description=text) for i, text in enumerate(descriptions) if text.strip()]
+        replacements = [
+            MissionStep(index=start + i, description=text)
+            for i, text in enumerate(descriptions)
+            if text.strip() and text.strip() != '[]'
+        ]
+        failed_step.recovered_by = [step.id for step in replacements]
         self.store.add_event(mission.id, 'mission.replanned', {
             'failed_step': failed_step.index,
-            'new_steps': [step.description for step in steps],
+            'new_steps': [step.description for step in replacements],
         })
-        progress('REPLAN: ' + (' | '.join(step.description for step in steps) if steps else 'No safe recovery plan.'))
-        return steps
+        progress('REPLAN: ' + (' | '.join(step.description for step in replacements) if replacements else 'No safe recovery plan.'))
+        return replacements
+
+    @staticmethod
+    def _resolve_recovered_failures(mission: Mission) -> None:
+        by_id = {step.id: step for step in mission.plan}
+        for step in mission.plan:
+            if step.status != StepStatus.FAILED or not step.recovered_by:
+                continue
+            recovery_steps = [by_id.get(step_id) for step_id in step.recovered_by]
+            if recovery_steps and all(item is not None and item.status == StepStatus.COMPLETED for item in recovery_steps):
+                step.recovered = True
 
     def _final_verification(self, mission: Mission) -> VerificationResult:
-        verifications = [step.verification for step in mission.plan if step.status == StepStatus.COMPLETED and step.verification]
-        failures = [step for step in mission.plan if step.status == StepStatus.FAILED]
-        unverified = []
-        evidence = []
+        self._resolve_recovered_failures(mission)
+        completed = [step for step in mission.plan if step.status == StepStatus.COMPLETED]
+        verifications = [step.verification for step in completed if step.verification]
+        active_failures = [step for step in mission.plan if step.status == StepStatus.FAILED and not step.recovered]
+        unverified: list[str] = []
+        evidence: list[dict] = []
         for verification in verifications:
             evidence.extend(verification.evidence)
             unverified.extend(verification.unverified_actions)
-        verified = bool(mission.plan) and not failures and all(v.verified for v in verifications) and len(verifications) == len([
-            step for step in mission.plan if step.status == StepStatus.COMPLETED
-        ])
-        if failures:
+
+        fully_verified = (
+            bool(completed)
+            and not active_failures
+            and len(verifications) == len(completed)
+            and all(item.verified for item in verifications)
+        )
+        if active_failures:
             status = 'FAILED'
-            summary = f'{len(failures)} mission step(s) failed.'
+            summary = f'{len(active_failures)} unrecovered mission step(s) failed.'
         elif unverified:
             status = 'PARTIAL'
             summary = f'Mission completed with {len(unverified)} externally unverified action(s).'
-        elif verified:
+        elif fully_verified:
             status = 'VERIFIED'
-            summary = 'All completed mission steps have verification evidence.'
+            summary = 'All effective mission steps have verification evidence.'
         else:
             status = 'PARTIAL'
             summary = 'Mission produced results but final verification is incomplete.'
         return VerificationResult(
-            verified=verified,
+            verified=fully_verified,
             status=status,
             summary=summary,
             evidence=evidence[-100:],
@@ -336,8 +353,9 @@ class MissionOrchestrator:
         lines.append('Steps:')
         for step in mission.plan:
             check = step.verification.status if step.verification else 'NOT VERIFIED'
-            lines.append(f'- {step.index}. {step.description} [{step.status.value}; {check}]')
-        if mission.last_error:
+            recovery = ' RECOVERED' if step.recovered else ''
+            lines.append(f'- {step.index}. {step.description} [{step.status.value}{recovery}; {check}]')
+        if mission.last_error and mission.status == MissionStatus.FAILED:
             lines.append(f'Blocker: {mission.last_error}')
         if verification and verification.unverified_actions:
             lines.append('Unverified external actions: ' + ', '.join(sorted(set(verification.unverified_actions))))
@@ -394,9 +412,10 @@ class MissionOrchestrator:
                     break
 
                 step = mission.plan[cursor]
-                if step.status == StepStatus.COMPLETED:
+                if step.status in {StepStatus.COMPLETED, StepStatus.SUPERSEDED}:
                     cursor += 1
                     continue
+
                 ok, failure = self._execute_step(mission, step, control, progress)
                 if ok:
                     cursor += 1
@@ -421,6 +440,9 @@ class MissionOrchestrator:
                         self._transition(mission, MissionStatus.FAILED, progress, mission.last_error)
                         break
                     if replacements:
+                        for pending in mission.plan[cursor + 1:]:
+                            if pending.status == StepStatus.PENDING:
+                                pending.status = StepStatus.SUPERSEDED
                         mission.plan.extend(replacements)
                         self.store.save(mission)
                         cursor += 1
@@ -430,12 +452,14 @@ class MissionOrchestrator:
                 self._transition(mission, MissionStatus.FAILED, progress, mission.last_error)
                 break
 
+            mission.final_verification = self._final_verification(mission)
             if mission.status not in {MissionStatus.FAILED, MissionStatus.CANCELLED}:
-                mission.final_verification = self._final_verification(mission)
-                # PARTIAL is completion with explicit evidence limitations, not a false verified success.
-                self._transition(mission, MissionStatus.COMPLETED, progress, mission.final_verification.summary)
-            else:
-                mission.final_verification = self._final_verification(mission)
+                if mission.final_verification.status == 'FAILED':
+                    mission.last_error = mission.final_verification.summary
+                    self._transition(mission, MissionStatus.FAILED, progress, mission.last_error)
+                else:
+                    mission.last_error = ''
+                    self._transition(mission, MissionStatus.COMPLETED, progress, mission.final_verification.summary)
 
             mission.final_report = self._build_report(mission)
             self.store.save(mission)
