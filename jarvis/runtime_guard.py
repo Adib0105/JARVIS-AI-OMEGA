@@ -34,7 +34,7 @@ def local_identity_answer(text: str) -> str | None:
     creator = settings.creator_name or 'Adib Azam'
     assistant = settings.assistant_name or 'JARVIS OMEGA'
     wants_capabilities = any(pattern in lower for pattern in _CAPABILITY_PATTERNS)
-    base = f'{creator} ne mujhe banaya hai. Main {assistant} V6 hoon.'
+    base = f'{creator} ne mujhe banaya hai. Main {assistant} V7 hoon.'
     if not wants_capabilities:
         return base
 
@@ -73,7 +73,7 @@ def clean_display_text(text: str) -> str:
 
 
 def looks_garbled(answer: str, user_text: str = '') -> bool:
-    """Conservative detector for the kind of mixed-script/router corruption seen in free-router output."""
+    """Conservative detector for mixed-script/router corruption."""
     if not answer or len(answer.strip()) < 2:
         return True
     if '\ufffd' in answer:
@@ -111,40 +111,33 @@ def preferred_text_model(configured_model: str, kind: str = 'chat') -> str:
 
 
 def _repair_answer(self, user_text: str, bad_answer: str) -> str:
-    """Retry once without tools using the stable text model when a completion is visibly corrupted."""
+    """Retry once through the provider abstraction when a completion is visibly corrupted."""
     if settings.provider != 'openrouter':
         return bad_answer
     try:
-        response = self.client.chat.completions.create(
+        turn = self.provider.chat(
+            system=(
+                f'You are {settings.assistant_name} V7, created by {settings.creator_name}. '
+                'Answer the user directly in clean Hinglish/English matching the user. '
+                'Use only Latin and Devanagari scripts unless the user explicitly requests another script. '
+                'Do not output HTML/XML tags or broken template tokens. Do not mention this repair instruction.'
+            ),
+            messages=[{'role': 'user', 'content': user_text}],
             model=STABLE_FREE_TEXT_MODEL,
-            messages=[
-                {
-                    'role': 'system',
-                    'content': (
-                        f'You are {settings.assistant_name} V6, created by {settings.creator_name}. '
-                        'Answer the user directly in clean Hinglish/English matching the user. '
-                        'Use only Latin and Devanagari scripts unless the user explicitly requests another script. '
-                        'Do not output HTML/XML tags or broken template tokens. Do not mention this repair instruction.'
-                    ),
-                },
-                {'role': 'user', 'content': user_text},
-            ],
             timeout=settings.ai_timeout_seconds,
         )
-        self.last_model_used = getattr(response, 'model', STABLE_FREE_TEXT_MODEL) or STABLE_FREE_TEXT_MODEL
+        self.last_model_used = turn.model or STABLE_FREE_TEXT_MODEL
         self.last_provider_used = 'openrouter-quality-retry'
-        content = response.choices[0].message.content
-        repaired = content.strip() if isinstance(content, str) else str(content or '').strip()
-        return repaired or bad_answer
+        return turn.text.strip() or bad_answer
     except Exception:
         return bad_answer
 
 
 def install_runtime_guards() -> None:
-    """Patch the runtime at app startup without changing the core agent/tool architecture."""
+    """Temporary V7 compatibility quality guard; later absorbed into router/orchestrator services."""
     from .core import JarvisOmega
 
-    if getattr(JarvisOmega, '_v6_runtime_guard_installed', False):
+    if getattr(JarvisOmega, '_v7_runtime_guard_installed', False):
         return
 
     original_select = JarvisOmega._select_model
@@ -172,7 +165,7 @@ def install_runtime_guards() -> None:
                 self.last_tool_mode = 'identity-guard'
             else:
                 try:
-                    answer = self._chat_openrouter() if settings.provider == 'openrouter' else self._chat_openai()
+                    answer = self._chat_provider()
                 except Exception as exc:
                     answer = self._chat_local_fallback(exc)
                 if looks_garbled(answer, text):
@@ -187,11 +180,11 @@ def install_runtime_guards() -> None:
 
     JarvisOmega._select_model = guarded_select
     JarvisOmega.chat = guarded_chat
-    JarvisOmega._v6_runtime_guard_installed = True
+    JarvisOmega._v7_runtime_guard_installed = True
 
 
 def run_adaptive_gui() -> None:
-    """Launch a readable, balanced V6 layout on common laptop displays."""
+    """Launch the GUI with a balanced compact layout on common 1366x768 laptops."""
     import tkinter as tk
     from . import gui as gui_module
 
@@ -201,12 +194,9 @@ def run_adaptive_gui() -> None:
     compact = screen_h <= 820 or screen_w <= 1400
 
     if compact:
-        # Preserve the user's native Windows DPI instead of forcing the old 0.86 scale.
-        # Only reduce it slightly so a 1366x768 screen remains readable while controls still fit.
         try:
-            native_scale = float(root.tk.call('tk', 'scaling'))
-            balanced_scale = max(1.0, native_scale * 0.93)
-            root.tk.call('tk', 'scaling', balanced_scale)
+            current_scale = float(root.tk.call('tk', 'scaling'))
+            root.tk.call('tk', 'scaling', max(1.0, current_scale * 0.93))
         except Exception:
             pass
 
@@ -230,7 +220,7 @@ def run_adaptive_gui() -> None:
                 relief='flat',
                 cursor='hand2',
                 padx=8,
-                pady=3,
+                pady=4,
                 font=('Segoe UI', 8, 'bold'),
                 highlightthickness=1,
                 highlightbackground='#123f51',
@@ -240,7 +230,7 @@ def run_adaptive_gui() -> None:
 
     gui_module.JarvisDesktop(root)
     if compact:
-        root.minsize(min(1020, screen_w - 40), min(620, screen_h - 90))
+        root.minsize(min(1040, screen_w - 40), min(620, screen_h - 100))
     try:
         if os.name == 'nt':
             root.state('zoomed')
