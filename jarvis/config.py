@@ -36,9 +36,17 @@ class Settings:
     enable_code_interpreter: bool = _bool('ENABLE_CODE_INTERPRETER', True)
     enable_local_tools: bool = _bool('ENABLE_LOCAL_TOOLS', True)
     require_local_approval: bool = _bool('REQUIRE_LOCAL_APPROVAL', True)
+
     enable_voice_output: bool = _bool('ENABLE_VOICE_OUTPUT', True)
-    voice_rate: int = int(os.getenv('VOICE_RATE', '185'))
+    voice_engine: str = os.getenv('VOICE_ENGINE', 'edge').strip().lower()
+    voice_hindi: str = os.getenv('VOICE_HINDI', 'hi-IN-MadhurNeural')
+    voice_hinglish: str = os.getenv('VOICE_HINGLISH', 'en-IN-PrabhatNeural')
+    voice_english: str = os.getenv('VOICE_ENGLISH', 'en-IN-PrabhatNeural')
+    edge_voice_rate: str = os.getenv('EDGE_VOICE_RATE', '+3%')
+    edge_voice_volume: str = os.getenv('EDGE_VOICE_VOLUME', '+0%')
+    voice_rate: int = int(os.getenv('VOICE_RATE', '180'))
     voice_volume: float = float(os.getenv('VOICE_VOLUME', '1.0'))
+
     max_tool_rounds: int = int(os.getenv('MAX_TOOL_ROUNDS', '10'))
     history_messages: int = int(os.getenv('HISTORY_MESSAGES', '24'))
     db_path: Path = Path(os.getenv('JARVIS_DB_PATH', str(ROOT / 'data' / 'jarvis.db'))).expanduser()
