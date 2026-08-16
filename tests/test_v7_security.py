@@ -39,6 +39,39 @@ class V7SecurityTests(unittest.TestCase):
         self.assertTrue(outcome.allowed)
         self.assertEqual(called, [])
 
+    def test_trusted_local_mode_auto_allows_allowlisted_app_control(self):
+        called = []
+        gate = CapabilityPermissionGate(lambda *_: called.append(True) or ApprovalDecision.DENY.value)
+        with patch.dict(os.environ, {'TRUSTED_LOCAL_MODE': 'true', 'PERMISSION_APP_CONTROL': 'ask'}):
+            outcome = gate.check('open_app', {'app': 'chrome'})
+        self.assertTrue(outcome.allowed)
+        self.assertEqual(called, [])
+        self.assertIn('Trusted Local Mode', outcome.reason)
+
+    def test_trusted_local_mode_auto_allows_browser_search(self):
+        called = []
+        gate = CapabilityPermissionGate(lambda *_: called.append(True) or ApprovalDecision.DENY.value)
+        with patch.dict(os.environ, {'TRUSTED_LOCAL_MODE': 'true', 'PERMISSION_BROWSER_CONTROL': 'ask'}):
+            outcome = gate.check('browser_search', {'query': 'OpenAI', 'engine': 'google'})
+        self.assertTrue(outcome.allowed)
+        self.assertEqual(called, [])
+
+    def test_trusted_local_mode_does_not_bypass_high_risk_keyboard_control(self):
+        calls = []
+        gate = CapabilityPermissionGate(lambda *_: calls.append(1) or ApprovalDecision.ALLOW_ONCE.value)
+        with patch.dict(os.environ, {'TRUSTED_LOCAL_MODE': 'true', 'PERMISSION_KEYBOARD_CONTROL': 'ask'}):
+            outcome = gate.check('type_text', {'text': 'hello', 'interval': 0.02})
+        self.assertTrue(outcome.allowed)
+        self.assertEqual(len(calls), 1)
+
+    def test_disabling_trusted_local_mode_restores_prompt(self):
+        calls = []
+        gate = CapabilityPermissionGate(lambda *_: calls.append(1) or ApprovalDecision.ALLOW_ONCE.value)
+        with patch.dict(os.environ, {'TRUSTED_LOCAL_MODE': 'false', 'PERMISSION_APP_CONTROL': 'ask'}):
+            outcome = gate.check('open_app', {'app': 'chrome'})
+        self.assertTrue(outcome.allowed)
+        self.assertEqual(len(calls), 1)
+
     def test_file_write_can_be_allowed_for_session(self):
         calls = []
         gate = CapabilityPermissionGate(lambda *_: calls.append(1) or ApprovalDecision.ALLOW_SESSION.value)
@@ -47,6 +80,17 @@ class V7SecurityTests(unittest.TestCase):
             second = gate.check('write_local_text_file', {'file_path': 'y.py', 'content': 'print(2)'})
         self.assertTrue(first.allowed)
         self.assertTrue(second.allowed)
+        self.assertEqual(len(calls), 1)
+
+    def test_require_local_approval_false_still_does_not_bypass_high_risk(self):
+        calls = []
+        gate = CapabilityPermissionGate(
+            lambda *_: calls.append(1) or ApprovalDecision.ALLOW_ONCE.value,
+            require_approval=False,
+        )
+        with patch.dict(os.environ, {'TRUSTED_LOCAL_MODE': 'false', 'PERMISSION_MOUSE_CONTROL': 'ask', 'PERMISSION_SCREEN_CONTROL': 'ask'}):
+            outcome = gate.check('click_screen', {'x': 100, 'y': 100, 'button': 'left'})
+        self.assertTrue(outcome.allowed)
         self.assertEqual(len(calls), 1)
 
     def test_email_send_always_asks_even_after_session_request(self):
