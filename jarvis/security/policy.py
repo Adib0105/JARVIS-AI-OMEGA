@@ -142,7 +142,7 @@ def normalize_decision(value) -> ApprovalDecision:
 
 
 class CapabilityPermissionGate:
-    """Granular V7 capability gate with backward-compatible approval callbacks."""
+    """Granular V7 capability gate with backward-compatible Decision-like results."""
 
     def __init__(
         self,
@@ -160,9 +160,11 @@ class CapabilityPermissionGate:
         with self._lock:
             self._session_grants.clear()
 
-    def _set_outcome(self, outcome: PermissionOutcome) -> None:
+    def _outcome(self, allowed: bool, decision: ApprovalDecision, profile: ToolSecurityProfile, reason: str) -> PermissionOutcome:
+        outcome = PermissionOutcome(allowed, decision, profile, reason)
         with self._lock:
             self._last_outcome = outcome
+        return outcome
 
     def consume_last_outcome(self) -> PermissionOutcome | None:
         with self._lock:
@@ -170,44 +172,44 @@ class CapabilityPermissionGate:
             self._last_outcome = None
             return outcome
 
-    def check(self, tool_name: str, args: dict) -> bool:
+    def check(self, tool_name: str, args: dict) -> PermissionOutcome:
         profile = profile_for(tool_name)
         capabilities = tuple(sorted(profile.capabilities, key=lambda item: item.value))
 
         if not capabilities:
-            outcome = PermissionOutcome(False, ApprovalDecision.DENY, profile, 'Unprofiled tool has no granted capabilities.')
-            self._set_outcome(outcome)
-            raise PermissionError(f"Tool '{tool_name}' has no V7 capability profile and is denied by default.")
+            return self._outcome(
+                False, ApprovalDecision.DENY, profile,
+                f"Tool '{tool_name}' has no V7 capability profile and is denied by default.",
+            )
 
         policies = {cap.value: policy_for(cap) for cap in capabilities}
-        if any(policy == PermissionPolicy.DENY for policy in policies.values()):
-            outcome = PermissionOutcome(False, ApprovalDecision.DENY, profile, 'One or more required capabilities are denied.')
-            self._set_outcome(outcome)
-            denied = ', '.join(cap for cap, policy in policies.items() if policy == PermissionPolicy.DENY)
-            raise PermissionError(f'Denied by V7 capability policy: {denied}')
+        denied = [cap for cap in capabilities if policies[cap.value] == PermissionPolicy.DENY]
+        if denied:
+            names = ', '.join(cap.value for cap in denied)
+            return self._outcome(
+                False, ApprovalDecision.DENY, profile,
+                f'Denied by V7 capability policy: {names}',
+            )
 
         with self._lock:
             granted = set(self._session_grants)
-
         requires_always = [cap for cap in capabilities if policies[cap.value] == PermissionPolicy.ALWAYS_ASK]
-        requires_ask = [
-            cap for cap in capabilities
-            if policies[cap.value] == PermissionPolicy.ASK and cap not in granted
-        ]
+        requires_ask = [cap for cap in capabilities if policies[cap.value] == PermissionPolicy.ASK and cap not in granted]
         needs_prompt = bool(requires_always or requires_ask)
-
         if not self.require_approval and not requires_always:
             needs_prompt = False
 
         if not needs_prompt:
-            outcome = PermissionOutcome(True, ApprovalDecision.ALLOW_ONCE, profile, 'Allowed by configured capability policy.')
-            self._set_outcome(outcome)
-            return True
+            return self._outcome(
+                True, ApprovalDecision.ALLOW_ONCE, profile,
+                'Allowed by configured V7 capability policy.',
+            )
 
         if self.confirmer is None:
-            outcome = PermissionOutcome(False, ApprovalDecision.DENY, profile, 'Approval is required but no approval UI/callback is available.')
-            self._set_outcome(outcome)
-            raise PermissionError(f"Tool '{tool_name}' requires user approval.")
+            return self._outcome(
+                False, ApprovalDecision.DENY, profile,
+                f"Tool '{tool_name}' requires user approval but no approval UI/callback is available.",
+            )
 
         request = ApprovalRequest(
             tool_name=tool_name,
@@ -224,16 +226,11 @@ class CapabilityPermissionGate:
             with self._lock:
                 self._session_grants.update(grantable)
             if requires_always:
+                # ALWAYS_ASK permissions are allowed only for this action and never persisted.
                 decision = ApprovalDecision.ALLOW_ONCE
 
-        allowed = decision in {ApprovalDecision.ALLOW_ONCE, ApprovalDecision.ALLOW_SESSION}
-        reason = 'User approved the action.' if allowed else 'User denied/cancelled the action.'
-        outcome = PermissionOutcome(allowed, decision, profile, reason)
-        self._set_outcome(outcome)
-        if not allowed:
-            raise PermissionError(
-                'Mission cancellation requested by user.'
-                if decision == ApprovalDecision.CANCEL_MISSION
-                else 'Action was not approved by user.'
-            )
-        return True
+        if decision in {ApprovalDecision.ALLOW_ONCE, ApprovalDecision.ALLOW_SESSION}:
+            return self._outcome(True, decision, profile, 'User approved the action.')
+        if decision == ApprovalDecision.CANCEL_MISSION:
+            return self._outcome(False, decision, profile, 'Mission cancellation requested by user.')
+        return self._outcome(False, ApprovalDecision.DENY, profile, 'Action was not approved by user.')
