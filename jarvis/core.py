@@ -1,8 +1,7 @@
 """Public JARVIS OMEGA V7 compatibility core.
 
-`JarvisOmega` keeps the existing import/API surface while layering the V7 mission
-orchestrator, evidence-recording tools, capability permissions and audit context
-over the provider-neutral core.
+`JarvisOmega` keeps the existing import/API surface while layering V7 orchestration,
+security, layered memory and bounded context over the provider-neutral core.
 """
 
 from __future__ import annotations
@@ -11,14 +10,22 @@ import json
 import re
 from typing import Callable
 
+from .agent.context import ContextManager
 from .agent.orchestrator import MissionOrchestrator
 from .agent.tool_runtime import RecordingToolRegistry
 from .core_v7 import JarvisOmega as _ProviderCore
+from .memory_v7 import MemoryKind, V7MemoryStore
+from .prompt import system_prompt
 
 
 class JarvisOmega(_ProviderCore):
     def __init__(self, confirmer: Callable[[str, dict], object] | None = None):
         super().__init__(confirmer=confirmer)
+        # Re-open the same database through the additive V7 memory layer. The session
+        # created by the provider core remains valid because both stores use the same DB.
+        db_path = self.memory.db_path
+        self.memory = V7MemoryStore(db_path)
+        self.context_manager = ContextManager(self.memory)
         self.tools = RecordingToolRegistry(
             self.memory,
             confirmer,
@@ -26,17 +33,43 @@ class JarvisOmega(_ProviderCore):
         )
         self.orchestrator = MissionOrchestrator(self)
         self.last_mission_id: str | None = None
+        self.last_context_stats: dict = {}
 
-    def _tool_audit_context(self) -> dict:
-        request_summary = ''
+    def _latest_user_request(self) -> str:
         try:
-            rows = self.memory.recent_messages(self.session_id)
-            for role, content in reversed(rows):
+            for role, content in reversed(self.memory.recent_messages(self.session_id, 12)):
                 if role == 'user':
-                    request_summary = str(content)[:800]
-                    break
+                    return str(content)
         except Exception:
             pass
+        return ''
+
+    def _system_instructions(self) -> str:
+        prompt = system_prompt()
+        request = self._latest_user_request()
+        orchestrator = getattr(self, 'orchestrator', None)
+        mission_id = getattr(orchestrator, 'current_mission_id', None) or ''
+        if request:
+            try:
+                bundle = self.context_manager.build(
+                    session_id=self.session_id,
+                    current_request=request,
+                    mission_id=mission_id,
+                )
+                self.last_context_stats = {
+                    'characters': bundle.characters,
+                    'memory_count': bundle.memory_count,
+                    'knowledge_count': bundle.knowledge_count,
+                }
+                if bundle.text:
+                    prompt += '\n\nV7 LOCAL CONTEXT BUNDLE:\n' + bundle.text
+            except Exception:
+                # Context retrieval is helpful but must never prevent the core chat path.
+                pass
+        return prompt
+
+    def _tool_audit_context(self) -> dict:
+        request_summary = self._latest_user_request()[:800]
         orchestrator = getattr(self, 'orchestrator', None)
         return {
             'session_id': self.session_id,
@@ -68,6 +101,22 @@ class JarvisOmega(_ProviderCore):
             'assistant',
             f'[V7 MISSION {mission.id}]\n{mission.final_report}',
         )
+        try:
+            self.memory.remember_v7(
+                mission.final_report,
+                kind=MemoryKind.EPISODIC,
+                importance=0.8,
+                confidence=0.95 if mission.final_verification and mission.final_verification.verified else 0.65,
+                source=f'mission:{mission.id}',
+                metadata={
+                    'mission_id': mission.id,
+                    'status': mission.status.value,
+                    'verification': mission.final_verification.status if mission.final_verification else 'UNKNOWN',
+                },
+                verified=bool(mission.final_verification and mission.final_verification.verified),
+            )
+        except Exception:
+            pass
         return mission.final_report
 
     def cancel_mission(self, mission_id: str | None = None) -> bool:
