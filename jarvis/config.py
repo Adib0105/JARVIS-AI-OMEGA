@@ -60,6 +60,9 @@ class Settings:
     enable_desktop_automation: bool = _bool('ENABLE_DESKTOP_AUTOMATION', True)
     enable_document_intelligence: bool = _bool('ENABLE_DOCUMENT_INTELLIGENCE', True)
     enable_coding_tools: bool = _bool('ENABLE_CODING_TOOLS', True)
+    enable_google_workspace: bool = _bool('ENABLE_GOOGLE_WORKSPACE', False)
+    google_credentials_file: Path = _path('GOOGLE_OAUTH_CLIENT_FILE', ROOT / 'google_credentials.json')
+    google_token_file: Path = _path('GOOGLE_TOKEN_FILE', ROOT / 'data' / 'google_token.json')
 
     enable_voice_output: bool = _bool('ENABLE_VOICE_OUTPUT', True)
     voice_engine: str = os.getenv('VOICE_ENGINE', 'edge').strip().lower()
