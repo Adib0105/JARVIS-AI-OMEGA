@@ -16,6 +16,12 @@ from .tools import ToolRegistry
 
 
 class JarvisOmega:
+    SMART_HINTS = {
+        'analyze', 'analyse', 'debug', 'error', 'architecture', 'plan', 'mission', 'compare',
+        'reason', 'why', 'code', 'project', 'security', 'document', 'review', 'research',
+        'समझाओ', 'क्यों', 'विश्लेषण', 'problem', 'issue', 'fix', 'advance', 'advanced',
+    }
+
     def __init__(self, confirmer: Callable[[str, dict], bool] | None = None):
         if settings.provider not in {'openrouter', 'openai'}:
             raise RuntimeError("AI_PROVIDER must be 'openrouter' or 'openai'.")
@@ -37,19 +43,49 @@ class JarvisOmega:
                 },
             })
         self.client = OpenAI(**client_kwargs)
+        self._local_client: OpenAI | None = None
 
         self.memory = MemoryStore()
         self.tools = ToolRegistry(self.memory, confirmer)
         self.session_id = self.memory.new_session('JARVIS OMEGA V6 session')
         self.last_latency = 0.0
         self.last_model_used = settings.model
+        self.last_provider_used = settings.provider
+        self.last_route = 'default'
         self.last_tool_mode = 'full'
         self.last_request_kind = 'chat'
         self.last_plan: list[str] = []
+        self._active_model = settings.model
 
     def new_session(self) -> str:
         self.session_id = self.memory.new_session('JARVIS OMEGA V6 session')
         return self.session_id
+
+    def _select_model(self, text: str, kind: str = 'chat') -> str:
+        if kind == 'image':
+            self.last_route = 'vision'
+            return settings.routed_vision_model
+        if kind in {'mission', 'summary', 'review'}:
+            self.last_route = 'smart'
+            return settings.routed_smart_model
+        if settings.model_routing not in {'auto', 'on', 'true'}:
+            self.last_route = 'default'
+            return settings.model
+        lower = text.lower()
+        smart = len(text) > 700 or any(hint in lower for hint in self.SMART_HINTS)
+        self.last_route = 'smart' if smart else 'fast'
+        return settings.routed_smart_model if smart else settings.routed_fast_model
+
+    def _system_instructions(self) -> str:
+        prompt = system_prompt()
+        summary = self.memory.get_session_summary(self.session_id)
+        if summary:
+            prompt += (
+                '\n\nSESSION CONTINUITY SUMMARY (locally stored, may be incomplete):\n'
+                + summary[:12000]
+                + '\nUse it only as conversation context; current user messages override stale summary details.'
+            )
+        return prompt
 
     def _openai_model_tools(self) -> list[dict]:
         tools = self.tools.schemas(include_local=settings.enable_local_tools)
@@ -110,20 +146,58 @@ class JarvisOmega:
             return RuntimeError('AI provider response timeout hua. Internet/free-model availability check karke retry karo.')
         return RuntimeError(f'{provider} request failed: {raw[:500]}')
 
+    def _can_local_fallback(self) -> bool:
+        return bool(settings.enable_local_fallback and settings.local_ai_base_url and settings.local_ai_model)
+
+    def _get_local_client(self) -> OpenAI:
+        if self._local_client is None:
+            self._local_client = OpenAI(
+                api_key=settings.local_ai_api_key,
+                base_url=settings.local_ai_base_url,
+                timeout=settings.ai_timeout_seconds,
+                max_retries=0,
+            )
+        return self._local_client
+
+    def _chat_local_fallback(self, primary_error: Exception) -> str:
+        if not self._can_local_fallback():
+            raise self._friendly_error(primary_error) from primary_error
+        try:
+            response = self._get_local_client().chat.completions.create(
+                model=settings.local_ai_model,
+                messages=[{'role': 'system', 'content': self._system_instructions()}] + self._history(),
+                timeout=settings.ai_timeout_seconds,
+            )
+            self.last_provider_used = 'local-fallback'
+            self.last_model_used = getattr(response, 'model', settings.local_ai_model) or settings.local_ai_model
+            self.last_tool_mode = 'local-fallback-no-tools'
+            content = response.choices[0].message.content
+            answer = content.strip() if isinstance(content, str) else str(content or '').strip()
+            return answer or 'Local fallback model returned no text output.'
+        except Exception as local_exc:
+            friendly = self._friendly_error(primary_error)
+            raise RuntimeError(f'{friendly}\nLocal fallback also failed: {local_exc}') from local_exc
+
     def chat(self, text: str) -> str:
         text = text.strip()
         if not text:
             return ''
 
         self.last_request_kind = 'chat'
+        self._active_model = self._select_model(text, 'chat')
+        self.last_provider_used = settings.provider
         started = time.perf_counter()
         self.memory.add_message(self.session_id, 'user', text)
         try:
-            if settings.provider == 'openrouter':
-                answer = self._chat_openrouter()
-            else:
-                answer = self._chat_openai()
+            try:
+                if settings.provider == 'openrouter':
+                    answer = self._chat_openrouter()
+                else:
+                    answer = self._chat_openai()
+            except Exception as exc:
+                answer = self._chat_local_fallback(exc)
             self.memory.add_message(self.session_id, 'assistant', answer)
+            self._maybe_auto_summary()
             return answer
         finally:
             self.last_latency = time.perf_counter() - started
@@ -138,6 +212,8 @@ class JarvisOmega:
             'and tell me what I should do next.'
         )
         self.last_request_kind = 'image'
+        self._active_model = self._select_model(user_prompt, 'image')
+        self.last_provider_used = settings.provider
         started = time.perf_counter()
         names = ', '.join(path.name for path in paths)
         self.memory.add_message(self.session_id, 'user', f'[IMAGE ATTACHMENT: {names}] {user_prompt}')
@@ -148,14 +224,14 @@ class JarvisOmega:
 
         try:
             response = self.client.chat.completions.create(
-                model=settings.model,
+                model=self._active_model,
                 messages=[
-                    {'role': 'system', 'content': system_prompt()},
+                    {'role': 'system', 'content': self._system_instructions()},
                     {'role': 'user', 'content': content},
                 ],
                 timeout=settings.vision_timeout_seconds,
             )
-            self.last_model_used = getattr(response, 'model', settings.model) or settings.model
+            self.last_model_used = getattr(response, 'model', self._active_model) or self._active_model
             self.last_tool_mode = f'vision-{len(paths)}-image'
             message = response.choices[0].message
             answer = message.content.strip() if isinstance(message.content, str) else str(message.content or '').strip()
@@ -167,33 +243,84 @@ class JarvisOmega:
         finally:
             self.last_latency = time.perf_counter() - started
 
-    def _one_shot_text(self, instruction: str, prompt: str) -> str:
+    def _one_shot_text(self, instruction: str, prompt: str, kind: str = 'smart') -> str:
+        model = self._select_model(prompt, kind if kind in {'mission', 'summary', 'review'} else 'mission')
         try:
             if settings.provider == 'openrouter':
                 response = self.client.chat.completions.create(
-                    model=settings.model,
+                    model=model,
                     messages=[
                         {'role': 'system', 'content': instruction},
                         {'role': 'user', 'content': prompt},
                     ],
                     timeout=settings.ai_timeout_seconds,
                 )
-                self.last_model_used = getattr(response, 'model', settings.model) or settings.model
+                self.last_provider_used = settings.provider
+                self.last_model_used = getattr(response, 'model', model) or model
                 content = response.choices[0].message.content
                 return content.strip() if isinstance(content, str) else str(content or '').strip()
 
             response = self.client.responses.create(
-                model=settings.model,
+                model=model,
                 reasoning={'effort': settings.reasoning_effort},
                 instructions=instruction,
                 input=prompt,
                 store=False,
                 timeout=settings.ai_timeout_seconds,
             )
-            self.last_model_used = getattr(response, 'model', settings.model) or settings.model
+            self.last_provider_used = settings.provider
+            self.last_model_used = getattr(response, 'model', model) or model
             return (response.output_text or '').strip()
         except Exception as exc:
+            if self._can_local_fallback():
+                try:
+                    response = self._get_local_client().chat.completions.create(
+                        model=settings.local_ai_model,
+                        messages=[
+                            {'role': 'system', 'content': instruction},
+                            {'role': 'user', 'content': prompt},
+                        ],
+                        timeout=settings.ai_timeout_seconds,
+                    )
+                    self.last_provider_used = 'local-fallback'
+                    self.last_model_used = getattr(response, 'model', settings.local_ai_model) or settings.local_ai_model
+                    content = response.choices[0].message.content
+                    return content.strip() if isinstance(content, str) else str(content or '').strip()
+                except Exception:
+                    pass
             raise self._friendly_error(exc) from exc
+
+    def summarize_session(self) -> str:
+        rows = self.memory.session_messages(self.session_id, 250)
+        if not rows:
+            return 'No conversation to summarize.'
+        transcript_parts = []
+        for row in rows:
+            label = 'USER' if row['role'] == 'user' else 'JARVIS'
+            transcript_parts.append(f'{label}: {row["content"]}')
+        transcript = '\n'.join(transcript_parts)
+        if len(transcript) > 60000:
+            transcript = transcript[-60000:]
+        summary = self._one_shot_text(
+            'Create a compact factual continuity summary for a future AI turn. Preserve user preferences, decisions, '
+            'project state, unresolved tasks, important tool outcomes, and constraints. Do not include private chain-of-thought. '
+            'Do not store passwords/API keys/secrets. Output plain concise text.',
+            transcript,
+            'summary',
+        )
+        self.memory.set_session_summary(self.session_id, summary)
+        return summary
+
+    def _maybe_auto_summary(self) -> None:
+        if not settings.auto_summarize:
+            return
+        threshold = max(20, settings.summarize_after_messages)
+        count = self.memory.message_count(self.session_id)
+        if count >= threshold and count % threshold in {0, 1}:
+            try:
+                self.summarize_session()
+            except Exception:
+                pass
 
     @staticmethod
     def _extract_plan(raw: str, max_steps: int) -> list[str]:
@@ -225,6 +352,7 @@ class JarvisOmega:
             'Do not include private reasoning. Prefer the smallest safe plan. Never plan credential access, security bypass, '
             'arbitrary shell execution, deletion, persistence, or actions outside the available JARVIS tools.',
             f'Goal: {goal}\nMaximum steps: {settings.mission_max_steps}',
+            'mission',
         )
         self.last_plan = self._extract_plan(raw, max(1, settings.mission_max_steps))
         return self.last_plan
@@ -248,6 +376,7 @@ class JarvisOmega:
                 'Execute this step using available tools only when needed. Respect every permission gate. '
                 'Return a concise result for this step.'
             )
+            self._active_model = settings.routed_smart_model
             result = self.chat(prompt)
             results.append(result)
             progress(f'COMPLETED {index}/{len(plan)}')
@@ -258,18 +387,19 @@ class JarvisOmega:
             'You are JARVIS OMEGA V6 Reviewer. Review the supplied mission results. Do not invent tool outcomes. '
             'Give a concise final status, what was completed, any blockers, and exact next action if needed.',
             f'Goal: {goal}\nPlan: {json.dumps(plan, ensure_ascii=False)}\nExecution results:\n{joined}',
+            'review',
         )
         self.memory.add_message(self.session_id, 'assistant', f'[MISSION REVIEW]\n{review}')
         self.last_latency = time.perf_counter() - started
         return review
 
     def _chat_openrouter(self) -> str:
-        messages = [{'role': 'system', 'content': system_prompt()}] + self._history()
+        messages = [{'role': 'system', 'content': self._system_instructions()}] + self._history()
         tools = self._openrouter_model_tools()
         self.last_tool_mode = 'full' if tools else 'no-tools'
 
         for _ in range(settings.max_tool_rounds):
-            kwargs = {'model': settings.model, 'messages': messages}
+            kwargs = {'model': self._active_model, 'messages': messages}
             if tools:
                 kwargs['tools'] = tools
 
@@ -286,9 +416,9 @@ class JarvisOmega:
                     tools = []
                     self.last_tool_mode = 'fallback-no-tools'
                     continue
-                raise self._friendly_error(exc) from exc
+                raise exc
 
-            self.last_model_used = getattr(response, 'model', settings.model) or settings.model
+            self.last_model_used = getattr(response, 'model', self._active_model) or self._active_model
             message = response.choices[0].message
             calls = list(message.tool_calls or [])
             if not calls:
@@ -318,17 +448,17 @@ class JarvisOmega:
         input_items = self._history()
         try:
             response = self.client.responses.create(
-                model=settings.model,
+                model=self._active_model,
                 reasoning={'effort': settings.reasoning_effort},
-                instructions=system_prompt(),
+                instructions=self._system_instructions(),
                 input=input_items,
                 tools=self._openai_model_tools(),
                 store=False,
                 timeout=settings.ai_timeout_seconds,
             )
         except Exception as exc:
-            raise self._friendly_error(exc) from exc
-        self.last_model_used = getattr(response, 'model', settings.model) or settings.model
+            raise exc
+        self.last_model_used = getattr(response, 'model', self._active_model) or self._active_model
         self.last_tool_mode = 'full'
 
         for _ in range(settings.max_tool_rounds):
@@ -345,18 +475,15 @@ class JarvisOmega:
                 result = self.tools.call(call.name, args)
                 input_items.append({'type': 'function_call_output', 'call_id': call.call_id, 'output': result})
 
-            try:
-                response = self.client.responses.create(
-                    model=settings.model,
-                    reasoning={'effort': settings.reasoning_effort},
-                    instructions=system_prompt(),
-                    input=input_items,
-                    tools=self._openai_model_tools(),
-                    store=False,
-                    timeout=settings.ai_timeout_seconds,
-                )
-            except Exception as exc:
-                raise self._friendly_error(exc) from exc
-            self.last_model_used = getattr(response, 'model', settings.model) or settings.model
+            response = self.client.responses.create(
+                model=self._active_model,
+                reasoning={'effort': settings.reasoning_effort},
+                instructions=self._system_instructions(),
+                input=input_items,
+                tools=self._openai_model_tools(),
+                store=False,
+                timeout=settings.ai_timeout_seconds,
+            )
+            self.last_model_used = getattr(response, 'model', self._active_model) or self._active_model
 
         return 'I hit the configured tool-round limit and stopped safely.'
