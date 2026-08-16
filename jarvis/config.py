@@ -13,6 +13,11 @@ def _bool(name: str, default: bool) -> bool:
     return os.getenv(name, str(default)).strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
+def _path(name: str, default: Path) -> Path:
+    raw = os.getenv(name, '').strip()
+    return Path(raw).expanduser() if raw else default
+
+
 @dataclass(frozen=True)
 class Settings:
     provider: str = os.getenv('AI_PROVIDER', 'openrouter').strip().lower()
@@ -51,8 +56,8 @@ class Settings:
 
     max_tool_rounds: int = int(os.getenv('MAX_TOOL_ROUNDS', '10'))
     history_messages: int = int(os.getenv('HISTORY_MESSAGES', '30'))
-    db_path: Path = Path(os.getenv('JARVIS_DB_PATH', str(ROOT / 'data' / 'jarvis.db'))).expanduser()
-    export_dir: Path = Path(os.getenv('JARVIS_EXPORT_DIR', str(ROOT / 'exports'))).expanduser()
+    db_path: Path = _path('JARVIS_DB_PATH', ROOT / 'data' / 'jarvis.db')
+    export_dir: Path = _path('JARVIS_EXPORT_DIR', ROOT / 'exports')
 
     @property
     def api_key(self) -> str:
