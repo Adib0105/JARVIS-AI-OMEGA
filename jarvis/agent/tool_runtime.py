@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import time
@@ -14,6 +15,7 @@ from ..security.capabilities import profile_for
 from ..security.policy import CapabilityPermissionGate
 from ..security.secrets import ensure_safe_for_persistent_memory
 from ..tools import ToolRegistry
+from .event_safety import sanitize_tool_event
 
 
 def _now() -> str:
@@ -29,7 +31,13 @@ _PERSISTENT_TEXT_TOOLS = {
 
 
 class RecordingToolRegistry(ToolRegistry):
-    """V7 runtime around existing handlers: capability gate + audit + evidence."""
+    """V7 runtime around existing handlers: capability gate + audit + evidence.
+
+    Raw tool input/output exists only during the synchronous handler call. Events
+    exposed to missions are privacy-minimized before they are queued, so persisted
+    mission state cannot become a shadow archive of email bodies, file contents or
+    secrets.
+    """
 
     def __init__(
         self,
@@ -74,6 +82,20 @@ class RecordingToolRegistry(ToolRegistry):
             return 'DENIED', 'PERMISSION_ERROR'
         failure = classify_exception(RuntimeError(error), operation='tool')
         return 'FAILED', failure.category.value
+
+    @staticmethod
+    def _verification_hints(name: str, args: dict) -> dict:
+        # File-write verification can compare hashes instead of storing the written
+        # source text in mission history.
+        if name == 'write_local_text_file':
+            content = str(args.get('content', ''))
+            return {
+                'content_sha256': hashlib.sha256(
+                    content.encode('utf-8', errors='replace')
+                ).hexdigest(),
+                'content_characters': len(content),
+            }
+        return {}
 
     def call(self, name: str, args: dict) -> str:
         started_iso = _now()
@@ -123,7 +145,7 @@ class RecordingToolRegistry(ToolRegistry):
             model=context.get('model'),
         )
 
-        event = {
+        raw_event = {
             'name': name,
             'args': dict(args),
             'output': output,
@@ -134,7 +156,9 @@ class RecordingToolRegistry(ToolRegistry):
             'started_at': started_iso,
             'completed_at': _now(),
             'latency_ms': elapsed_ms,
+            'verification_hints': self._verification_hints(name, args),
         }
+        event = sanitize_tool_event(raw_event)
         with self._events_lock:
             self._events.append(event)
         return output
