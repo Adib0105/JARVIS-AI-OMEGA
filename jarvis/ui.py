@@ -9,6 +9,7 @@ from rich.text import Text
 
 from .config import settings
 from .core import JarvisOmega
+from .voice import VoiceOutput
 
 console = Console()
 
@@ -23,9 +24,9 @@ def confirmer(tool: str, args: dict) -> bool:
 
 def banner() -> None:
     title = Text('J A R V I S   O M E G A', style='bold cyan')
-    subtitle = f'Text-first AI Agent  •  Creator: {settings.creator_name}  •  Model: {settings.model}'
+    subtitle = f'Type commands • Spoken AI replies • Creator: {settings.creator_name} • Model: {settings.model}'
     console.print(Panel.fit(Text.assemble(title, '\n', subtitle), border_style='cyan'))
-    console.print('[dim]Type /help for commands. Voice is intentionally not installed in this release.[/dim]\n')
+    console.print('[dim]Type /help for commands. Microphone/voice input is not installed; you type, JARVIS speaks its reply.[/dim]\n')
 
 
 def help_table() -> Table:
@@ -48,17 +49,23 @@ def help_table() -> Table:
 def run_cli() -> None:
     banner()
     jarvis = JarvisOmega(confirmer=confirmer)
+    voice = VoiceOutput()
+
     while True:
         try:
             text = Prompt.ask('[bold green]YOU[/bold green]').strip()
         except (EOFError, KeyboardInterrupt):
             console.print('\n[cyan]JARVIS[/cyan]: Goodbye.')
+            voice.stop()
             break
         if not text:
             continue
         low = text.lower()
         if low in {'/exit', '/quit', 'exit', 'quit'}:
-            console.print('[cyan]JARVIS[/cyan]: Goodbye, Adib.')
+            goodbye = f'Goodbye, {settings.user_name}.'
+            console.print(f'[cyan]JARVIS[/cyan]: {goodbye}')
+            voice.speak(goodbye)
+            voice.stop()
             break
         if low == '/help':
             console.print(help_table())
@@ -71,7 +78,8 @@ def run_cli() -> None:
             console.print(Panel(
                 f'Model: {settings.model}\nReasoning: {settings.reasoning_effort}\n'
                 f'Web search: {settings.enable_web_search}\nCode Interpreter: {settings.enable_code_interpreter}\n'
-                f'Local tools: {settings.enable_local_tools}\nSession: {jarvis.session_id}\n'
+                f'Local tools: {settings.enable_local_tools}\nVoice output: {settings.enable_voice_output}\n'
+                f'Microphone input: False\nSession: {jarvis.session_id}\n'
                 f'Last latency: {jarvis.last_latency:.2f}s',
                 title='Status', border_style='green'))
             continue
@@ -96,4 +104,6 @@ def run_cli() -> None:
             except Exception as exc:
                 console.print(Panel(f'{type(exc).__name__}: {exc}', title='JARVIS Error', border_style='red'))
                 continue
+
         console.print(Panel(Markdown(answer), title='JARVIS', border_style='cyan'))
+        voice.speak(answer)
