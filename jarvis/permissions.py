@@ -20,7 +20,7 @@ class PermissionGate:
     }
     APPROVAL = {
         'search_local_files', 'read_local_text_file', 'index_local_text_file',
-        'open_url', 'open_app'
+        'open_url', 'open_app', 'capture_screen'
     }
 
     def __init__(self, confirmer: Callable[[str, dict], bool] | None = None):
