@@ -69,7 +69,7 @@ class CapabilityRegistry:
 
     The registry intentionally derives status from code/config/dependency state instead
     of hard-coding every capability as available. Evaluation success rates are left
-    unset until the SelfEvaluationEngine supplies measured historical results.
+    unset until measured historical results can be attached by observability/evaluation.
     """
 
     def __init__(self) -> None:
@@ -260,21 +260,79 @@ class CapabilityRegistry:
             detail='configured' if local_configured else 'provider adapter exists but no local model is configured',
         )
 
-        self_dev_exists = _module('jarvis.self_development')
-        records['Self Development'] = self._record(
-            'Self Development', 'Controlled sandboxed improvement proposal/build/test/evaluate/diff/approval pipeline.',
-            CapabilityStatus.EXPERIMENTAL if self_dev_exists else CapabilityStatus.MISSING,
-            dependencies=('Git', 'sandbox', 'evaluation engine', 'rollback'), permissions=('CODE_WRITE',), risk='CRITICAL',
-            tests=(), implementation_path='jarvis/self_development/',
-            detail='package exists' if self_dev_exists else 'not implemented yet',
-        )
-
         records['Capability Registry'] = self._record(
             'Capability Registry', 'Runtime-derived inventory of actual JARVIS capabilities and status.',
             CapabilityStatus.AVAILABLE,
             dependencies=(), permissions=(), risk='LOW',
             tests=('tests/test_v75_capability_registry.py',),
             implementation_path='jarvis/capability_registry.py',
+        )
+
+        evaluation_exists = _module('jarvis.evaluation.engine')
+        records['Self Evaluation'] = self._record(
+            'Self Evaluation', 'Evidence-based mission/tool/verification/recovery performance measurement with history.',
+            CapabilityStatus.AVAILABLE if evaluation_exists else CapabilityStatus.MISSING,
+            dependencies=('sqlite3', 'mission history', 'audit evidence'), permissions=(), risk='LOW',
+            tests=('tests/test_v75_evaluation.py',), implementation_path='jarvis/evaluation/engine.py',
+            detail='measures only supported evidence; unsupported accuracy metrics remain N/A',
+        )
+
+        gaps_exist = _module('jarvis.evaluation.gaps')
+        records['Gap Detection'] = self._record(
+            'Gap Detection', 'Detects missing/degraded capabilities and repeated evidence-backed failures.',
+            CapabilityStatus.AVAILABLE if gaps_exist else CapabilityStatus.MISSING,
+            dependencies=('Self Evaluation', 'Capability Registry'), permissions=(), risk='LOW',
+            tests=('tests/test_v75_gap_detector.py',), implementation_path='jarvis/evaluation/gaps.py',
+        )
+
+        self_dev_exists = _module('jarvis.self_development.engine')
+        self_dev_enabled = getattr(settings, 'self_development_enabled', True)
+        if not self_dev_enabled:
+            self_dev_status = CapabilityStatus.DISABLED
+            self_dev_detail = 'controlled self-development disabled by configuration'
+        elif self_dev_exists:
+            self_dev_status = CapabilityStatus.EXPERIMENTAL
+            self_dev_detail = 'sandbox proposal/build/test/diff/approval pipeline exists; production release activation is intentionally separate'
+        else:
+            self_dev_status = CapabilityStatus.MISSING
+            self_dev_detail = 'self-development package is absent'
+        records['Self Development'] = self._record(
+            'Self Development', 'Controlled sandboxed improvement proposal/build/test/evaluate/diff/approval pipeline.',
+            self_dev_status,
+            dependencies=('Git', 'sandbox', 'Self Evaluation', 'rollback checkpointing'), permissions=('CODE_WRITE',), risk='CRITICAL',
+            tests=('tests/test_v75_self_development.py',), implementation_path='jarvis/self_development/',
+            detail=self_dev_detail,
+        )
+
+        self_coding_exists = _module('jarvis.self_development.coding')
+        records['Self Coding'] = self._record(
+            'Self Coding', 'Bounded JSON-only code generation and repair inside an isolated Git worktree.',
+            CapabilityStatus.EXPERIMENTAL if self_coding_exists and self_dev_enabled else (
+                CapabilityStatus.DISABLED if not self_dev_enabled else CapabilityStatus.MISSING
+            ),
+            dependencies=('Self Development', 'reasoning provider', 'Git'), permissions=('CODE_WRITE',), risk='CRITICAL',
+            tests=('tests/test_v75_self_coding.py',), implementation_path='jarvis/self_development/coding.py',
+            detail='production merge is not exposed; live provider integration remains guarded/experimental',
+        )
+
+        self_debug_exists = _module('jarvis.self_development.debugger')
+        records['Self Debugging'] = self._record(
+            'Self Debugging', 'Bounded failure classification and limited repair loop for sandbox-generated changes.',
+            CapabilityStatus.EXPERIMENTAL if self_debug_exists and self_dev_enabled else (
+                CapabilityStatus.DISABLED if not self_dev_enabled else CapabilityStatus.MISSING
+            ),
+            dependencies=('Self Coding', 'regression tester'), permissions=('CODE_WRITE',), risk='HIGH',
+            tests=('tests/test_v75_self_coding.py',), implementation_path='jarvis/self_development/debugger.py',
+            detail=f'max repair attempts={getattr(settings, "max_self_repair_attempts", 3)}',
+        )
+
+        rollback_exists = _module('jarvis.self_development.rollback')
+        records['Rollback'] = self._record(
+            'Rollback', 'Stores known-good before/deployed commit checkpoints for controlled release recovery.',
+            CapabilityStatus.EXPERIMENTAL if rollback_exists else CapabilityStatus.MISSING,
+            dependencies=('Git', 'controlled release engine'), permissions=('CODE_WRITE',), risk='CRITICAL',
+            tests=('tests/test_v75_self_development.py',), implementation_path='jarvis/self_development/rollback.py',
+            detail='checkpointing exists; automatic production revert remains planned until release-engine verification',
         )
 
         self._records = records
