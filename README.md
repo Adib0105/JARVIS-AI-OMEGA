@@ -1,62 +1,131 @@
 # JARVIS AI OMEGA V6 — ARC Desktop Agent
 
-> **A multimodal desktop AI agent created by Adib Azam.**
+> **A multimodal, permission-gated Windows AI agent created by Adib Azam.**
 
 ![Version](https://img.shields.io/badge/JARVIS-V6-cyan)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![CI](https://img.shields.io/github/actions/workflow/status/Adib0105/JARVIS-AI-OMEGA/ci.yml?branch=main&label=CI)
 ![Free Test](https://img.shields.io/badge/OpenRouter-openrouter%2Ffree-purple)
 ![HUD](https://img.shields.io/badge/UI-Animated%20ARC%20HUD-cyan)
-![Images](https://img.shields.io/badge/Vision-Images%20%2B%20Screen-magenta)
+![Vision](https://img.shields.io/badge/Vision-Images%20%2B%20Screen-magenta)
 ![Docs](https://img.shields.io/badge/Documents-PDF%20DOCX%20XLSX%20CSV-orange)
 ![Voice](https://img.shields.io/badge/Voice-Hindi%20%2F%20Hinglish-green)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-**JARVIS AI OMEGA V6** upgrades the project from a chat dashboard into an approval-gated Windows desktop agent. It combines AI chat, multimodal vision, animated ARC-style UI, spoken replies, optional microphone/wake-word input, web research, persistent memory, tasks/reminders, document intelligence, coding workspace tools, browser/app controls, and a Planner → Executor → Reviewer mission mode.
+JARVIS AI OMEGA V6 turns the project into a real desktop-agent platform: **typed chat, spoken replies, optional microphone/wake word, animated ARC-style HUD, images and screen vision, web research, memory, notes, tasks/reminders, documents, coding/Git diagnostics, safe computer controls, optional Gmail/Calendar OAuth, model routing, and Planner → Executor → Reviewer missions**.
 
-The interface permanently displays **OPERATOR: ADIB AZAM** and the ARC reactor changes animation state while JARVIS is idle, thinking, listening, speaking, or reporting an error.
+The main dashboard permanently shows **OPERATOR: ADIB AZAM**. The ARC core visibly changes state while JARVIS is **IDLE, THINKING, LISTENING, SPEAKING, or reporting an ERROR**.
 
-## V6 highlights
+## What V6 can do
 
-- **Animated ARC reactor HUD** built with Tkinter Canvas
-- Speaking/listening/thinking waveform animation
-- Dark futuristic Iron-Man-inspired dashboard design
-- Typed chat with deep Hindi/Hinglish/English neural spoken replies
-- **Push-to-talk microphone** (`Ctrl+M`) using optional Windows audio packages
-- Optional runtime **“Hey Jarvis” wake-word listener**
-- OpenRouter `openrouter/free` test mode + optional OpenAI mode
-- **Mission mode:** Planner → tool-capable Executor → Reviewer
+### AI brain
+
+- OpenRouter `openrouter/free` testing mode by default
+- Optional OpenAI provider mode
 - Multi-step function/tool calling with free-router fallback
-- Upload **1–4 images** and ask questions
-- Paste image directly from Windows clipboard
-- Permission-gated current-screen vision
-- Free web/news search and webpage reading
-- Persistent SQLite chat sessions and long-term facts
-- Search previous local chat history
-- Local knowledge base
-- **PDF / DOCX / XLSX / XLSM / CSV / TXT / Markdown intelligence**
-- Local todos and reminders with spoken reminder alerts in the desktop UI
-- Live CPU / RAM / disk / battery / process telemetry
-- Allowlisted Windows app launching
-- Browser search launch for Google / YouTube / GitHub / Bing
-- Approval-gated keyboard typing, hotkeys, key presses, and screen-coordinate clicks
-- Safe local file search/read/open
-- Guarded coding workspace tree inspection
-- Approval-gated text/code file writes with automatic backups
-- Allowlisted Python `unittest` project test runner
+- Fast / smart / vision model routing configuration
+- Optional local OpenAI-compatible model fallback
+- Planner → Executor → Reviewer **Mission mode**
+- High-level mission progress without exposing private chain-of-thought
+
+### Iron-Man-inspired desktop UX
+
+- Animated Tkinter ARC reactor
+- Rotating HUD rings and energy spokes
+- Thinking/listening/speaking/error visual states
+- Animated waveform while JARVIS is active
+- Live CPU, RAM, disk, battery, process and network telemetry
+- Dark futuristic three-panel command dashboard
+- Permanent operator/creator identity
+- In-app Settings, Update Check, logs and crash-report access
+
+### Voice
+
+- Deep Indian neural voice via Edge TTS
+- Automatic Hindi / Hinglish / English speech selection
+- Offline `pyttsx3` fallback
+- Push-to-talk microphone (`Ctrl+M`)
+- Optional runtime **Hey Jarvis** wake-word listener
+- Voice mute/unmute and test
+
+### Vision
+
+- Upload up to 1–4 images per request
+- Paste an image from the Windows clipboard
+- Local image preview, validation, resize and compression
+- Permission-gated current-screen capture and AI analysis
+- Friendly vision timeout / unsupported-model errors
+
+### Web + knowledge
+
+- Free public web search and news search
+- Webpage text extraction
+- Persistent SQLite sessions and facts
+- Search previous chat history
+- Local notes and agenda
+- Local knowledge indexing
+- Keyword knowledge search
+- Lightweight local sparse-vector relevance search without an embeddings API
+- Optional conversation continuity summaries
+
+### Documents
+
+Approved local files can be extracted/indexed:
+
+- PDF
+- DOCX
+- XLSX / XLSM
+- CSV
+- TXT / Markdown
+
+### Productivity
+
+- Todos
+- Reminder scheduler
+- Spoken reminder alerts while the desktop app is running
+- Agenda combining tasks, reminders and notes
 - Markdown chat export
-- GitHub Actions CI across multiple Python versions
 
-## Safety design
+### Desktop agent
 
-V6 is powerful without exposing unrestricted host control. It does **not** provide arbitrary shell execution, credential scraping, password extraction, unrestricted deletion, stealth persistence, security bypasses, or silent software installation.
+All sensitive actions remain permission-gated by default:
 
-Sensitive local actions remain permission-gated by default. Secret-like paths such as `.env`, SSH keys, credential folders, tokens, wallets, and password-like files are blocked by the local file layer. Coding writes are limited to approved roots and safe text/code file types, and existing files receive a backup before replacement.
+- Open allowlisted Windows apps
+- Open approved URLs and local paths
+- Launch Google / Bing / YouTube / GitHub searches
+- Type text into the focused app
+- Press allowlisted keys and hotkeys
+- Click approved visible screen coordinates
+- Search/read approved local files
+
+PyAutoGUI fail-safe remains enabled.
+
+### Coding agent
+
+- Inspect approved project tree
+- Read safe source/text files
+- Write approved source/text files with automatic timestamped backup
+- Run only allowlisted Python `unittest` discovery
+- Read-only Git status, diff and recent log
+
+There is intentionally **no arbitrary shell executor**.
+
+### Optional Gmail + Google Calendar
+
+The repository includes an optional OAuth integration layer for:
+
+- Gmail search
+- Gmail send
+- Upcoming primary-calendar events
+- Calendar event creation
+
+It is **disabled by default**. No Google credentials or tokens are included. Every Google account action, including reads, remains approval-gated.
 
 ---
 
-# Install / update on Windows
+# Quick update / install
 
-Inside your cloned repository:
+Inside the cloned repository:
 
 ```powershell
 git pull
@@ -65,7 +134,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\.venv\Scripts\python.exe self_check.py
 ```
 
-Start the animated desktop version:
+Start the ARC desktop dashboard:
 
 ```powershell
 .\run_desktop.bat
@@ -77,15 +146,13 @@ or:
 .\.venv\Scripts\python.exe desktop_app.py
 ```
 
-Terminal version:
+Terminal mode:
 
 ```powershell
 .\run_jarvis.bat
 ```
 
-## Free test configuration
-
-Your `.env` can use:
+## Free testing `.env`
 
 ```env
 AI_PROVIDER=openrouter
@@ -93,79 +160,46 @@ OPENROUTER_API_KEY=your_openrouter_key_here
 OPENROUTER_MODEL=openrouter/free
 ```
 
-Never commit `.env` or API keys to GitHub. If a key appears in a public screenshot, revoke it and create a replacement.
+Never commit `.env` or an API key. If a key appears in a screenshot or public post, revoke it and create a replacement.
 
 ---
 
 # ARC desktop controls
 
-### Left control deck
+**Left:** ARC core, live telemetry, New Chat, Mission, Screen Vision, Upload/Paste Image, Browser Search, Open App, Wake Word.  
+**Center:** image attachment strip + JARVIS conversation console.  
+**Bottom:** command input, SEND, MIC / Ctrl+M.  
+**Right:** todos/reminders, document learning, code tests, export, voice controls, status, settings, update check.
 
-- **NEW CHAT** — fresh conversation session
-- **MISSION F2** — Planner → Executor → Reviewer agent mission
-- **SCREEN VISION** — permission-gated screen analysis
-- **UPLOAD IMAGE** — attach images from disk
-- **PASTE IMAGE** — attach copied Windows image
-- **BROWSER SEARCH** — approved browser search launch
-- **OPEN APP** — approved allowlisted app launcher
-- **WAKE WORD** — turn the optional wake listener on/off
-
-### Bottom command deck
-
-- Text box + **SEND**
-- **MIC / Ctrl+M** — record a short voice command and send it to JARVIS
-
-### Right intelligence deck
-
-- Active todo list
-- Add/complete todos
-- Add reminder
-- Learn document
-- Run project unit tests
-- Export chat
-- Voice test
-- Mute/unmute
-- Image help
-- Full system status
-
----
-
-# Image upload and vision
-
-### Upload existing images
-
-1. Open the V6 desktop app.
-2. Click **UPLOAD IMAGE** or press `Ctrl+O`.
-3. Select up to the configured number of PNG/JPG/JPEG/WEBP images.
-4. Type a question such as:
+Keyboard shortcuts:
 
 ```text
-Is screenshot me error kya hai aur exact fix batao.
+Enter      Send
+Ctrl+O     Upload image
+Ctrl+M     Push-to-talk
+Ctrl+L     Focus command input
+F2         Mission mode
 ```
-
-5. Press **SEND**.
-
-You can also leave the prompt empty and press SEND for a general analysis.
-
-### Paste clipboard image
-
-Copy an image/screenshot in Windows, then click **PASTE IMAGE**.
-
-### Screen Vision
-
-Click **SCREEN VISION**. JARVIS asks permission before capturing the current desktop. The image is processed through the same validation/compression pipeline before being sent to the configured AI provider.
-
-Images selected in the app are **not uploaded to GitHub**. They are sent to the configured AI provider only when an analysis request is submitted.
 
 ---
 
-# Voice and wake word
+# Image / Screen Vision
 
-V6 still works perfectly as typed-input + spoken-output JARVIS. Microphone input is optional.
+1. Click **UPLOAD IMAGE** or press `Ctrl+O`.
+2. Select PNG/JPG/JPEG/WEBP images.
+3. Type a question.
+4. Press SEND.
 
-Default voice profile:
+**PASTE IMAGE** reads an image currently copied to the Windows clipboard. **SCREEN VISION** asks permission before current-screen capture.
+
+Selected images are not uploaded to GitHub. When you submit an analysis request, the processed image is sent to your configured AI provider.
+
+---
+
+# Voice configuration
 
 ```env
+ENABLE_VOICE_OUTPUT=true
 VOICE_ENGINE=edge
 VOICE_HINDI=hi-IN-MadhurNeural
 VOICE_HINGLISH=en-IN-PrabhatNeural
@@ -173,11 +207,7 @@ VOICE_ENGLISH=en-IN-PrabhatNeural
 EDGE_VOICE_RATE=-2%
 EDGE_VOICE_VOLUME=+5%
 EDGE_VOICE_PITCH=-20Hz
-```
 
-Optional microphone settings:
-
-```env
 ENABLE_MIC_INPUT=true
 ENABLE_WAKE_WORD=false
 WAKE_WORD=hey jarvis
@@ -185,115 +215,120 @@ SPEECH_LANGUAGE=en-IN
 MIC_RECORD_SECONDS=6
 ```
 
-Wake-word mode never needs to be permanently enabled. You can keep it off and use push-to-talk only.
+Wake-word mode can stay OFF while push-to-talk remains available.
 
 ---
 
-# Documents and local knowledge
+# Model routing + local fallback
 
-V6 can extract approved documents and index their text into its local knowledge base:
+Blank route-model values reuse the main provider model:
 
-- PDF (`pypdf`)
-- Word DOCX
-- Excel XLSX / XLSM
-- CSV
-- TXT / Markdown
-
-In the GUI, click **LEARN DOCUMENT**. File access remains restricted to approved roots and requires permission.
-
----
-
-# Mission mode
-
-Press **F2** or click **MISSION** and give a goal. V6 runs:
-
-```text
-Goal
-  ↓
-Planner (short safe plan)
-  ↓
-Executor (uses available tools + permission gates)
-  ↓
-Reviewer (verifies reported outcomes and summarizes blockers/next action)
+```env
+MODEL_ROUTING=auto
+FAST_MODEL=
+SMART_MODEL=
+VISION_MODEL=
 ```
 
-Mission mode does not bypass permission dialogs.
+Optional local OpenAI-compatible fallback:
+
+```env
+ENABLE_LOCAL_FALLBACK=false
+LOCAL_AI_BASE_URL=http://127.0.0.1:11434/v1
+LOCAL_AI_MODEL=
+LOCAL_AI_API_KEY=local
+```
+
+The user must run/configure the compatible local server and model separately. Local fallback is disabled until explicitly configured.
 
 ---
 
-# Coding workspace
+# Google Workspace setup
 
-V6 can help inspect and modify approved code projects through guarded tools:
+First install optional Google packages:
 
-- inspect project tree
-- read safe code/text files
-- create/replace safe text/code files with automatic backup
-- run only `python -m unittest discover -s tests -v` through the allowlisted test action
+```powershell
+.\setup_google.ps1
+```
 
-There is intentionally no arbitrary shell command tool.
-
----
-
-# Terminal power commands
-
-| Command | Purpose |
-|---|---|
-| `/mission <goal>` | Planner → Executor → Reviewer |
-| `/mic` | Push-to-talk command |
-| `/image "path" | prompt` | Analyze image |
-| `/screen [prompt]` | Analyze screen |
-| `/document "path"` | Index approved document |
-| `/web <query>` | Public web search |
-| `/news <query>` | Recent news |
-| `/browser google | query` | Open browser search |
-| `/app <name>` | Open allowlisted app |
-| `/todo <text>` / `/todos` / `/done <id>` | Todos |
-| `/remind YYYY-MM-DD HH:MM | text` | Reminder |
-| `/remember` / `/recall` | Long-term facts |
-| `/search-history <query>` | Search previous chats |
-| `/learn <file>` / `/knowledge <query>` | Local knowledge |
-| `/metrics` | CPU/RAM/disk/battery |
-| `/export` | Export chat |
-| `/status` | Full V6 diagnostics |
-
----
-
-# Project structure
+Then enable Gmail API + Google Calendar API in your own Google Cloud project, create an **OAuth Desktop app**, and save the downloaded client JSON locally as:
 
 ```text
-JARVIS-AI-OMEGA/
-├── jarvis/
-│   ├── attachments.py
-│   ├── automation.py
-│   ├── coding_tools.py
-│   ├── config.py
-│   ├── core.py
-│   ├── documents.py
-│   ├── gui.py
-│   ├── hud.py
-│   ├── local_files.py
-│   ├── memory.py
-│   ├── microphone.py
-│   ├── permissions.py
-│   ├── prompt.py
-│   ├── system_tools.py
-│   ├── tools.py
-│   ├── ui.py
-│   ├── vision.py
-│   ├── voice.py
-│   └── web_tools.py
-├── tests/
-├── .github/workflows/ci.yml
-├── .env.example
-├── requirements.txt
-├── requirements-windows.txt
-├── setup_windows.ps1
-├── run_desktop.bat
-├── run_jarvis.bat
-├── desktop_app.py
-├── main.py
-└── self_check.py
+google_credentials.json
 ```
+
+Enable it:
+
+```env
+ENABLE_GOOGLE_WORKSPACE=true
+```
+
+The first approved Gmail/Calendar action opens the browser consent flow. The resulting local token is stored under `data/google_token.json`, which is excluded from Git.
+
+---
+
+# Windows application packaging
+
+Create a PyInstaller desktop build:
+
+```powershell
+.\build_windows.ps1
+```
+
+Then, after installing Inno Setup 6:
+
+```powershell
+.\build_installer.ps1
+```
+
+API keys are intentionally **not bundled** into builds.
+
+---
+
+# Safety model
+
+V6 deliberately does **not** expose:
+
+- unrestricted shell execution
+- credential/password extraction
+- secret-file scraping
+- arbitrary file deletion
+- silent software installation
+- stealth persistence
+- security-bypass tools
+
+Secret-like paths are blocked. Local writes are restricted to approved roots and safe text/code types, with backups on replacement. Cloud account actions require user-owned OAuth authorization and explicit approval.
+
+---
+
+# Core architecture
+
+```text
+                         JARVIS OMEGA V6
+                               │
+                 ┌─────────────┴─────────────┐
+                 │                           │
+              ARC UI                     AI Router
+       IDLE/THINK/LISTEN/SPEAK                │
+                 │               ┌───────────┼───────────┐
+                 │             Fast        Smart       Vision
+                 │                           │
+                 └─────────────── Agent Core ─────────────┘
+                                   │
+                     Planner → Executor → Reviewer
+                                   │
+       ┌─────────┬─────────┬───────┼────────┬─────────┬──────────┐
+      Vision     Web      Memory   Docs    Desktop    Coding    Google*
+       │          │         │       │         │          │         │
+   Images/     Search/    Notes/  PDF/     Approval   Tests/    Gmail/
+   Screen       News      Tasks   Office     Gate      Git      Calendar
+
+* Optional and disabled until user OAuth setup.
+```
+
+## Documentation
+
+See [`docs/V6-USER-GUIDE.md`](docs/V6-USER-GUIDE.md) for the detailed operator guide.
 
 ## Creator
 
