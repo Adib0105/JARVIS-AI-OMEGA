@@ -21,19 +21,15 @@ def _now() -> str:
 
 
 _PERSISTENT_TEXT_TOOLS = {
-    'remember_fact': ('key', 'value'),
-    'add_note': ('title', 'content', 'tags'),
-    'add_todo': ('text',),
+    'remember_fact': ('fact',),
+    'add_note': ('title', 'content'),
+    'add_todo': ('title',),
     'add_reminder': ('text',),
 }
 
 
 class RecordingToolRegistry(ToolRegistry):
-    """V7 compatibility runtime around existing tool handlers.
-
-    It adds capability permissions, secret protection, evidence recording and a
-    persistent audit trail without changing the mature V6 handler implementations.
-    """
+    """V7 runtime around existing handlers: capability gate + audit + evidence."""
 
     def __init__(
         self,
@@ -44,7 +40,8 @@ class RecordingToolRegistry(ToolRegistry):
         audit_store: AuditStore | None = None,
     ) -> None:
         super().__init__(memory, confirmer)
-        self.permission = CapabilityPermissionGate(
+        # ToolRegistry.call uses self.permissions; replace the legacy broad gate here.
+        self.permissions = CapabilityPermissionGate(
             confirmer,
             require_approval=settings.require_local_approval,
         )
@@ -71,7 +68,7 @@ class RecordingToolRegistry(ToolRegistry):
             return 'SUCCESS', None
         error = str(payload.get('error', 'Tool failed.')) if isinstance(payload, dict) else 'Tool failed.'
         lower = error.lower()
-        if 'not approved' in lower or 'permission' in lower or 'denied' in lower:
+        if 'not approved' in lower or 'permission' in lower or 'denied' in lower or 'cancellation requested' in lower:
             return 'DENIED', 'PERMISSION_ERROR'
         failure = classify_exception(RuntimeError(error), operation='tool')
         return 'FAILED', failure.category.value
@@ -92,7 +89,7 @@ class RecordingToolRegistry(ToolRegistry):
             output = json.dumps({'ok': False, 'error': f'{type(exc).__name__}: {exc}'}, ensure_ascii=False)
 
         elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
-        outcome = self.permission.consume_last_outcome()
+        outcome = self.permissions.consume_last_outcome()
         execution_status, error_type = self._execution_result(output)
 
         if blocked_secret:
