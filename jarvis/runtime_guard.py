@@ -84,7 +84,6 @@ def looks_garbled(answer: str, user_text: str = '') -> bool:
         return True
     if len(re.findall(r'</?[A-Za-z][A-Za-z0-9_-]*\s*/?>', answer)) >= 2:
         return True
-    # Many isolated script transitions in a short reply usually indicate a bad free-router completion.
     transitions = 0
     previous = None
     for char in answer:
@@ -192,7 +191,7 @@ def install_runtime_guards() -> None:
 
 
 def run_adaptive_gui() -> None:
-    """Launch the GUI with a compact layout profile on common 1366x768 laptops."""
+    """Launch a readable, balanced V6 layout on common laptop displays."""
     import tkinter as tk
     from . import gui as gui_module
 
@@ -202,8 +201,12 @@ def run_adaptive_gui() -> None:
     compact = screen_h <= 820 or screen_w <= 1400
 
     if compact:
+        # Preserve the user's native Windows DPI instead of forcing the old 0.86 scale.
+        # Only reduce it slightly so a 1366x768 screen remains readable while controls still fit.
         try:
-            root.tk.call('tk', 'scaling', 0.86)
+            native_scale = float(root.tk.call('tk', 'scaling'))
+            balanced_scale = max(1.0, native_scale * 0.93)
+            root.tk.call('tk', 'scaling', balanced_scale)
         except Exception:
             pass
 
@@ -211,7 +214,7 @@ def run_adaptive_gui() -> None:
 
         class CompactArcReactorHUD(original_hud):
             def __init__(self, parent, size: int = 220, bg: str = '#07131d'):
-                super().__init__(parent, size=min(size, 168), bg=bg)
+                super().__init__(parent, size=min(size, 190), bg=bg)
 
         gui_module.ArcReactorHUD = CompactArcReactorHUD
 
@@ -226,18 +229,18 @@ def run_adaptive_gui() -> None:
                 activeforeground='white',
                 relief='flat',
                 cursor='hand2',
-                padx=7,
+                padx=8,
                 pady=3,
-                font=('Segoe UI', 7, 'bold'),
+                font=('Segoe UI', 8, 'bold'),
                 highlightthickness=1,
                 highlightbackground='#123f51',
             )
 
         gui_module.JarvisDesktop._button = staticmethod(compact_button)
 
-    app = gui_module.JarvisDesktop(root)
+    gui_module.JarvisDesktop(root)
     if compact:
-        root.minsize(min(980, screen_w - 60), min(590, screen_h - 120))
+        root.minsize(min(1020, screen_w - 40), min(620, screen_h - 90))
     try:
         if os.name == 'nt':
             root.state('zoomed')
