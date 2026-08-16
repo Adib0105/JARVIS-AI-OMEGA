@@ -13,8 +13,15 @@ class Decision:
 
 
 class PermissionGate:
-    SAFE = {'get_system_info', 'get_current_time', 'remember_fact', 'recall_memory', 'list_allowed_roots'}
-    APPROVAL = {'search_local_files', 'read_local_text_file', 'open_url', 'open_app'}
+    SAFE = {
+        'get_system_info', 'get_current_time', 'remember_fact', 'recall_memory',
+        'list_allowed_roots', 'search_web', 'search_news', 'read_web_page',
+        'search_knowledge', 'get_knowledge_stats'
+    }
+    APPROVAL = {
+        'search_local_files', 'read_local_text_file', 'index_local_text_file',
+        'open_url', 'open_app'
+    }
 
     def __init__(self, confirmer: Callable[[str, dict], bool] | None = None):
         self.confirmer = confirmer
