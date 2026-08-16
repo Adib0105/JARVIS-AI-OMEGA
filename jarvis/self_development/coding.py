@@ -17,9 +17,10 @@ Reasoner = Callable[[str, str], str]
 class SelfCodingEngine:
     """Generate/repair code only inside a prepared self-development sandbox.
 
-    The supplied reasoner has no filesystem or shell access through this class. It can
-    only return a JSON mapping of relative text files; SelfDevelopmentBuilder and policy
-    checks enforce the actual write boundary. Production merge is intentionally absent.
+    The supplied reasoner has no filesystem or shell access through this class. It
+    returns only a JSON mapping of relative text files; policy controls the actual
+    write boundary. One cross-process proposal lease covers the full generate → test
+    → repair → review loop, preventing two JARVIS processes from racing the sandbox.
     """
 
     def __init__(self, development: SelfDevelopmentEngine, reasoner: Reasoner) -> None:
@@ -113,33 +114,50 @@ class SelfCodingEngine:
         return '\n'.join(pieces)[-100000:]
 
     def run(self, proposal_id: str) -> ImprovementProposal:
-        proposal = self.development._require(
-            self.development.store.get(proposal_id), {ProposalStatus.SANDBOX_READY, ProposalStatus.FAILED}
-        )
-        if not proposal.sandbox_path:
-            raise RuntimeError('Prepare the proposal sandbox before self-coding.')
+        with self.development.operation(proposal_id, 'self-coding') as lease_token:
+            proposal = self.development._require(
+                self.development.store.get(proposal_id),
+                {ProposalStatus.SANDBOX_READY, ProposalStatus.FAILED},
+            )
+            if not proposal.sandbox_path:
+                raise RuntimeError('Prepare the proposal sandbox before self-coding.')
 
-        system, user = self._generation_prompt(proposal)
-        raw = self.reasoner(system, user)
-        changes = self._parse_changes(raw)
-        proposal = self.development.apply_changes(proposal.id, changes)
-        proposal = self.development.run_tests(proposal.id)
-        attempt = 1
+            system, user = self._generation_prompt(proposal)
+            raw = self.reasoner(system, user)
+            changes = self._parse_changes(raw)
+            proposal = self.development.apply_changes(
+                proposal.id, changes, _lease_token=lease_token
+            )
+            proposal = self.development.run_tests(
+                proposal.id, _lease_token=lease_token
+            )
+            attempt = 1
 
-        while proposal.status == ProposalStatus.FAILED and attempt < self.debugger.max_attempts:
-            failure_output = self._failure_output(proposal)
-            diagnosis = self.debugger.diagnose(failure_output, attempt=attempt)
-            if not diagnosis.can_retry:
-                break
-            system, user = self._repair_prompt(proposal, failure_output, attempt)
-            repaired = self._parse_changes(self.reasoner(system, user))
-            builder = SelfDevelopmentBuilder(Path(proposal.sandbox_path), self.development.policy)
-            written = builder.apply(repaired)
-            proposal.changed_files = sorted(set(proposal.changed_files) | {item.path for item in written})
-            self.development.store.save(proposal)
-            proposal = self.development.run_tests(proposal.id)
-            attempt += 1
+            while proposal.status == ProposalStatus.FAILED and attempt < self.debugger.max_attempts:
+                failure_output = self._failure_output(proposal)
+                diagnosis = self.debugger.diagnose(failure_output, attempt=attempt)
+                if not diagnosis.can_retry:
+                    break
+                system, user = self._repair_prompt(proposal, failure_output, attempt)
+                repaired = self._parse_changes(self.reasoner(system, user))
+                builder = SelfDevelopmentBuilder(
+                    Path(proposal.sandbox_path), self.development.policy
+                )
+                written = builder.apply(repaired)
+                proposal.changed_files = sorted(
+                    set(proposal.changed_files) | {item.path for item in written}
+                )
+                self.development.store.save(proposal)
+                self.development.leases.refresh(
+                    proposal.id, lease_token, operation=f'self-repair-{attempt}'
+                )
+                proposal = self.development.run_tests(
+                    proposal.id, _lease_token=lease_token
+                )
+                attempt += 1
 
-        if proposal.status != ProposalStatus.TESTED:
-            return proposal
-        return self.development.review(proposal.id)
+            if proposal.status != ProposalStatus.TESTED:
+                return proposal
+            return self.development.review(
+                proposal.id, _lease_token=lease_token
+            )
