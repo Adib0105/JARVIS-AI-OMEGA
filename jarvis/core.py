@@ -7,11 +7,11 @@ from typing import Callable
 
 from openai import OpenAI
 
+from .attachments import image_data_url, normalize_image_paths
 from .config import settings
 from .memory import MemoryStore
 from .prompt import system_prompt
 from .tools import ToolRegistry
-from .vision import image_data_url
 
 
 class JarvisOmega:
@@ -24,8 +24,8 @@ class JarvisOmega:
 
         client_kwargs = {
             'api_key': settings.api_key,
-            'timeout': settings.ai_timeout_seconds,
-            'max_retries': max(0, settings.ai_max_retries),
+            'timeout': max(settings.ai_timeout_seconds, settings.vision_timeout_seconds),
+            'max_retries': max(0, settings.api_max_retries),
         }
         if settings.provider == 'openrouter':
             client_kwargs.update({
@@ -39,13 +39,14 @@ class JarvisOmega:
 
         self.memory = MemoryStore()
         self.tools = ToolRegistry(self.memory, confirmer)
-        self.session_id = self.memory.new_session('JARVIS OMEGA session')
+        self.session_id = self.memory.new_session('JARVIS OMEGA V5 session')
         self.last_latency = 0.0
         self.last_model_used = settings.model
         self.last_tool_mode = 'full'
+        self.last_request_kind = 'chat'
 
     def new_session(self) -> str:
-        self.session_id = self.memory.new_session('JARVIS OMEGA session')
+        self.session_id = self.memory.new_session('JARVIS OMEGA V5 session')
         return self.session_id
 
     def _openai_model_tools(self) -> list[dict]:
@@ -96,16 +97,15 @@ class JarvisOmega:
         if status == 401 or 'invalid api key' in lower or 'authentication' in lower:
             return RuntimeError(f'{provider} API key reject ho gayi. .env me key check/recreate karo.')
         if status == 429 or 'rate limit' in lower:
-            return RuntimeError(f'{provider} rate limit/quota hit hua. Thodi der baad retry karo ya provider/model limit check karo.')
+            return RuntimeError(f'{provider} rate limit/quota hit hua. Thodi der baad retry karo.')
         if status in {402, 403}:
             return RuntimeError(f'{provider} request permission/credit policy ki wajah se block hui.')
         if 'no endpoints found' in lower or 'model not found' in lower:
-            return RuntimeError('Configured AI model abhi available nahi hai. OPENROUTER_MODEL/openai model setting check karo.')
+            return RuntimeError('Configured AI model abhi available nahi hai. Model setting check karo.')
+        if 'image' in lower and any(word in lower for word in ('unsupported', 'modality', 'vision')):
+            return RuntimeError('Selected/free model image vision support nahi kar raha. Thodi der baad retry karo.')
         if 'timeout' in lower or 'timed out' in lower:
-            return RuntimeError(
-                f'{provider} response {settings.ai_timeout_seconds:.0f}s ke andar nahi aaya. '
-                'Free router busy ho sakta hai; retry karo.'
-            )
+            return RuntimeError('AI provider response timeout hua. Internet/free-model availability check karke retry karo.')
         return RuntimeError(f'{provider} request failed: {raw[:500]}')
 
     def chat(self, text: str) -> str:
@@ -113,6 +113,7 @@ class JarvisOmega:
         if not text:
             return ''
 
+        self.last_request_kind = 'chat'
         started = time.perf_counter()
         self.memory.add_message(self.session_id, 'user', text)
         try:
@@ -126,31 +127,39 @@ class JarvisOmega:
             self.last_latency = time.perf_counter() - started
 
     def analyze_image(self, image_path: str | Path, prompt: str) -> str:
-        if settings.provider != 'openrouter':
-            raise RuntimeError('Screen/image vision is currently wired for OpenRouter mode in this project.')
+        return self.analyze_images([image_path], prompt)
+
+    def analyze_images(self, image_paths: list[str | Path], prompt: str) -> str:
+        """Analyze one or more local images. Images are compressed in memory before upload."""
+        paths = normalize_image_paths(image_paths)
+        user_prompt = prompt.strip() or (
+            'Analyze the attached image(s). Explain what is visible, identify important details or errors, '
+            'and tell me what I should do next.'
+        )
+
+        self.last_request_kind = 'image'
         started = time.perf_counter()
-        data_url = image_data_url(image_path)
-        user_prompt = prompt.strip() or 'Analyze this screenshot. Explain what is visible and what I should do next.'
-        self.memory.add_message(self.session_id, 'user', f'[SCREEN VISION] {user_prompt}')
+        names = ', '.join(path.name for path in paths)
+        self.memory.add_message(self.session_id, 'user', f'[IMAGE ATTACHMENT: {names}] {user_prompt}')
+
+        content: list[dict] = [{'type': 'text', 'text': user_prompt}]
+        for path in paths:
+            content.append({'type': 'image_url', 'image_url': {'url': image_data_url(path)}})
+
         try:
             response = self.client.chat.completions.create(
                 model=settings.model,
                 messages=[
                     {'role': 'system', 'content': system_prompt()},
-                    {
-                        'role': 'user',
-                        'content': [
-                            {'type': 'text', 'text': user_prompt},
-                            {'type': 'image_url', 'image_url': {'url': data_url}},
-                        ],
-                    },
+                    {'role': 'user', 'content': content},
                 ],
+                timeout=settings.vision_timeout_seconds,
             )
             self.last_model_used = getattr(response, 'model', settings.model) or settings.model
-            self.last_tool_mode = 'vision'
-            content = response.choices[0].message.content
-            answer = content.strip() if isinstance(content, str) else str(content or '').strip()
-            answer = answer or 'Vision request completed but no text answer was returned.'
+            self.last_tool_mode = f'vision-{len(paths)}-image'
+            message = response.choices[0].message
+            answer = message.content.strip() if isinstance(message.content, str) else str(message.content or '').strip()
+            answer = answer or 'Image analysis completed but no text answer was returned.'
             self.memory.add_message(self.session_id, 'assistant', answer)
             return answer
         except Exception as exc:
@@ -169,7 +178,10 @@ class JarvisOmega:
                 kwargs['tools'] = tools
 
             try:
-                response = self.client.chat.completions.create(**kwargs)
+                response = self.client.chat.completions.create(
+                    **kwargs,
+                    timeout=settings.ai_timeout_seconds,
+                )
             except Exception as exc:
                 status = self._status_code(exc)
                 lower = str(exc).lower()
@@ -237,6 +249,7 @@ class JarvisOmega:
                 input=input_items,
                 tools=self._openai_model_tools(),
                 store=False,
+                timeout=settings.ai_timeout_seconds,
             )
         except Exception as exc:
             raise self._friendly_error(exc) from exc
@@ -269,6 +282,7 @@ class JarvisOmega:
                     input=input_items,
                     tools=self._openai_model_tools(),
                     store=False,
+                    timeout=settings.ai_timeout_seconds,
                 )
             except Exception as exc:
                 raise self._friendly_error(exc) from exc
