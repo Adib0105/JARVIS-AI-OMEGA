@@ -25,6 +25,11 @@ def main() -> None:
     except Exception as exc:
         results.append(check('Rich terminal UI', False, str(exc)))
     try:
+        import ddgs
+        results.append(check('Free public web search', True, getattr(ddgs, '__version__', 'installed')))
+    except Exception as exc:
+        results.append(check('Free public web search', False, str(exc)))
+    try:
         import edge_tts
         results.append(check('Neural Hindi/Hinglish TTS', True, getattr(edge_tts, '__version__', 'installed')))
     except Exception as exc:
@@ -34,6 +39,11 @@ def main() -> None:
         results.append(check('Offline TTS fallback', True, getattr(pyttsx3, '__version__', 'installed')))
     except Exception as exc:
         results.append(check('Offline TTS fallback', False, str(exc)))
+    try:
+        import tkinter
+        results.append(check('Desktop GUI', True, f'Tk {tkinter.TkVersion}'))
+    except Exception as exc:
+        results.append(check('Desktop GUI', False, str(exc)))
 
     try:
         from jarvis.config import settings
@@ -50,15 +60,17 @@ def main() -> None:
             results.append(check('Free test model', settings.model == 'openrouter/free' or ':free' in settings.model,
                                  settings.model))
 
+        results.append(check('Custom free web tools', settings.enable_public_web_tools, 'DDGS metasearch'))
         voice_detail = (
             f'engine={settings.voice_engine}, hindi={settings.voice_hindi}, '
-            f'hinglish={settings.voice_hinglish}'
+            f'hinglish={settings.voice_hinglish}, pitch={settings.edge_voice_pitch}, rate={settings.edge_voice_rate}'
         )
         results.append(check('Voice output enabled', settings.enable_voice_output, voice_detail))
         results.append(check('Microphone input', True, 'not installed by design'))
         results.append(check('Database folder writable',
                              os.access(settings.db_path.parent, os.W_OK) if settings.db_path.parent.exists() else True,
                              str(settings.db_path)))
+        results.append(check('Export folder configured', True, str(settings.export_dir)))
         roots = [str(p) for p in settings.allowed_file_roots if p.exists()]
         results.append(check('Local roots', bool(roots), '; '.join(roots) or 'none'))
     except Exception as exc:
