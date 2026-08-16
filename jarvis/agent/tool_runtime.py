@@ -39,12 +39,14 @@ class RecordingToolRegistry(ToolRegistry):
         context_provider: Callable[[], dict] | None = None,
         audit_store: AuditStore | None = None,
     ) -> None:
-        super().__init__(memory, confirmer)
-        # ToolRegistry.call uses self.permissions; replace the legacy broad gate here.
-        self.permissions = CapabilityPermissionGate(
+        gate = CapabilityPermissionGate(
             confirmer,
             require_approval=settings.require_local_approval,
         )
+        # Inject the V7 gate at construction time. ToolRegistry no longer creates a
+        # hidden legacy gate only for this subclass to overwrite it afterwards.
+        super().__init__(memory, confirmer, permission_checker=gate)
+        self.permissions = gate
         self.audit = audit_store or AuditStore()
         self.context_provider = context_provider or (lambda: {})
         self._events: list[dict] = []
