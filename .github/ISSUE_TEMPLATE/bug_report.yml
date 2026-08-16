@@ -1,0 +1,64 @@
+name: Bug report
+description: Report a reproducible JARVIS V7/V7.5 problem
+title: "[BUG] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Remove secrets from screenshots, logs and configuration before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: Branch / commit
+      description: Example: v7-development / commit SHA
+      placeholder: v7-development / abc1234
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Windows version and Python version
+      placeholder: Windows 11 64-bit, Python 3.14.x
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Give the smallest reliable reproduction.
+      placeholder: |
+        1. Start JARVIS
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste redacted self_check_v75 output or safe error text.
+      render: shell
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed API keys, passwords, OAuth tokens, recovery codes and other secrets.
+          required: true
+        - label: I checked the latest v7-development branch before reporting.
+          required: true
