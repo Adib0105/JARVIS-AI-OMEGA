@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -30,18 +29,20 @@ class MemoryContradiction:
 
 
 class MemoryLifecycleManager:
-    """Additive lifecycle operations for the existing V7 memory table.
+    """Schema-compatible lifecycle operations over the existing V7 memory table.
 
-    The manager validates the live schema before writing. It never invents a migration
-    when required columns are missing and never stores new secret content itself.
+    V7 originally used `active` + `memory_key`; V7.5 adds a lightweight `status`
+    lifecycle column without deleting or rewriting existing memory content. Legacy
+    lifecycle test databases using `stable_key` remain supported.
     """
 
     TABLE = 'v7_memories'
-    REQUIRED = {'id', 'content', 'confidence', 'updated_at', 'status'}
+    BASE_REQUIRED = {'id', 'content', 'confidence', 'updated_at'}
 
     def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = Path(db_path or settings.db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._ensure_lifecycle_schema()
         self._init_links()
 
     def _connect(self):
@@ -52,9 +53,27 @@ class MemoryLifecycleManager:
             rows = conn.execute(f'PRAGMA table_info({self.TABLE})').fetchall()
         return {str(row['name']) for row in rows}
 
+    def _ensure_lifecycle_schema(self) -> None:
+        columns = self._columns()
+        if not columns:
+            # The canonical V7MemoryStore/SchemaMigrator owns creation of v7_memories.
+            # Do not invent an incomplete memory table when called too early.
+            return
+        missing_base = self.BASE_REQUIRED - columns
+        if missing_base:
+            raise RuntimeError(f'V7 memory lifecycle requires columns: {sorted(missing_base)}')
+        if 'status' not in columns:
+            with self._connect() as conn:
+                conn.execute("ALTER TABLE v7_memories ADD COLUMN status TEXT NOT NULL DEFAULT 'ACTIVE'")
+                # Existing inactive V7 rows represent superseded/deactivated memories.
+                if 'active' in columns:
+                    conn.execute("UPDATE v7_memories SET status='SUPERSEDED' WHERE active=0")
+                conn.commit()
+
     def _require_schema(self) -> set[str]:
         columns = self._columns()
-        missing = self.REQUIRED - columns
+        required = self.BASE_REQUIRED | {'status'}
+        missing = required - columns
         if missing:
             raise RuntimeError(f'V7 memory lifecycle requires columns: {sorted(missing)}')
         return columns
@@ -72,26 +91,40 @@ class MemoryLifecycleManager:
             conn.execute('CREATE INDEX IF NOT EXISTS idx_v75_memory_rel_from ON v75_memory_relations(from_memory_id, relation)')
             conn.commit()
 
-    def reinforce(self, memory_id, *, amount: float = 0.05, verified: bool = True) -> dict:
+    def reinforce(self, memory_id, *, amount: float = 0.05, verified: bool = False) -> dict:
+        """Increase confidence without falsely claiming the memory was re-verified.
+
+        `verified=True` is explicit because ordinary reinforcement must not refresh
+        last_verified and thereby prevent legitimate stale-memory decay.
+        """
         columns = self._require_schema()
         amount = max(0.0, min(float(amount), 0.25))
         now = _now()
         sets = ['confidence=MIN(1.0, MAX(0.0, confidence + ?))', 'updated_at=?']
-        params = [amount, now]
+        params: list = [amount, now]
         if verified and 'last_verified' in columns:
-            sets.append('last_verified=?'); params.append(now)
-        if 'status' in columns:
-            sets.append("status=CASE WHEN status IN ('STALE','stale') THEN 'ACTIVE' ELSE status END")
+            sets.append('last_verified=?')
+            params.append(now)
+        sets.append("status=CASE WHEN UPPER(status)='STALE' THEN 'ACTIVE' ELSE status END")
+        if 'active' in columns:
+            sets.append('active=1')
         params.append(memory_id)
         with self._connect() as conn:
             cur = conn.execute(f"UPDATE {self.TABLE} SET {', '.join(sets)} WHERE id=?", tuple(params))
-            conn.commit()
             row = conn.execute(f'SELECT * FROM {self.TABLE} WHERE id=?', (memory_id,)).fetchone()
+            conn.commit()
         if cur.rowcount == 0 or row is None:
             raise KeyError(memory_id)
         return dict(row)
 
-    def supersede(self, old_memory_id, new_memory_id, *, reason: str = 'newer verified memory') -> dict:
+    def supersede(
+        self,
+        old_memory_id,
+        new_memory_id,
+        *,
+        reason: str = 'newer verified memory',
+        verified_new: bool = False,
+    ) -> dict:
         columns = self._require_schema()
         now = _now()
         with self._connect() as conn:
@@ -99,27 +132,40 @@ class MemoryLifecycleManager:
             new = conn.execute(f'SELECT id FROM {self.TABLE} WHERE id=?', (new_memory_id,)).fetchone()
             if old is None or new is None:
                 raise KeyError('Both old and new memory IDs must exist.')
+
+            old_sets = ["status='SUPERSEDED'", 'updated_at=?']
+            if 'active' in columns:
+                old_sets.append('active=0')
             conn.execute(
-                f"UPDATE {self.TABLE} SET status='SUPERSEDED', updated_at=? WHERE id=?",
+                f"UPDATE {self.TABLE} SET {', '.join(old_sets)} WHERE id=?",
                 (now, old_memory_id),
             )
-            if 'last_verified' in columns:
-                conn.execute(
-                    f"UPDATE {self.TABLE} SET status='ACTIVE', updated_at=?, last_verified=? WHERE id=?",
-                    (now, now, new_memory_id),
-                )
-            else:
-                conn.execute(
-                    f"UPDATE {self.TABLE} SET status='ACTIVE', updated_at=? WHERE id=?",
-                    (now, new_memory_id),
-                )
+
+            new_sets = ["status='ACTIVE'", 'updated_at=?']
+            new_params: list = [now]
+            if 'active' in columns:
+                new_sets.append('active=1')
+            if verified_new and 'last_verified' in columns:
+                new_sets.append('last_verified=?')
+                new_params.append(now)
+            new_params.append(new_memory_id)
+            conn.execute(
+                f"UPDATE {self.TABLE} SET {', '.join(new_sets)} WHERE id=?",
+                tuple(new_params),
+            )
             conn.execute(
                 '''INSERT INTO v75_memory_relations(relation, from_memory_id, to_memory_id, reason, created_at)
                    VALUES ('SUPERSEDES', ?, ?, ?, ?)''',
                 (str(new_memory_id), str(old_memory_id), str(reason)[:1000], now),
             )
             conn.commit()
-        return {'old_memory_id': old_memory_id, 'new_memory_id': new_memory_id, 'status': 'SUPERSEDED', 'reason': reason}
+        return {
+            'old_memory_id': old_memory_id,
+            'new_memory_id': new_memory_id,
+            'status': 'SUPERSEDED',
+            'reason': reason,
+            'verified_new': bool(verified_new),
+        }
 
     @staticmethod
     def _normalized_content(value: str) -> str:
@@ -127,13 +173,16 @@ class MemoryLifecycleManager:
 
     def contradictions(self, *, limit: int = 100) -> list[MemoryContradiction]:
         columns = self._require_schema()
-        if 'stable_key' not in columns:
+        key_column = 'stable_key' if 'stable_key' in columns else ('memory_key' if 'memory_key' in columns else '')
+        if not key_column:
             return []
+        where = [f'{key_column} IS NOT NULL', f"TRIM({key_column})!=''", "UPPER(status) NOT IN ('SUPERSEDED','DELETED')"]
+        if 'active' in columns:
+            where.append('active=1')
         with self._connect() as conn:
             rows = conn.execute(
-                f'''SELECT id, stable_key, content, confidence FROM {self.TABLE}
-                    WHERE stable_key IS NOT NULL AND TRIM(stable_key)!=''
-                      AND UPPER(status) NOT IN ('SUPERSEDED','DELETED')
+                f'''SELECT id, {key_column} AS stable_key, content, confidence FROM {self.TABLE}
+                    WHERE {' AND '.join(where)}
                     ORDER BY updated_at DESC LIMIT ?''',
                 (max(2, min(int(limit) * 10, 1000)),),
             ).fetchall()
@@ -166,9 +215,14 @@ class MemoryLifecycleManager:
         columns = self._require_schema()
         reference_col = 'last_verified' if 'last_verified' in columns else 'updated_at'
         cutoff = (datetime.now(timezone.utc) - timedelta(days=max(1, int(older_than_days)))).isoformat()
-        decay = max(0.0, min(float(decay), 0.25))
+        # Maintenance may deliberately apply a large one-time decay. Clamp to a
+        # mathematically valid confidence delta, not the reinforcement cap.
+        decay = max(0.0, min(float(decay), 1.0))
+        stale_below = max(0.0, min(float(stale_below), 1.0))
         where = [f"COALESCE({reference_col}, updated_at) < ?", "UPPER(status) NOT IN ('SUPERSEDED','DELETED')"]
         params: list = [cutoff]
+        if 'active' in columns:
+            where.append('active=1')
         if 'kind' in columns and kinds:
             placeholders = ','.join('?' for _ in kinds)
             where.append(f'UPPER(kind) IN ({placeholders})')
@@ -181,7 +235,7 @@ class MemoryLifecycleManager:
                         status=CASE WHEN MAX(0.0, confidence - ?) < ? THEN 'STALE' ELSE status END,
                         updated_at=?
                     WHERE {' AND '.join(where)}''',
-                (decay, decay, float(stale_below), now, *params),
+                (decay, decay, stale_below, now, *params),
             )
             conn.commit()
         return {
