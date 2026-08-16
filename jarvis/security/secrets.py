@@ -15,7 +15,7 @@ _PATTERNS: tuple[tuple[str, re.Pattern, str], ...] = (
     ('bearer_token', re.compile(r'(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}'), 'Bearer token'),
     ('private_key', re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'), 'Private key block'),
     ('password_assignment', re.compile(r'(?i)\b(?:password|passwd|passcode|pin)\s*[:=]\s*\S{4,}'), 'Password/passcode assignment'),
-    ('token_assignment', re.compile(r'(?i)\b(?:access[_ -]?token|refresh[_ -]?token|oauth[_ -]?token|api[_ -]?key|secret)\s*[:=]\s*\S{8,}'), 'Token/secret assignment'),
+    ('token_assignment', re.compile(r'(?i)\b(?:token|access[_ -]?token|refresh[_ -]?token|oauth[_ -]?token|api[_ -]?key|secret)\s*[:=]\s*\S{8,}'), 'Token/secret assignment'),
     ('recovery_code', re.compile(r'(?i)\b(?:recovery|backup)\s+code\s*[:=]\s*[A-Za-z0-9 -]{6,}'), 'Recovery/backup code'),
 )
 
