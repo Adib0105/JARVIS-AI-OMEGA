@@ -57,6 +57,23 @@ class MemoryStore:
             )''')
             conn.execute('''CREATE INDEX IF NOT EXISTS idx_knowledge_doc
                             ON knowledge_chunks(doc_id, chunk_index)''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS todos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'open',
+                created_at TEXT NOT NULL,
+                completed_at TEXT
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS reminders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT NOT NULL,
+                due_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                notified_at TEXT
+            )''')
+            conn.execute('''CREATE INDEX IF NOT EXISTS idx_reminders_due
+                            ON reminders(status, due_at)''')
             conn.commit()
 
     @staticmethod
@@ -96,12 +113,23 @@ class MemoryStore:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def search_messages(self, query: str, limit: int = 20) -> list[dict]:
+        query = query.strip()
+        if not query:
+            return []
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                '''SELECT session_id, role, content, created_at FROM messages
+                   WHERE content LIKE ? ORDER BY id DESC LIMIT ?''',
+                (f'%{query}%', max(1, min(limit, 50))),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def remember(self, fact: str) -> str:
         fact = fact.strip()
         if not fact:
             return 'Nothing to remember.'
-        if len(fact) > 2000:
-            fact = fact[:2000]
+        fact = fact[:2000]
         with self._lock, self._connect() as conn:
             conn.execute('INSERT INTO facts(fact, created_at) VALUES (?, ?)', (fact, self._now()))
             conn.commit()
@@ -121,6 +149,89 @@ class MemoryStore:
             rows = conn.execute('SELECT fact FROM facts ORDER BY id DESC LIMIT ?', (limit,)).fetchall()
         return [r['fact'] for r in rows]
 
+    def add_todo(self, title: str) -> dict:
+        title = title.strip()[:500]
+        if not title:
+            raise ValueError('Todo title is empty.')
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                'INSERT INTO todos(title, status, created_at) VALUES (?, ?, ?)',
+                (title, 'open', self._now()),
+            )
+            conn.commit()
+            todo_id = cur.lastrowid
+        return {'id': todo_id, 'title': title, 'status': 'open'}
+
+    def list_todos(self, include_done: bool = False, limit: int = 30) -> list[dict]:
+        with self._lock, self._connect() as conn:
+            if include_done:
+                rows = conn.execute(
+                    'SELECT * FROM todos ORDER BY id DESC LIMIT ?',
+                    (max(1, min(limit, 100)),),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM todos WHERE status='open' ORDER BY id DESC LIMIT ?",
+                    (max(1, min(limit, 100)),),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def complete_todo(self, todo_id: int) -> dict:
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE todos SET status='done', completed_at=? WHERE id=? AND status!='done'",
+                (self._now(), int(todo_id)),
+            )
+            conn.commit()
+        return {'id': int(todo_id), 'completed': cur.rowcount > 0}
+
+    def add_reminder(self, text: str, due_at: str) -> dict:
+        text = text.strip()[:1000]
+        if not text:
+            raise ValueError('Reminder text is empty.')
+        try:
+            due = datetime.fromisoformat(due_at)
+        except ValueError as exc:
+            raise ValueError('due_at must be ISO-8601, e.g. 2026-08-16T18:30:00+05:30') from exc
+        if due.tzinfo is None:
+            due = due.astimezone()
+        due_utc = due.astimezone(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            cur = conn.execute(
+                'INSERT INTO reminders(text, due_at, status, created_at) VALUES (?, ?, ?, ?)',
+                (text, due_utc, 'pending', self._now()),
+            )
+            conn.commit()
+            reminder_id = cur.lastrowid
+        return {'id': reminder_id, 'text': text, 'due_at': due_utc, 'status': 'pending'}
+
+    def list_reminders(self, include_done: bool = False, limit: int = 30) -> list[dict]:
+        with self._lock, self._connect() as conn:
+            if include_done:
+                rows = conn.execute('SELECT * FROM reminders ORDER BY due_at ASC LIMIT ?', (limit,)).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM reminders WHERE status='pending' ORDER BY due_at ASC LIMIT ?", (limit,)
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def due_reminders(self, limit: int = 10) -> list[dict]:
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM reminders WHERE status='pending' AND due_at<=? ORDER BY due_at ASC LIMIT ?",
+                (now, max(1, min(limit, 50))),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def mark_reminder_done(self, reminder_id: int) -> None:
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE reminders SET status='done', notified_at=? WHERE id=?",
+                (self._now(), int(reminder_id)),
+            )
+            conn.commit()
+
     def list_sessions(self, limit: int = 12) -> list[dict]:
         with self._lock, self._connect() as conn:
             rows = conn.execute(
@@ -136,19 +247,23 @@ class MemoryStore:
             facts = conn.execute('SELECT COUNT(*) FROM facts').fetchone()[0]
             docs = conn.execute('SELECT COUNT(*) FROM knowledge_docs').fetchone()[0]
             chunks = conn.execute('SELECT COUNT(*) FROM knowledge_chunks').fetchone()[0]
+            todos = conn.execute("SELECT COUNT(*) FROM todos WHERE status='open'").fetchone()[0]
+            reminders = conn.execute("SELECT COUNT(*) FROM reminders WHERE status='pending'").fetchone()[0]
         return {
             'sessions': sessions,
             'messages': messages,
             'facts': facts,
             'knowledge_docs': docs,
             'knowledge_chunks': chunks,
+            'open_todos': todos,
+            'pending_reminders': reminders,
         }
 
     def export_session(self, session_id: str, export_dir: Path) -> Path:
         export_dir.mkdir(parents=True, exist_ok=True)
         messages = self.session_messages(session_id, 2000)
         target = export_dir / f'jarvis-chat-{session_id}.md'
-        lines = [f'# JARVIS OMEGA Chat Export', '', f'Session: `{session_id}`', '']
+        lines = ['# JARVIS OMEGA Chat Export', '', f'Session: `{session_id}`', '']
         for row in messages:
             who = 'YOU' if row['role'] == 'user' else 'JARVIS'
             lines.extend([f'## {who}', '', row['content'], ''])
@@ -202,7 +317,7 @@ class MemoryStore:
                 FROM knowledge_chunks kc
                 JOIN knowledge_docs kd ON kd.id = kc.doc_id
                 ORDER BY kc.id DESC
-                LIMIT 2000
+                LIMIT 3000
             ''').fetchall()
         scored = []
         for row in rows:
