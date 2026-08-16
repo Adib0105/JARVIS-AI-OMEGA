@@ -66,10 +66,11 @@ def classify_exception(
     provider: str | None = None,
     operation: str | None = None,
 ) -> Failure:
-    """Classify external/provider/tool failures without exposing secrets.
+    """Normalize failures into stable V7 categories.
 
-    Classification is deliberately conservative. Recovery policy is implemented by
-    the recovery layer later; Phase 1 only supplies reliable normalized categories.
+    Specific provider/model/vision signals are checked before generic HTTP status
+    classes so a 400 vision incompatibility does not get mislabeled INVALID_INPUT.
+    Recovery policy is deliberately separate and is introduced in Phase 2.
     """
     status = _status_code(exc)
     text = str(exc)
@@ -91,23 +92,22 @@ def classify_exception(
     elif status in {502, 503} or any(token in lower for token in ('connection error', 'network error', 'connection reset')):
         category = ErrorCategory.NETWORK_ERROR
         retryable = True
-    elif isinstance(exc, FileNotFoundError) or status == 404 or 'not found' in lower:
-        category = ErrorCategory.RESOURCE_NOT_FOUND
-        retryable = False
-    elif isinstance(exc, (ValueError, TypeError, KeyError)) or status in {400, 422}:
-        category = ErrorCategory.INVALID_INPUT
-        retryable = False
     elif 'image' in lower and any(token in lower for token in ('vision', 'modality', 'unsupported')):
         category = ErrorCategory.VISION_ERROR
         retryable = True
     elif any(token in lower for token in ('model not found', 'no endpoints found', 'model unavailable')):
         category = ErrorCategory.MODEL_ERROR
         retryable = True
+    elif isinstance(exc, FileNotFoundError) or (status == 404 and 'model' not in lower) or 'resource not found' in lower:
+        category = ErrorCategory.RESOURCE_NOT_FOUND
+        retryable = False
+    elif isinstance(exc, (ValueError, TypeError, KeyError)) or status in {400, 422}:
+        category = ErrorCategory.INVALID_INPUT
+        retryable = False
     else:
         category = ErrorCategory.UNKNOWN_ERROR
         retryable = False
 
-    # Do not copy an unlimited provider payload into logs/UI.
     message = text.strip()[:800] or type(exc).__name__
     return Failure(
         category=category,
