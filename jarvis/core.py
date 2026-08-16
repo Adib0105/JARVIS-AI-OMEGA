@@ -11,7 +11,7 @@ import re
 from typing import Callable
 
 from .agent.context import ContextManager
-from .agent.orchestrator import MissionOrchestrator
+from .agent.orchestrator_memory import MemoryAwareMissionOrchestrator
 from .agent.tool_runtime import RecordingToolRegistry
 from .core_v7 import JarvisOmega as _ProviderCore
 from .memory_v7 import MemoryKind, V7MemoryStore
@@ -21,8 +21,6 @@ from .prompt import system_prompt
 class JarvisOmega(_ProviderCore):
     def __init__(self, confirmer: Callable[[str, dict], object] | None = None):
         super().__init__(confirmer=confirmer)
-        # Re-open the same database through the additive V7 memory layer. The session
-        # created by the provider core remains valid because both stores use the same DB.
         db_path = self.memory.db_path
         self.memory = V7MemoryStore(db_path)
         self.context_manager = ContextManager(self.memory)
@@ -31,7 +29,7 @@ class JarvisOmega(_ProviderCore):
             confirmer,
             context_provider=self._tool_audit_context,
         )
-        self.orchestrator = MissionOrchestrator(self)
+        self.orchestrator = MemoryAwareMissionOrchestrator(self)
         self.last_mission_id: str | None = None
         self.last_context_stats: dict = {}
 
@@ -64,7 +62,6 @@ class JarvisOmega(_ProviderCore):
                 if bundle.text:
                     prompt += '\n\nV7 LOCAL CONTEXT BUNDLE:\n' + bundle.text
             except Exception:
-                # Context retrieval is helpful but must never prevent the core chat path.
                 pass
         return prompt
 
@@ -81,7 +78,6 @@ class JarvisOmega(_ProviderCore):
 
     @staticmethod
     def _extract_plan(raw: str, max_steps: int) -> list[str]:
-        """Structured-first plan parser that correctly preserves an intentional empty plan."""
         cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw.strip(), flags=re.IGNORECASE)
         try:
             parsed = json.loads(cleaned)
