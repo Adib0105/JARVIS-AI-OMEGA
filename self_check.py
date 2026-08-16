@@ -39,9 +39,9 @@ def main() -> None:
     try:
         from PIL import Image, ImageGrab, ImageTk
         _ = (Image, ImageGrab, ImageTk)
-        results.append(check('V6 image upload + screen vision', True, 'Pillow installed'))
+        results.append(check('V7 image upload + screen vision', True, 'Pillow installed'))
     except Exception as exc:
-        results.append(check('V6 image upload + screen vision', False, str(exc)))
+        results.append(check('V7 image upload + screen vision', False, str(exc)))
 
     try:
         import edge_tts
@@ -59,6 +59,20 @@ def main() -> None:
     except Exception as exc:
         results.append(check('Animated ARC desktop GUI', False, str(exc)))
 
+    try:
+        from jarvis.providers import AIProvider, create_primary_provider
+        _ = (AIProvider, create_primary_provider)
+        results.append(check('V7 provider abstraction', True, 'provider-neutral contracts loaded'))
+    except Exception as exc:
+        results.append(check('V7 provider abstraction', False, str(exc)))
+
+    try:
+        from jarvis.errors import ErrorCategory, classify_exception
+        _ = classify_exception(TimeoutError('test timeout'))
+        results.append(check('V7 error taxonomy', ErrorCategory.TIMEOUT.value == 'TIMEOUT', 'typed failure categories loaded'))
+    except Exception as exc:
+        results.append(check('V7 error taxonomy', False, str(exc)))
+
     # Optional Windows modules: text chat remains usable if these are missing.
     try:
         import pyautogui
@@ -75,18 +89,26 @@ def main() -> None:
     try:
         from jarvis import __version__
         from jarvis.config import settings
+        from jarvis.config_validation import ValidationLevel, validate_settings
 
-        results.append(check('JARVIS version', __version__ == settings.app_version == '6.0.0', __version__))
+        results.append(check('JARVIS version', __version__ == settings.app_version == '7.0.0', __version__))
+        findings = validate_settings(settings)
+        for finding in findings:
+            if finding.level == ValidationLevel.FAIL:
+                results.append(check(f'Config {finding.key}', False, finding.message))
+            elif finding.level == ValidationLevel.WARNING:
+                optional(f'Config {finding.key}', False, finding.message)
+
         provider_ok = settings.provider in {'openrouter', 'openai'}
         results.append(check('AI provider', provider_ok, settings.provider))
 
-        placeholder = 'put_your_openrouter_key_here' if settings.provider == 'openrouter' else 'put_your_api_key_here'
-        key_ok = bool(settings.api_key and settings.api_key != placeholder)
+        placeholders = {'put_your_openrouter_key_here', 'put_your_api_key_here', 'YAHAN_APNI_OPENROUTER_KEY'}
+        key_ok = bool(settings.api_key and settings.api_key not in placeholders)
         key_name = 'OPENROUTER_API_KEY' if settings.provider == 'openrouter' else 'OPENAI_API_KEY'
         results.append(check(f'{key_name} configured', key_ok, settings.model))
 
         if settings.provider == 'openrouter':
-            results.append(check('Free test model', settings.model == 'openrouter/free' or ':free' in settings.model, settings.model))
+            optional('Free/test model route', settings.model == 'openrouter/free' or ':free' in settings.model, settings.model)
 
         results.append(check('Public web tools', settings.enable_public_web_tools, 'DDGS metasearch'))
         results.append(check('Desktop automation config', settings.enable_desktop_automation, 'approval-gated'))
@@ -114,7 +136,7 @@ def main() -> None:
     except Exception as exc:
         results.append(check('JARVIS config', False, str(exc)))
 
-    print('\nJARVIS OMEGA V6:', 'READY' if all(results) else 'NEEDS ATTENTION')
+    print('\nJARVIS OMEGA V7:', 'READY' if all(results) else 'NEEDS ATTENTION')
 
 
 if __name__ == '__main__':
