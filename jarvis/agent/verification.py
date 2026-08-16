@@ -29,6 +29,21 @@ def _base(event: dict, name: str, *, side_effecting: bool) -> dict:
 
 
 class VerificationEngine:
+    def _sync_audit(self, checks: list[dict]) -> None:
+        audit_ids = [item.get('audit_id') for item in checks if item.get('audit_id')]
+        if not audit_ids:
+            return
+        try:
+            from ..security.audit import AuditStore
+            store = AuditStore()
+            for item in checks:
+                audit_id = item.get('audit_id')
+                if audit_id:
+                    store.update_verification(int(audit_id), str(item.get('status', 'UNKNOWN')))
+        except Exception:
+            # Audit synchronization must never make an otherwise safe verification crash.
+            pass
+
     def verify_tool_event(self, event: dict) -> dict:
         name = str(event.get('name', ''))
         args = event.get('args') if isinstance(event.get('args'), dict) else {}
@@ -125,6 +140,7 @@ class VerificationEngine:
             )
 
         checks = [self.verify_tool_event(event) for event in tool_events]
+        self._sync_audit(checks)
         hard_failures = [item for item in checks if item['status'] == 'FAILED']
         unverified = [item for item in checks if not item['verified'] and item['status'] != 'FAILED']
         verified = not hard_failures and not unverified
