@@ -46,6 +46,9 @@ def _status_code(exc: BaseException) -> int | None:
 
 
 def _retry_after(exc: BaseException) -> float | None:
+    direct = getattr(exc, 'retry_after', None)
+    if isinstance(direct, (int, float)) and not isinstance(direct, bool):
+        return max(0.0, float(direct))
     response = getattr(exc, 'response', None)
     headers: Any = getattr(response, 'headers', None)
     if not headers:
@@ -66,12 +69,7 @@ def classify_exception(
     provider: str | None = None,
     operation: str | None = None,
 ) -> Failure:
-    """Normalize failures into stable V7 categories.
-
-    Specific provider/model/vision signals are checked before generic HTTP status
-    classes so a 400 vision incompatibility does not get mislabeled INVALID_INPUT.
-    Recovery policy is deliberately separate and is introduced in Phase 2.
-    """
+    """Normalize failures into stable V7 categories."""
     status = _status_code(exc)
     text = str(exc)
     lower = text.lower()
@@ -89,7 +87,9 @@ def classify_exception(
     elif status in {408, 504} or 'timeout' in lower or 'timed out' in lower:
         category = ErrorCategory.TIMEOUT
         retryable = True
-    elif status in {502, 503} or any(token in lower for token in ('connection error', 'network error', 'connection reset')):
+    elif status in {502, 503} or any(token in lower for token in (
+        'connection error', 'network error', 'connection reset', 'circuit open',
+    )):
         category = ErrorCategory.NETWORK_ERROR
         retryable = True
     elif 'image' in lower and any(token in lower for token in ('vision', 'modality', 'unsupported')):
