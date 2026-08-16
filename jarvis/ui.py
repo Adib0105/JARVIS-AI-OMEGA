@@ -11,6 +11,7 @@ from rich.text import Text
 
 from .config import settings
 from .core import JarvisOmega
+from .vision import capture_screen
 from .voice import VoiceOutput
 from .web_tools import search_news, search_web
 
@@ -29,7 +30,7 @@ def banner() -> None:
     title = Text('J A R V I S   O M E G A   V3', style='bold cyan')
     provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
     subtitle = (
-        f'Agent • Free Web • Memory • Knowledge Base • Deep Neural Voice • '
+        f'Agent • Free Web • Screen Vision • Memory • Knowledge • Deep Neural Voice • '
         f'Creator: {settings.creator_name} • Provider: {provider}'
     )
     console.print(Panel.fit(Text.assemble(title, '\n', subtitle), border_style='cyan'))
@@ -44,6 +45,7 @@ def help_table() -> Table:
         ('/help', 'Show this command list'),
         ('/new', 'Start a fresh conversation session'),
         ('/status', 'Show provider/model/tools/voice status'),
+        ('/screen [prompt]', 'Capture the current screen with approval and analyze it using AI vision'),
         ('/web <query>', 'Free public web search without using paid OpenAI web search'),
         ('/news <query>', 'Search recent public news'),
         ('/remember <text>', 'Save a fact to local long-term memory'),
@@ -120,6 +122,7 @@ def run_cli() -> None:
                 f'Tool mode: {jarvis.last_tool_mode}\n'
                 f'Reasoning setting: {settings.reasoning_effort if settings.provider == "openai" else "provider-managed"}\n'
                 f'Free custom web search: {settings.enable_public_web_tools}\n'
+                f'Screen vision: {settings.provider == "openrouter"}\n'
                 f'Hosted web search: {settings.hosted_web_search_enabled}\n'
                 f'Code Interpreter: {settings.code_interpreter_enabled}\n'
                 f'Local tools: {settings.enable_local_tools}\n'
@@ -129,6 +132,22 @@ def run_cli() -> None:
                 f'Microphone input: False\nSession: {jarvis.session_id}\n'
                 f'Last latency: {jarvis.last_latency:.2f}s',
                 title='OMEGA V3 Status', border_style='green'))
+            continue
+
+        if low.startswith('/screen'):
+            prompt = text[len('/screen'):].strip() or 'Analyze this screenshot. Tell me what is visible, identify any errors or important UI state, and explain what I should do next.'
+            decision = jarvis.tools.permissions.check('capture_screen', {'purpose': prompt})
+            if not decision.allowed:
+                console.print(f'[yellow]{decision.reason}[/yellow]')
+                continue
+            try:
+                with console.status('[cyan]Capturing and analyzing screen...[/cyan]'):
+                    screenshot = capture_screen()
+                    answer = jarvis.analyze_image(screenshot, prompt)
+                console.print(Panel(Markdown(answer), title=f'JARVIS VISION • {screenshot.name}', border_style='magenta'))
+                voice.speak(answer)
+            except Exception as exc:
+                console.print(Panel(str(exc), title='Screen Vision Error', border_style='red'))
             continue
 
         if low.startswith('/web '):
