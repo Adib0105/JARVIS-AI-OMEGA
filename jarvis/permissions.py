@@ -29,6 +29,9 @@ class PermissionGate:
         'type_text', 'press_key', 'hotkey', 'click_screen', 'capture_screen',
         'list_code_tree', 'write_local_text_file', 'run_project_tests',
         'git_status', 'git_diff', 'git_log',
+        # Google account data always remains approval-gated, including reads.
+        'google_status', 'gmail_search', 'gmail_send',
+        'calendar_upcoming', 'calendar_create',
     }
 
     def __init__(self, confirmer: Callable[[str, dict], bool] | None = None):
@@ -39,8 +42,13 @@ class PermissionGate:
             return Decision(True)
         if name in self.APPROVAL:
             if not settings.require_local_approval:
+                # Cloud-account actions retain approval even if general local approval is disabled.
+                if name.startswith(('gmail_', 'calendar_', 'google_')):
+                    if self.confirmer and self.confirmer(name, args):
+                        return Decision(True)
+                    return Decision(False, 'Google account action was not approved by the user.')
                 return Decision(True)
             if self.confirmer and self.confirmer(name, args):
                 return Decision(True)
-            return Decision(False, 'Local action was not approved by the user.')
+            return Decision(False, 'Action was not approved by the user.')
         return Decision(False, f"Tool '{name}' is not permitted.")
