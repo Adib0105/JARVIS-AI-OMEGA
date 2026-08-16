@@ -33,6 +33,7 @@ class V75BackupTests(unittest.TestCase):
             db = root / 'jarvis.db'
             self._seed(db, 'original')
             manager = BackupManager(db, root / 'backups')
+            self.assertTrue(manager.integrity_check()['ok'])
             result = manager.create_backup('test')
             backup = Path(result['database'])
             manifest = json.loads(Path(result['manifest']).read_text(encoding='utf-8'))
