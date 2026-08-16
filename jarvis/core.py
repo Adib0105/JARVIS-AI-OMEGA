@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from typing import Callable
 
 from openai import OpenAI
@@ -10,6 +11,7 @@ from .config import settings
 from .memory import MemoryStore
 from .prompt import system_prompt
 from .tools import ToolRegistry
+from .vision import image_data_url
 
 
 class JarvisOmega:
@@ -116,6 +118,40 @@ class JarvisOmega:
         finally:
             self.last_latency = time.perf_counter() - started
 
+    def analyze_image(self, image_path: str | Path, prompt: str) -> str:
+        """Analyze a local image using OpenRouter multimodal chat. No microphone involved."""
+        if settings.provider != 'openrouter':
+            raise RuntimeError('Screen/image vision is currently wired for OpenRouter mode in this project.')
+        started = time.perf_counter()
+        data_url = image_data_url(image_path)
+        user_prompt = prompt.strip() or 'Analyze this screenshot. Explain what is visible and what I should do next.'
+        self.memory.add_message(self.session_id, 'user', f'[SCREEN VISION] {user_prompt}')
+        try:
+            response = self.client.chat.completions.create(
+                model=settings.model,
+                messages=[
+                    {'role': 'system', 'content': system_prompt()},
+                    {
+                        'role': 'user',
+                        'content': [
+                            {'type': 'text', 'text': user_prompt},
+                            {'type': 'image_url', 'image_url': {'url': data_url}},
+                        ],
+                    },
+                ],
+            )
+            self.last_model_used = getattr(response, 'model', settings.model) or settings.model
+            self.last_tool_mode = 'vision'
+            content = response.choices[0].message.content
+            answer = content.strip() if isinstance(content, str) else str(content or '').strip()
+            answer = answer or 'Vision request completed but no text answer was returned.'
+            self.memory.add_message(self.session_id, 'assistant', answer)
+            return answer
+        except Exception as exc:
+            raise self._friendly_error(exc) from exc
+        finally:
+            self.last_latency = time.perf_counter() - started
+
     def _chat_openrouter(self) -> str:
         messages = [{'role': 'system', 'content': system_prompt()}] + self._history()
         tools = self._openrouter_model_tools()
@@ -137,7 +173,6 @@ class JarvisOmega:
                     and any(word in lower for word in ('tool', 'function', 'unsupported', 'parameter', 'schema'))
                 )
                 if tool_problem:
-                    # Free router can select a model that cannot accept tools. Keep chat alive.
                     tools = []
                     self.last_tool_mode = 'fallback-no-tools'
                     continue
