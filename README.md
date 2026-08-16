@@ -1,13 +1,13 @@
 # JARVIS AI OMEGA V7 — Verified Desktop AI Agent
 
-> **V7.5 engineering track: controlled self-evaluation, sandboxed self-development, observability, benchmarks, skills, backup/restore and release safety.**
+> **V7.5 engineering track:** self-evaluation, gap detection, sandboxed self-development, Computer Use V2, observability, benchmarks, skills, backup/restore and controlled release safety.
 
 ![Version](https://img.shields.io/badge/JARVIS-V7%20%2F%20V7.5-cyan)
 ![Python](https://img.shields.io/badge/Python-3.11--3.14-blue)
 ![Branch](https://img.shields.io/badge/Branch-v7--development-purple)
 ![CI](https://img.shields.io/github/actions/workflow/status/Adib0105/JARVIS-AI-OMEGA/ci.yml?branch=v7-development&label=V7.5%20CI)
 ![Security](https://img.shields.io/badge/Security-Capability%20Gated-red)
-![SelfDev](https://img.shields.io/badge/Self--Development-Sandboxed%20%2F%20Experimental-orange)
+![SelfDev](https://img.shields.io/badge/Self--Development-Sandboxed%20%2F%20Operator--Gated-orange)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
 **Created by Adib Azam.**
@@ -16,17 +16,17 @@
 OPERATOR: ADIB AZAM
 ```
 
-JARVIS AI OMEGA is a Windows-first multimodal desktop AI agent. V7 preserves the working ARC desktop experience, voice, vision, documents, web tools, memory and mission execution while rebuilding the internals around verification, recovery, capability security and evidence.
+JARVIS AI OMEGA is a Windows-first multimodal desktop AI agent. V7 keeps the ARC desktop experience, voice, vision, documents, web tools, memory and mission execution while rebuilding the internals around verification, recovery, capability security and evidence.
 
 The V7.5 engineering track adds controlled self-evaluation and self-development without turning JARVIS into an unrestricted self-modifying program.
 
-> **Branch strategy:** `main` remains the stable V6 line while `v7-development` contains the active V7/V7.5 engineering work until the final release gate is complete.
+> **Branch strategy:** `main` remains the stable V6 line. `v7-development` contains active V7/V7.5 engineering work until operator workstation smoke testing and the final release decision.
 
 ---
 
-## Core design rule
+## Engineering rule
 
-A feature is not considered complete because a file exists.
+A feature is not considered complete merely because a file exists.
 
 ```text
 IMPLEMENTED
@@ -35,17 +35,21 @@ IMPLEMENTED
 + VERIFIED
 ```
 
-The repository intentionally distinguishes **AVAILABLE**, **EXPERIMENTAL**, **DEGRADED**, **DISABLED**, **MISSING** and **BROKEN** capabilities.
+Runtime capability status uses:
+
+```text
+AVAILABLE | EXPERIMENTAL | DEGRADED | DISABLED | MISSING | BROKEN
+```
 
 ---
 
-# Architecture
+## Architecture
 
 ```text
 USER
   │
   ▼
-Context Manager
+Context Manager + Capability Registry
   │
   ▼
 Provider-Neutral AI + Model Router
@@ -65,83 +69,80 @@ Tools / Computer Use / Browser / Documents / Coding
 Evidence + Memory + Observability
   │
   ▼
-Self Evaluation → Gap Detection → Improvement Proposal
+Self Evaluation → Gap Detection → Improvement / Skill Proposal
   │
   ▼
-Isolated Git Sandbox → Build → Test → Debug → Diff
+Isolated Git Sandbox → Build → Test → Debug → Evaluate → Diff
   │
   ▼
 AWAITING APPROVAL
   │
   ▼
-Controlled Release (separate gate) → Monitor → Rollback if required
+Controlled Release → Post-test → History-preserving Rollback if required
 ```
 
-JARVIS must not claim a real-world action succeeded merely because a tool function returned. Important actions use explicit verification states such as **VERIFIED**, **PARTIAL**, **FAILED** or **UNVERIFIED**.
+JARVIS must not claim a real-world action succeeded merely because a tool function returned. Important actions expose states such as **VERIFIED**, **PARTIAL**, **FAILED** and **UNVERIFIED**.
 
 ---
 
-# Current engineering status
+## Current V7.5 engineering status
 
 | System | Status | Notes |
 |---|---|---|
-| Provider abstraction | ✅ Implemented | OpenRouter, OpenAI-compatible and local provider foundation |
-| Mission state machine | ✅ Implemented | persistence, retry, recovery, replanning, verification, pause/resume/cancel |
-| Layered memory/context | ✅ Implemented | working, episodic, semantic, procedural + hybrid retrieval |
-| Capability security/audit | ✅ Implemented | granular policies, Approval Center, Trusted Local Mode, secret protection |
-| Semantic Computer Use | ✅ Implemented foundation | confidence/no-guess Windows UIA path |
-| Browser V2 security | 🔧 V7.5 validation | public-target trust + prompt-injection isolation |
-| Capability Registry | ✅ Implemented | runtime-derived capability truth |
-| Self Evaluation | ✅ Implemented | evidence-based persisted metrics; unsupported metrics remain N/A |
-| Gap Detection | ✅ Implemented | registry, metric and repeated-failure evidence |
-| Controlled Self Development | 🧪 Experimental | isolated Git worktree, tests, policy, diff, approval |
-| Self Coding / Debugging | 🧪 Experimental | JSON-only sandbox writes + bounded repair loop |
+| Provider abstraction + router | ✅ Implemented/tested | OpenRouter, OpenAI-compatible and optional local route |
+| Mission state machine | ✅ Implemented/tested | persistence, verification, retry, recovery, replanning, pause/resume/cancel |
+| Layered memory/context | ✅ Implemented/tested | working, episodic, semantic, procedural + hybrid retrieval |
+| Memory lifecycle V2 | ✅ Implemented/tested | reinforcement, contradiction, superseding, stale/confidence decay |
+| Capability security/audit | ✅ Implemented/tested | Approval Center, Trusted Local Mode, secret protection |
+| Capability Registry | ✅ Implemented/tested | runtime-derived capability truth |
+| Self Evaluation + Gap Detection | ✅ Implemented/tested | evidence-based historical metrics; unsupported metrics remain N/A |
+| Evaluation Benchmark | ✅ Implemented/tested | deterministic before/after scenario metrics |
+| Computer Use V2 | ✅ Integrated/tested | UIA-first + stricter optional local OCR fallback + no-guess policy |
+| Browser V2 security | ✅ Implemented/tested | public-target checks + prompt-injection isolation |
+| Document provenance/dedupe | ✅ Implemented/tested | SHA-256 unchanged/update/duplicate decisions |
+| Observability / Cost | ✅ Implemented/tested | provider/model/latency/fallback/token usage; cost only when explicitly reported |
+| Health System | ✅ Implemented/tested | PASS/WARNING/FAIL without fake remote-health claims |
+| Agent Command Center | ✅ Integrated | Mission, Health, Capabilities, Observability, Security, Self-Dev, Data, Release, Skills |
+| Backup / Restore | ✅ Implemented/tested | SQLite backup API, integrity, SHA-256 manifest, pre-restore backup |
+| Self Development / Coding / Debugging | 🧪 Experimental | isolated sandbox only; bounded changes and repair |
 | Offline Development | 🧪 Optional | requires explicitly configured local reasoning model |
-| Skill Proposals / Workflow Learning | 🧪 Experimental | proposes reusable skills/workflows; no silent activation |
-| Document hash/provenance index | 🔧 V7.5 validation | unchanged/update/duplicate detection |
-| Memory lifecycle V2 | 🔧 V7.5 validation | reinforcement, contradiction, superseding, stale/decay layer |
-| Provider model router | 🔧 V7.5 validation | FAST/SMART/VISION/CODING/PLANNING/REVIEW/SUMMARY/LOCAL |
-| Observability / Cost | 🔧 V7.5 validation | provider/model/latency/usage; cost only when provider explicitly reports it |
-| Health system | 🔧 V7.5 validation | PASS/WARNING/FAIL checks without fake remote-health claims |
-| Agent Command Center | 🔧 V7.5 validation | mission/health/capability/usage/security/self-dev/data dashboard |
-| Backup / Restore | 🔧 V7.5 validation | SQLite backup API + manifest/hash/integrity + pre-restore backup |
-| Evaluation Benchmark | 🔧 V7.5 validation | historical deterministic scenario metrics |
-| Controlled Release / Rollback | 🧪 Experimental | fast-forward-only deploy + history-preserving Git revert |
-| Windows V7 build/installer | 🔧 Scripts updated | final workstation packaging test remains a release step |
+| Workflow Learning | ✅ Implemented/tested | proposes repeated safe workflows; no silent automation activation |
+| Skill Generation | 🧪 Experimental | sandbox build/test plus deployed-only activation gate |
+| Controlled Release / Rollback | 🧪 Experimental | explicit enablement/approval; fast-forward deploy; Git revert rollback |
+| Windows V7 build | 🔬 CI-gated | PyInstaller package smoke + private runtime file exclusion |
+| Inno Setup installer | 🖥️ Workstation step | requires Inno Setup 6 locally |
 
-Detailed live status: `docs/V7.5-STATUS.md`.
+Detailed matrix: `docs/V7.5-STATUS.md`.
 
 ---
 
-# Agent Command Center
+## Agent Command Center
 
-The desktop HUD exposes a separate **COMMAND CENTER** so the main chat does not become overcrowded.
-
-Shortcut:
+Open from the desktop UI or use:
 
 ```text
 Ctrl + Shift + C
 ```
 
-Command Center tabs include:
+Tabs include:
 
-- **MISSION** — goal, current state, steps, evidence, pause/resume/cancel
+- **MISSION** — mission status, steps, verification, pause/resume/cancel
 - **HEALTH** — PASS/WARNING/FAIL subsystem checks
-- **CAPABILITIES** — runtime registry and real availability status
-- **OBSERVABILITY** — provider/model usage, latency, fallback, reported cost
-- **SECURITY** — recent audit/blocked actions
+- **CAPABILITIES** — live runtime capability registry
+- **OBSERVABILITY** — model/provider usage, latency, fallback and reported cost
+- **SECURITY** — audit and blocked/sensitive actions
 - **SELF DEVELOPMENT** — evaluation, gaps, proposals, sandbox build/review
-- **DATA / BACKUP** — database backup/export/restore/import
+- **DATA / BACKUP** — backup/export/restore/import
+- **RELEASE** — guarded deploy/rollback controls
+- **SKILLS** — gap → skill proposal → sandbox build → deployed-only activation
 
-No private chain-of-thought is shown. The UI only exposes safe state/evidence summaries.
+No private chain-of-thought is exposed; only safe state/evidence summaries are shown.
 
 ---
 
-# Trusted Local Mode
+## Trusted Local Mode
 
-Normal low/medium-risk local commands should not require repetitive popups.
-
-Examples:
+Normal low/medium-risk allowlisted local commands can run without repetitive popups.
 
 ```text
 open chrome
@@ -157,47 +158,74 @@ Default:
 TRUSTED_LOCAL_MODE=true
 ```
 
-Trusted Local Mode does **not** grant arbitrary shell execution or secret access. High-risk keyboard/mouse actions, file/code writes, email send and calendar writes remain capability-gated. `DENY` and `ALWAYS_ASK` policies override trusted mode.
+This does **not** grant arbitrary shell execution or credential access. Higher-risk writes, keyboard/mouse control, email send and calendar writes remain capability-gated.
 
 ---
 
-# Controlled Self-Development
+## Computer Use V2
 
-The objective is:
+Target resolution order:
+
+```text
+Windows UI Automation
+→ confidence / ambiguity check
+→ optional local OCR fallback only if UIA has no confident target
+→ action
+→ post-action evidence
+```
+
+Rules:
+
+- ambiguous UIA results are never bypassed with OCR guesses
+- low-confidence targets stop safely
+- OCR requires local OCR dependencies and is optional
+- OCR-resolved actions remain **PARTIAL** until the higher-level outcome is independently verified
+- raw coordinate clicking remains a guarded low-level fallback, not the primary target strategy
+
+---
+
+## Browser V2
+
+Public browser-read paths:
+
+- require valid HTTP/HTTPS URLs
+- reject embedded credentials
+- reject localhost/private/link-local/reserved literal targets
+- treat webpage text as untrusted data
+- scan common prompt-injection patterns
+- never turn webpage instructions into system/security policy
+
+---
+
+## Controlled self-development
+
+Target lifecycle:
 
 ```text
 Discover improvement
-→ build in sandbox
-→ test
-→ debug with a bounded retry limit
-→ evaluate
+→ create evidence-backed proposal
+→ isolated self-improvement/IMP-* Git worktree
+→ bounded code generation
+→ compile + full tests
+→ bounded self-debug repair
 → security/policy review
-→ show diff/evidence
-→ approval
+→ evaluation + diff
+→ AWAITING_APPROVAL
+→ APPROVED
 → controlled release
 → post-release tests
 → rollback if needed
 ```
 
-It is **not**:
+It is intentionally **not**:
 
 ```text
 AI silently rewrites production forever
 ```
 
-### Immutable/protected paths
+Protected areas include security policy, secret handling, self-development policy, rollback controls, `.env`, `.git` and runtime data.
 
-Normal self-development automation cannot modify:
-
-- `jarvis/security/`
-- `jarvis/self_development/policies.py`
-- `jarvis/self_development/rollback.py`
-- `.env` / secret files
-- `.git/`
-- runtime `data/`
-- protected production workspace data
-
-### Safe defaults
+Safe defaults:
 
 ```env
 SELF_DEVELOPMENT_ENABLED=true
@@ -210,66 +238,17 @@ MAX_LINES_CHANGED=1200
 MAX_BUILD_TIME=300
 ```
 
-`APPROVED` is not the same as `DEPLOYED`.
+`APPROVED` is not `DEPLOYED`.
 
-The release engine requires a clean production worktree, unchanged expected HEAD, fresh tests, approved files, policy pass and fast-forward-only deployment. Rollback uses `git revert`, preserving history.
+The release engine requires fresh tests, immutable-core policy pass, exact reviewed files, clean production worktree, unchanged expected HEAD and fast-forward-only deployment. Rollback uses history-preserving `git revert`.
 
 See `docs/V7-SELF-DEVELOPMENT.md`.
 
 ---
 
-# Offline Development
+## Skill generation and workflow learning
 
-Offline self-development is optional and truthful.
-
-```env
-OFFLINE_DEVELOPMENT_ENABLED=true
-LOCAL_MODEL_PROVIDER=openai-compatible
-LOCAL_AI_BASE_URL=http://127.0.0.1:11434/v1
-LOCAL_AI_MODEL=<your-local-model>
-```
-
-Compatible local servers can include Ollama, LM Studio or another OpenAI-compatible runtime.
-
-If no local reasoning model is configured, JARVIS reports:
-
-```text
-Offline development is unavailable because no local reasoning model is configured.
-```
-
-It does not silently install a model or external dependency.
-
----
-
-# Self Evaluation and Gap Detection
-
-JARVIS stores historical evaluation evidence for supported metrics such as:
-
-- mission success
-- tool success/error rate
-- verification success
-- recovery/replanning success
-- latency
-- fallback usage
-- safety evidence where available
-
-Metrics that cannot be measured from current evidence are **N/A**, not fabricated.
-
-Capability Gap Detection can produce engineering proposals from:
-
-- missing/degraded capabilities
-- low measured metrics
-- repeated tool failures
-- repeated mission blockers
-- repeated safe workflows
-
-A gap is evidence, not permission to edit production.
-
----
-
-# Skill Generation and Workflow Learning
-
-V7.5 can propose reusable skill manifests with:
+V7.5 can propose reusable skill manifests containing:
 
 ```text
 skill.json
@@ -282,90 +261,57 @@ risk
 evaluation metadata
 ```
 
-Generated skill work occurs inside the same Git sandbox/self-development pipeline.
+Generated skill code uses the same isolated self-development sandbox. A skill cannot become ACTIVE until:
 
-Repeated workflow learning can detect recurring successful tool sequences and propose a reusable skill. Sensitive side-effect sequences such as email sending are intentionally excluded from automatic workflow learning.
+1. its linked improvement proposal is `DEPLOYED`,
+2. required production files exist,
+3. evaluation metadata is PASS/PASSED/VERIFIED/READY,
+4. operator activation is explicit.
 
-No permanent workflow is silently activated.
-
----
-
-# Browser V2
-
-Public browser-read paths:
-
-- validate HTTP/HTTPS targets
-- reject embedded credentials
-- reject localhost/private/link-local literal targets
-- treat webpage text as untrusted data
-- scan common prompt-injection patterns
-- never interpret page text as security/system policy
-
-Read/extract evidence can be verified while the returned page text remains untrusted.
-
-See `docs/V7-BROWSER.md`.
+Repeated successful safe workflows can be proposed as reusable workflows. Sensitive side-effect sequences are not silently learned into permanent automation.
 
 ---
 
-# Memory and RAG
+## Offline development
 
-V7 keeps layered memory and bounded context retrieval. V7.5 adds lifecycle/provenance foundations for:
+Optional local reasoning:
 
-- reinforcement
-- superseding
-- contradiction detection
-- stale-memory detection
-- confidence decay
-- document content hashes
-- duplicate document detection
-- update provenance
-
-Current user instructions always outrank stale memory.
-
-No API keys, passwords, OAuth tokens or session secrets should be persisted as memory.
-
----
-
-# Documents
-
-Supported extraction includes:
-
-- PDF
-- DOCX
-- XLSX / XLSM
-- CSV
-- TXT
-- Markdown
-
-V7.5 document indexing adds SHA-256 content provenance. Re-indexing can distinguish:
-
-```text
-INDEX
-UNCHANGED
-UPDATE
-DUPLICATE
+```env
+OFFLINE_DEVELOPMENT_ENABLED=true
+LOCAL_MODEL_PROVIDER=openai-compatible
+LOCAL_AI_BASE_URL=http://127.0.0.1:11434/v1
+LOCAL_AI_MODEL=<your-local-model>
 ```
 
-This avoids repeatedly storing identical content.
+Compatible local servers can include Ollama, LM Studio or another OpenAI-compatible runtime. No local model is silently installed.
 
 ---
 
-# Provider Router and Cost Tracking
+## Memory / RAG / documents
 
-Model route categories:
+V7/V7.5 memory includes:
+
+- working, episodic, semantic and procedural layers
+- hybrid local retrieval
+- current user input higher priority than stale memory
+- reinforcement and explicit verification
+- superseding and contradiction detection
+- stale/confidence decay
+- secret-persistence blocking
+
+Document extraction supports PDF, DOCX, XLSX/XLSM, CSV, TXT and Markdown. V7.5 indexing adds SHA-256 provenance so unchanged content can avoid re-indexing.
+
+---
+
+## Provider routing and observability
+
+Route categories:
 
 ```text
-FAST
-SMART
-VISION
-CODING
-PLANNING
-REVIEW
-SUMMARY
-LOCAL
+FAST | SMART | VISION | CODING | PLANNING | REVIEW | SUMMARY | LOCAL
 ```
 
-Optional environment variables:
+Optional model overrides:
 
 ```env
 FAST_MODEL=
@@ -377,21 +323,18 @@ REVIEW_MODEL=
 SUMMARY_MODEL=
 ```
 
-Observability tracks provider/model, latency, success/failure, fallback and usage metadata.
+Observability records provider/model, latency, success/failure, fallback and safe usage counters.
 
-**Cost is never invented.** A numeric cost is displayed only when the provider response explicitly reports it. Otherwise the UI reports cost as N/A.
+**Cost is never invented.** A numeric cost appears only when the provider response explicitly reports it; otherwise cost is N/A.
 
 ---
 
-# Voice Player
+## Voice Player
 
-JARVIS supports spoken output with visible ARC state and runtime controls:
+Runtime controls:
 
 ```text
-- SPEED
-PLAY / PAUSE
-STOP
-SPEED +
+- SPEED | PLAY / PAUSE | STOP | SPEED +
 ```
 
 Shortcuts:
@@ -403,26 +346,11 @@ Ctrl + -      slower
 Ctrl + +      faster
 ```
 
-Closing JARVIS terminates active playback instead of leaving the speech process running.
+Closing JARVIS terminates active playback instead of leaving speech running in the background.
 
 ---
 
-# Images and Screen Vision
-
-Desktop:
-
-1. Click **UPLOAD IMAGE** or `Ctrl+O`.
-2. Select up to the configured image limit.
-3. Ask a question or send with no text for general analysis.
-4. `SCREEN VISION` is permission/capability controlled.
-
-Images are validated and resized/compressed before provider upload. Selecting an image does not upload it to GitHub.
-
-Do not send API keys, passwords, recovery codes or banking secrets in screenshots.
-
----
-
-# Installation — development branch
+## Install and test `v7-development`
 
 Windows PowerShell:
 
@@ -434,21 +362,11 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\setup_windows.ps1
 ```
 
-Base check:
+Engineering checks:
 
 ```powershell
 .\.venv\Scripts\python.exe self_check.py
-```
-
-V7.5 engineering check:
-
-```powershell
 .\.venv\Scripts\python.exe self_check_v75.py
-```
-
-Full regression suite:
-
-```powershell
 .\.venv\Scripts\python.exe -m compileall -f -q .
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
@@ -467,73 +385,64 @@ or:
 
 ---
 
-# CI / Quality Gate
+## CI quality gate
 
-V7.5 CI targets:
+CI covers:
 
 - Linux Python 3.11
 - Linux Python 3.12
 - Linux Python 3.13
 - Linux Python 3.14
 - Windows Python 3.14
-
-CI runs forced bytecode compilation and the full unittest discovery suite. `ResourceWarning` is treated as an error so resource/SQLite handle leaks are not silently ignored.
+- forced `compileall`
+- full unittest/integration/security/evaluation discovery
+- `ResourceWarning` as error
+- Windows PyInstaller package smoke after Windows regression
+- package rejection if `.env`, live DB/SQLite or Google OAuth private files are bundled
 
 Never declare release success while CI is red.
 
-See `docs/V7-TESTING.md`.
-
 ---
 
-# Backup / Restore
+## Backup / restore
 
-Database backup uses SQLite's backup API rather than copying an actively written file blindly.
+Backups use SQLite's backup API and include:
 
-Backups include:
-
-- SQLite integrity check
+- integrity verification
 - SHA-256 manifest
 - schema version
-- size/provenance
+- provenance/size
 
-Restore/import:
+Restore/import requires explicit destructive confirmation, creates a pre-restore backup and verifies the restored database again.
 
-- requires explicit destructive confirmation
-- validates the candidate database
-- creates a pre-restore backup first
-- verifies the restored database again
-
-Private `.env`, OAuth tokens and API keys are not bundled in portable exports.
+Portable exports and Windows builds do not intentionally bundle `.env`, API keys, Google OAuth credentials/tokens or the live JARVIS database.
 
 ---
 
-# Windows Build
+## Windows build / installer
 
-Build executable:
+Build EXE:
 
 ```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
 .\build_windows.ps1
 ```
 
-The script requires PyInstaller to already be deliberately installed. It does not silently install dependencies.
-
-Build installer after installing Inno Setup 6:
+Installer after installing Inno Setup 6:
 
 ```powershell
 .\build_installer.ps1
 ```
 
-Current installer definition:
+Installer definition:
 
 ```text
 installer/JARVIS-OMEGA-V7.iss
 ```
 
-The build does not bundle the operator's `.env`, Google OAuth credentials/tokens, local database or logs.
-
 ---
 
-# Documentation
+## Documentation
 
 - `docs/V7-AUDIT.md`
 - `docs/V7-ARCHITECTURE.md`
@@ -549,18 +458,18 @@ The build does not bundle the operator's `.env`, Google OAuth credentials/tokens
 - `docs/V7-OFFLINE.md`
 - `docs/V7.5-STATUS.md`
 
-Legacy V6 documentation may remain when it describes historical V6 behavior; current behavior must be identified as V7/V7.5 rather than blindly renaming history.
+Legacy V6 documentation may remain when it describes historical behavior; current functionality is identified explicitly as V7/V7.5.
 
 ---
 
-# Security boundary
+## Security boundary
 
-This project intentionally does not expose unrestricted destructive shell execution, credential scraping, stealth/persistence bypass or self-modification of security controls.
+This project intentionally does not expose unrestricted destructive shell execution, credential scraping, stealth/persistence bypass or uncontrolled self-modification of security controls.
 
-Self-development may improve normal application capabilities, but it must not silently modify permission policy, audit logging, secret protection, sandbox boundaries, rollback policy or production activation controls.
+Self-development can improve ordinary application capabilities, but it cannot silently disable permission policy, audit logging, secret protection, sandbox boundaries, rollback policy or production activation controls.
 
 ---
 
-# License
+## License
 
 MIT License.
