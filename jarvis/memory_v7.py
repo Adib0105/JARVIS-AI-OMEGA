@@ -11,6 +11,7 @@ from .memory import MemoryStore
 from .retrieval import HybridRetriever, configured_embedding_backend
 from .security.secrets import ensure_safe_for_persistent_memory
 from .storage.migrations import SchemaMigrator
+from .storage.sqlite_utils import connect_sqlite
 
 
 class MemoryKind(str, Enum):
@@ -42,6 +43,12 @@ class V7MemoryStore(MemoryStore):
         super().__init__(db_path)
         self.migration_result = SchemaMigrator(self.db_path).migrate()
         self.retriever = HybridRetriever(configured_embedding_backend())
+
+    def _connect(self):
+        # Override the V6 connector so every inherited V6/V7 operation closes its
+        # SQLite file handle when the with-block exits. This matters on Windows,
+        # where TemporaryDirectory cleanup otherwise raises WinError 32.
+        return connect_sqlite(self.db_path, timeout=10)
 
     @staticmethod
     def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -314,7 +321,9 @@ class V7MemoryStore(MemoryStore):
         rows = self._knowledge_rows(5000)
         normalized = [
             row | {
-                'content': row.get('chunk', ''),
+                # Legacy knowledge rows use `content`; early V7 code accidentally
+                # looked for `chunk`, producing empty strings and zero retrieval.
+                'content': row.get('content', row.get('chunk', '')),
                 'confidence': 0.75,
                 'importance': 0.5,
             }
