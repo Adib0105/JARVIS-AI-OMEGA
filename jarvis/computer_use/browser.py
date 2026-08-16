@@ -7,6 +7,7 @@ import webbrowser
 import psutil
 
 from ..web_tools import read_web_page, search_web
+from .browser_security import assess_public_url, scan_prompt_injection
 
 
 _BROWSER_PROCESS_NAMES = {
@@ -28,12 +29,11 @@ def _browser_processes() -> list[dict]:
 
 
 class BrowserAgent:
-    """Browser abstraction that keeps network content explicitly untrusted.
+    """Browser abstraction with explicit domain trust and prompt-injection isolation.
 
-    Browser opening/navigation uses the user's default browser. Read/extract uses an
-    HTTP reader rather than pretending the visible browser DOM was inspected.
-    Semantic visible-UI interaction is provided separately by the computer-use UIA
-    engine and requires its own capability/approval path.
+    Browser opening/navigation uses the user's default browser. Public read/extract
+    paths reject local/private addresses. Webpage text is always returned as untrusted
+    data with an injection scan; it never becomes agent/system instructions.
     """
 
     SEARCH_ENGINES = {
@@ -43,10 +43,14 @@ class BrowserAgent:
         'github': 'https://github.com/search?q={query}',
     }
 
+    @staticmethod
+    def trust(url: str) -> dict:
+        return assess_public_url(url).as_dict()
+
     def open(self, url: str) -> dict:
-        parsed = urllib.parse.urlparse(url)
-        if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
-            return {'ok': False, 'error': 'Only valid HTTP/HTTPS URLs are allowed.'}
+        trust = assess_public_url(url)
+        if not trust.allowed:
+            return {'ok': False, 'error': '; '.join(trust.reasons), 'trust': trust.as_dict()}
         before = _browser_processes()
         opened = bool(webbrowser.open(url, new=2))
         time.sleep(0.35)
@@ -55,6 +59,7 @@ class BrowserAgent:
             'ok': opened,
             'action': 'open',
             'url': url,
+            'trust': trust.as_dict(),
             'verification': {
                 'status': 'PARTIAL',
                 'verified': False,
@@ -78,28 +83,43 @@ class BrowserAgent:
 
     @staticmethod
     def read(url: str, max_chars: int = 14000) -> dict:
+        trust = assess_public_url(url)
+        if not trust.allowed:
+            return {'ok': False, 'error': '; '.join(trust.reasons), 'trust': trust.as_dict(), 'untrusted_content': True}
         result = read_web_page(url, max_chars=max_chars)
+        text = str(result)
+        scan = scan_prompt_injection(text)
         return {
             'ok': True,
             'action': 'read',
             'url': url,
+            'trust': trust.as_dict(),
             'untrusted_content': True,
-            'result': result,
+            'prompt_injection_scan': scan.as_dict(),
+            'result': text,
             'verification': {
                 'status': 'VERIFIED',
                 'verified': True,
-                'evidence': 'HTTP fetch returned page content.',
+                'evidence': 'Public HTTP reader returned page content; content remains untrusted data.',
             },
         }
 
     @staticmethod
     def public_search(query: str, max_results: int = 5) -> dict:
         results = search_web(query, max_results=max_results)
+        scans = []
+        if isinstance(results, list):
+            for row in results:
+                combined = f"{row.get('title', '')}\n{row.get('snippet', '')}"
+                scan = scan_prompt_injection(combined)
+                if scan.suspicious:
+                    scans.append({'url': row.get('url', ''), **scan.as_dict()})
         return {
             'ok': True,
             'action': 'public_search',
             'query': query,
             'untrusted_content': True,
+            'prompt_injection_flags': scans,
             'results': results,
             'verification': {
                 'status': 'VERIFIED',
@@ -110,26 +130,36 @@ class BrowserAgent:
 
     @staticmethod
     def extract(url: str, keyword: str = '', max_chars: int = 18000) -> dict:
+        trust = assess_public_url(url)
+        if not trust.allowed:
+            return {'ok': False, 'error': '; '.join(trust.reasons), 'trust': trust.as_dict(), 'untrusted_content': True}
         page = read_web_page(url, max_chars=max_chars)
-        if not isinstance(page, dict):
-            return {'ok': False, 'error': 'Page reader returned an unexpected payload.', 'untrusted_content': True}
-        content = str(page.get('content') or page.get('text') or '')
+        # read_web_page returns plain text. Older BrowserAgent code expected a dict,
+        # causing valid extraction calls to fail; normalize both forms for compatibility.
+        if isinstance(page, dict):
+            content = str(page.get('content') or page.get('text') or '')
+        else:
+            content = str(page)
         if keyword.strip():
             needle = keyword.strip().lower()
             chunks = [part.strip() for part in content.split('\n') if needle in part.lower()]
             extracted = '\n'.join(chunks)[:max_chars]
         else:
             extracted = content[:max_chars]
+        scan = scan_prompt_injection(extracted)
         return {
             'ok': True,
             'action': 'extract',
             'url': url,
             'keyword': keyword,
+            'trust': trust.as_dict(),
             'untrusted_content': True,
+            'prompt_injection_scan': scan.as_dict(),
             'content': extracted,
             'verification': {
                 'status': 'VERIFIED',
                 'verified': True,
                 'characters': len(extracted),
+                'evidence': 'Extracted text came from the requested public page and remains untrusted data.',
             },
         }
