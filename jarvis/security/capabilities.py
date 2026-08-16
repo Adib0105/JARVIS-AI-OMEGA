@@ -27,6 +27,7 @@ class Capability(str, Enum):
     APP_CONTROL = 'APP_CONTROL'
     DOCUMENT_READ = 'DOCUMENT_READ'
     GIT_READ = 'GIT_READ'
+    ACCOUNT_CONFIG_READ = 'ACCOUNT_CONFIG_READ'
 
 
 class RiskLevel(str, Enum):
@@ -45,53 +46,75 @@ class ToolSecurityProfile:
     side_effecting: bool = False
 
 
-LOW_READ = RiskLevel.LOW
+LOW = RiskLevel.LOW
 MEDIUM = RiskLevel.MEDIUM
 HIGH = RiskLevel.HIGH
 
 
+def profile(name: str, risk: RiskLevel, caps: set[Capability], why: str, side_effecting: bool = False) -> ToolSecurityProfile:
+    return ToolSecurityProfile(name, risk, frozenset(caps), why, side_effecting)
+
+
 TOOL_SECURITY: dict[str, ToolSecurityProfile] = {
-    'get_current_time': ToolSecurityProfile('get_current_time', LOW_READ, frozenset({Capability.SYSTEM_READ}), 'Reads the local current time.'),
-    'get_system_info': ToolSecurityProfile('get_system_info', LOW_READ, frozenset({Capability.SYSTEM_READ}), 'Reads basic local system information.'),
-    'get_system_metrics': ToolSecurityProfile('get_system_metrics', LOW_READ, frozenset({Capability.SYSTEM_READ}), 'Reads CPU, memory, disk and battery telemetry.'),
-    'recall_fact': ToolSecurityProfile('recall_fact', LOW_READ, frozenset({Capability.MEMORY_READ}), 'Reads a locally stored JARVIS fact.'),
-    'search_chat_history': ToolSecurityProfile('search_chat_history', LOW_READ, frozenset({Capability.MEMORY_READ}), 'Searches local conversation history.'),
-    'search_notes': ToolSecurityProfile('search_notes', LOW_READ, frozenset({Capability.MEMORY_READ}), 'Searches local notes.'),
-    'search_knowledge': ToolSecurityProfile('search_knowledge', LOW_READ, frozenset({Capability.MEMORY_READ}), 'Searches the local knowledge store.'),
-    'vector_search_knowledge': ToolSecurityProfile('vector_search_knowledge', LOW_READ, frozenset({Capability.MEMORY_READ}), 'Performs local relevance search over knowledge.'),
-    'list_todos': ToolSecurityProfile('list_todos', LOW_READ, frozenset({Capability.MEMORY_READ}), 'Reads local todos.'),
-    'list_reminders': ToolSecurityProfile('list_reminders', LOW_READ, frozenset({Capability.MEMORY_READ}), 'Reads local reminders.'),
-    'remember_fact': ToolSecurityProfile('remember_fact', MEDIUM, frozenset({Capability.MEMORY_WRITE}), 'Writes a non-secret fact into local memory.', True),
-    'add_note': ToolSecurityProfile('add_note', MEDIUM, frozenset({Capability.MEMORY_WRITE}), 'Creates a local JARVIS note.', True),
-    'add_todo': ToolSecurityProfile('add_todo', MEDIUM, frozenset({Capability.MEMORY_WRITE}), 'Creates a local todo.', True),
-    'complete_todo': ToolSecurityProfile('complete_todo', MEDIUM, frozenset({Capability.MEMORY_WRITE}), 'Changes local todo state.', True),
-    'add_reminder': ToolSecurityProfile('add_reminder', MEDIUM, frozenset({Capability.MEMORY_WRITE}), 'Creates a local reminder.', True),
-    'search_web': ToolSecurityProfile('search_web', LOW_READ, frozenset({Capability.WEB_READ}), 'Sends a public search query to the configured web search service.'),
-    'search_news': ToolSecurityProfile('search_news', LOW_READ, frozenset({Capability.WEB_READ}), 'Sends a public news query to the configured search service.'),
-    'read_web_page': ToolSecurityProfile('read_web_page', LOW_READ, frozenset({Capability.WEB_READ}), 'Downloads and reads a public HTTP/HTTPS page.'),
-    'gmail_search': ToolSecurityProfile('gmail_search', MEDIUM, frozenset({Capability.EMAIL_READ}), 'Reads email metadata/content from the connected Gmail account.'),
-    'gmail_send': ToolSecurityProfile('gmail_send', HIGH, frozenset({Capability.EMAIL_SEND}), 'Sends an external email from the connected account.', True),
-    'calendar_upcoming': ToolSecurityProfile('calendar_upcoming', MEDIUM, frozenset({Capability.CALENDAR_READ}), 'Reads events from the connected Google Calendar.'),
-    'calendar_create': ToolSecurityProfile('calendar_create', HIGH, frozenset({Capability.CALENDAR_WRITE}), 'Creates an event in the connected Google Calendar.', True),
-    'search_local_files': ToolSecurityProfile('search_local_files', MEDIUM, frozenset({Capability.FILE_READ}), 'Searches filenames inside approved local roots.'),
-    'read_local_text_file': ToolSecurityProfile('read_local_text_file', MEDIUM, frozenset({Capability.FILE_READ}), 'Reads a safe text/code file from an approved local root.'),
-    'index_local_text_file': ToolSecurityProfile('index_local_text_file', MEDIUM, frozenset({Capability.FILE_READ, Capability.MEMORY_WRITE}), 'Reads an approved text file and indexes it locally.', True),
-    'index_document': ToolSecurityProfile('index_document', MEDIUM, frozenset({Capability.DOCUMENT_READ, Capability.MEMORY_WRITE}), 'Reads an approved document and indexes extracted text locally.', True),
-    'open_url': ToolSecurityProfile('open_url', MEDIUM, frozenset({Capability.BROWSER_CONTROL}), 'Opens an external URL in the default browser.', True),
-    'browser_search': ToolSecurityProfile('browser_search', MEDIUM, frozenset({Capability.BROWSER_CONTROL}), 'Opens a browser search page.', True),
-    'open_app': ToolSecurityProfile('open_app', MEDIUM, frozenset({Capability.APP_CONTROL}), 'Launches an allowlisted Windows application.', True),
-    'open_local_path': ToolSecurityProfile('open_local_path', MEDIUM, frozenset({Capability.FILE_READ, Capability.APP_CONTROL}), 'Opens an approved local file/folder with the operating system.', True),
-    'type_text': ToolSecurityProfile('type_text', HIGH, frozenset({Capability.KEYBOARD_CONTROL}), 'Types text into the currently focused desktop application.', True),
-    'press_key': ToolSecurityProfile('press_key', HIGH, frozenset({Capability.KEYBOARD_CONTROL}), 'Presses an allowlisted key in the focused desktop application.', True),
-    'hotkey': ToolSecurityProfile('hotkey', HIGH, frozenset({Capability.KEYBOARD_CONTROL}), 'Presses an allowlisted keyboard shortcut.', True),
-    'click_screen': ToolSecurityProfile('click_screen', HIGH, frozenset({Capability.MOUSE_CONTROL, Capability.SCREEN_CONTROL}), 'Clicks a specified screen coordinate.', True),
-    'inspect_project_tree': ToolSecurityProfile('inspect_project_tree', MEDIUM, frozenset({Capability.CODE_READ}), 'Reads an approved project tree.'),
-    'read_project_file': ToolSecurityProfile('read_project_file', MEDIUM, frozenset({Capability.CODE_READ, Capability.FILE_READ}), 'Reads an approved source/text file.'),
-    'write_project_file': ToolSecurityProfile('write_project_file', HIGH, frozenset({Capability.CODE_WRITE, Capability.FILE_WRITE}), 'Writes an approved source/text file and may alter project behavior.', True),
-    'run_project_tests': ToolSecurityProfile('run_project_tests', MEDIUM, frozenset({Capability.CODE_TEST}), 'Runs the allowlisted Python unittest command in an approved project.'),
-    'git_status': ToolSecurityProfile('git_status', MEDIUM, frozenset({Capability.GIT_READ, Capability.CODE_READ}), 'Reads Git working-tree status.'),
-    'git_diff': ToolSecurityProfile('git_diff', MEDIUM, frozenset({Capability.GIT_READ, Capability.CODE_READ}), 'Reads Git diff output.'),
-    'git_log': ToolSecurityProfile('git_log', MEDIUM, frozenset({Capability.GIT_READ, Capability.CODE_READ}), 'Reads recent Git commit metadata.'),
+    # System / local metadata
+    'get_current_time': profile('get_current_time', LOW, {Capability.SYSTEM_READ}, 'Reads the local current time.'),
+    'get_system_info': profile('get_system_info', LOW, {Capability.SYSTEM_READ}, 'Reads basic local system information.'),
+    'get_system_metrics': profile('get_system_metrics', LOW, {Capability.SYSTEM_READ}, 'Reads CPU, memory, disk, network and battery telemetry.'),
+    'list_allowed_roots': profile('list_allowed_roots', LOW, {Capability.FILE_READ}, 'Lists the directories already approved for local JARVIS file tools.'),
+
+    # Memory / productivity
+    'remember_fact': profile('remember_fact', MEDIUM, {Capability.MEMORY_WRITE}, 'Writes a non-secret fact into local memory.', True),
+    'recall_memory': profile('recall_memory', LOW, {Capability.MEMORY_READ}, 'Searches locally stored JARVIS facts.'),
+    'search_chat_history': profile('search_chat_history', LOW, {Capability.MEMORY_READ}, 'Searches local conversation history.'),
+    'search_knowledge': profile('search_knowledge', LOW, {Capability.MEMORY_READ}, 'Searches indexed local knowledge.'),
+    'vector_search_knowledge': profile('vector_search_knowledge', LOW, {Capability.MEMORY_READ}, 'Performs local sparse relevance search over knowledge.'),
+    'get_knowledge_stats': profile('get_knowledge_stats', LOW, {Capability.MEMORY_READ}, 'Reads local memory/knowledge statistics.'),
+    'add_note': profile('add_note', MEDIUM, {Capability.MEMORY_WRITE}, 'Creates a non-secret local JARVIS note.', True),
+    'list_notes': profile('list_notes', LOW, {Capability.MEMORY_READ}, 'Lists local JARVIS notes.'),
+    'search_notes': profile('search_notes', LOW, {Capability.MEMORY_READ}, 'Searches local JARVIS notes.'),
+    'get_agenda': profile('get_agenda', LOW, {Capability.MEMORY_READ}, 'Reads local todos, reminders and recent notes.'),
+    'add_todo': profile('add_todo', MEDIUM, {Capability.MEMORY_WRITE}, 'Creates a local todo.', True),
+    'list_todos': profile('list_todos', LOW, {Capability.MEMORY_READ}, 'Reads local todos.'),
+    'complete_todo': profile('complete_todo', MEDIUM, {Capability.MEMORY_WRITE}, 'Changes local todo state.', True),
+    'add_reminder': profile('add_reminder', MEDIUM, {Capability.MEMORY_WRITE}, 'Creates a local reminder.', True),
+    'list_reminders': profile('list_reminders', LOW, {Capability.MEMORY_READ}, 'Reads local reminders.'),
+
+    # Public web
+    'search_web': profile('search_web', LOW, {Capability.WEB_READ}, 'Sends a public search query to the configured search service.'),
+    'search_news': profile('search_news', LOW, {Capability.WEB_READ}, 'Sends a public news query to the configured search service.'),
+    'read_web_page': profile('read_web_page', LOW, {Capability.WEB_READ}, 'Downloads and reads a public HTTP/HTTPS page as untrusted data.'),
+
+    # Google Workspace
+    'google_status': profile('google_status', MEDIUM, {Capability.ACCOUNT_CONFIG_READ}, 'Checks whether local Google OAuth configuration files exist.'),
+    'gmail_search': profile('gmail_search', MEDIUM, {Capability.EMAIL_READ}, 'Reads email metadata/content from the connected Gmail account.'),
+    'gmail_send': profile('gmail_send', HIGH, {Capability.EMAIL_SEND}, 'Sends an external email from the connected Gmail account.', True),
+    'calendar_upcoming': profile('calendar_upcoming', MEDIUM, {Capability.CALENDAR_READ}, 'Reads events from the connected Google Calendar.'),
+    'calendar_create': profile('calendar_create', HIGH, {Capability.CALENDAR_WRITE}, 'Creates an event in the connected Google Calendar.', True),
+
+    # Local files / documents
+    'search_local_files': profile('search_local_files', MEDIUM, {Capability.FILE_READ}, 'Searches filenames inside approved local roots.'),
+    'read_local_text_file': profile('read_local_text_file', MEDIUM, {Capability.FILE_READ}, 'Reads a safe text/code file from an approved local root.'),
+    'index_local_text_file': profile('index_local_text_file', MEDIUM, {Capability.FILE_READ, Capability.MEMORY_WRITE}, 'Reads an approved text file and indexes its non-secret content locally.', True),
+    'read_document': profile('read_document', MEDIUM, {Capability.DOCUMENT_READ, Capability.FILE_READ}, 'Extracts text from an approved local document.'),
+    'index_document': profile('index_document', MEDIUM, {Capability.DOCUMENT_READ, Capability.FILE_READ, Capability.MEMORY_WRITE}, 'Reads an approved document and indexes extracted non-secret text locally.', True),
+    'open_local_path': profile('open_local_path', MEDIUM, {Capability.FILE_READ, Capability.APP_CONTROL}, 'Opens an approved local file or folder with the operating system.', True),
+
+    # Browser / apps / desktop
+    'open_url': profile('open_url', MEDIUM, {Capability.BROWSER_CONTROL}, 'Opens an external HTTP/HTTPS URL in the default browser.', True),
+    'browser_search': profile('browser_search', MEDIUM, {Capability.BROWSER_CONTROL}, 'Opens a browser search page.', True),
+    'open_app': profile('open_app', MEDIUM, {Capability.APP_CONTROL}, 'Launches an allowlisted Windows application.', True),
+    'type_text': profile('type_text', HIGH, {Capability.KEYBOARD_CONTROL}, 'Types text into the currently focused desktop application.', True),
+    'press_key': profile('press_key', HIGH, {Capability.KEYBOARD_CONTROL}, 'Presses an allowlisted key in the focused desktop application.', True),
+    'hotkey': profile('hotkey', HIGH, {Capability.KEYBOARD_CONTROL}, 'Presses an allowlisted keyboard shortcut.', True),
+    'click_screen': profile('click_screen', HIGH, {Capability.MOUSE_CONTROL, Capability.SCREEN_CONTROL}, 'Clicks a specified screen coordinate.', True),
+
+    # Coding / Git - exact registered V6/V7 tool names
+    'list_code_tree': profile('list_code_tree', MEDIUM, {Capability.CODE_READ}, 'Reads an approved project directory tree.'),
+    'write_local_text_file': profile('write_local_text_file', HIGH, {Capability.CODE_WRITE, Capability.FILE_WRITE}, 'Creates/replaces an approved source/text file and can alter project behavior.', True),
+    'run_project_tests': profile('run_project_tests', MEDIUM, {Capability.CODE_TEST}, 'Runs the allowlisted Python unittest command in an approved project.'),
+    'git_status': profile('git_status', MEDIUM, {Capability.GIT_READ, Capability.CODE_READ}, 'Reads Git working-tree status.'),
+    'git_diff': profile('git_diff', MEDIUM, {Capability.GIT_READ, Capability.CODE_READ}, 'Reads Git diff output.'),
+    'git_log': profile('git_log', MEDIUM, {Capability.GIT_READ, Capability.CODE_READ}, 'Reads recent Git commit metadata.'),
 }
 
 
