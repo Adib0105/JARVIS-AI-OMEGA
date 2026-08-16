@@ -22,7 +22,7 @@ class GitCommandResult:
 
 
 class SelfDevelopmentGitManager:
-    """Small allowlisted Git wrapper used only for isolated improvement worktrees."""
+    """Small allowlisted Git wrapper for isolated improvements and controlled release."""
 
     def __init__(self, repo_root: Path | None = None) -> None:
         self.repo_root = (repo_root or Path(__file__).resolve().parents[2]).resolve()
@@ -50,11 +50,23 @@ class SelfDevelopmentGitManager:
             raise ValueError('Self-development branch must match self-improvement/IMP-XXXXXXXX.')
         return branch
 
-    def head(self) -> str:
-        result = self._run(['rev-parse', 'HEAD'])
+    def head(self, cwd: Path | None = None) -> str:
+        result = self._run(['rev-parse', 'HEAD'], cwd=cwd)
         if not result.ok:
             raise RuntimeError(result.stderr or 'Unable to read Git HEAD.')
         return result.stdout.strip()
+
+    def current_branch(self, cwd: Path | None = None) -> str:
+        result = self._run(['branch', '--show-current'], cwd=cwd)
+        if not result.ok:
+            raise RuntimeError(result.stderr or 'Unable to read Git branch.')
+        return result.stdout.strip()
+
+    def is_clean(self, cwd: Path | None = None) -> bool:
+        result = self._run(['status', '--porcelain=v1'], cwd=cwd)
+        if not result.ok:
+            raise RuntimeError(result.stderr or 'Unable to inspect Git status.')
+        return not result.stdout.strip()
 
     def create_worktree(self, branch: str, destination: Path, *, base: str = 'HEAD') -> Path:
         branch = self.validate_branch(branch)
@@ -103,15 +115,49 @@ class SelfDevelopmentGitManager:
                 lines += int(added)
             if removed.isdigit():
                 lines += int(removed)
-        # Include untracked files in the policy file list. Their line count is
-        # intentionally not guessed here; builder/tester stages can measure them.
         files.extend(self.status_files(worktree))
         return sorted(set(files)), lines
 
+    def commit_worktree(self, worktree: Path, branch: str, files: list[str], message: str) -> str:
+        branch = self.validate_branch(branch)
+        if self.current_branch(worktree) != branch:
+            raise RuntimeError('Sandbox worktree is not on the expected improvement branch.')
+        if not files:
+            raise RuntimeError('No reviewed files supplied for improvement commit.')
+        # Stage only the policy-reviewed paths. No broad `git add .` is used.
+        add = self._run(['add', '--', *files], cwd=worktree)
+        if not add.ok:
+            raise RuntimeError(add.stderr or 'Unable to stage reviewed improvement files.')
+        commit = self._run(['commit', '-m', message[:240]], cwd=worktree)
+        if not commit.ok:
+            raise RuntimeError(commit.stderr or commit.stdout or 'Unable to commit improvement branch.')
+        return self.head(worktree)
+
+    def fast_forward_production(self, branch: str, *, expected_head: str) -> str:
+        branch = self.validate_branch(branch)
+        if self.head(self.repo_root) != expected_head:
+            raise RuntimeError('Production HEAD changed since sandbox creation; deployment stopped for rebase/review.')
+        if not self.is_clean(self.repo_root):
+            raise RuntimeError('Production worktree is not clean; deployment stopped.')
+        result = self._run(['merge', '--ff-only', branch], cwd=self.repo_root, timeout=180)
+        if not result.ok:
+            raise RuntimeError(result.stderr or result.stdout or 'Fast-forward production deployment failed.')
+        return self.head(self.repo_root)
+
+    def revert_deployed_commit(self, deployed_sha: str, *, expected_current_head: str | None = None) -> str:
+        if expected_current_head and self.head(self.repo_root) != expected_current_head:
+            raise RuntimeError('Production HEAD changed after deployment; automatic rollback stopped for manual review.')
+        if not self.is_clean(self.repo_root):
+            raise RuntimeError('Production worktree is not clean; rollback stopped.')
+        result = self._run(['revert', '--no-edit', deployed_sha], cwd=self.repo_root, timeout=180)
+        if not result.ok:
+            # Abort any partial revert state so the worktree is not left in conflict mode.
+            self._run(['revert', '--abort'], cwd=self.repo_root, timeout=30)
+            raise RuntimeError(result.stderr or result.stdout or 'Controlled Git revert failed.')
+        return self.head(self.repo_root)
+
     def remove_worktree(self, worktree: Path) -> None:
         worktree = worktree.resolve()
-        # Git itself validates that this is a registered worktree. No arbitrary
-        # filesystem deletion command is exposed by this class.
         result = self._run(['worktree', 'remove', '--force', str(worktree)], timeout=120)
         if not result.ok:
             raise RuntimeError(result.stderr or result.stdout or 'Unable to remove sandbox worktree.')
