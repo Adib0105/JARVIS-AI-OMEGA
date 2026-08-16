@@ -6,7 +6,6 @@ from pathlib import Path
 from .mission import VerificationResult
 
 
-# A failed retry of these actions could duplicate or alter external/local state.
 SIDE_EFFECTING_TOOLS = {
     'remember_fact', 'add_note', 'add_todo', 'complete_todo', 'add_reminder',
     'index_local_text_file', 'index_document',
@@ -15,11 +14,18 @@ SIDE_EFFECTING_TOOLS = {
     'write_local_text_file', 'gmail_send', 'calendar_create',
 }
 
-# Result acknowledgement is useful evidence but does not prove the visible desktop/browser state.
 PARTIAL_VERIFICATION_TOOLS = {
     'open_url', 'open_app', 'open_local_path', 'browser_search',
     'type_text', 'press_key', 'hotkey', 'click_screen',
 }
+
+
+def _base(event: dict, name: str, *, side_effecting: bool) -> dict:
+    return {
+        'name': name,
+        'audit_id': event.get('audit_id'),
+        'side_effecting': side_effecting,
+    }
 
 
 class VerificationEngine:
@@ -27,6 +33,7 @@ class VerificationEngine:
         name = str(event.get('name', ''))
         args = event.get('args') if isinstance(event.get('args'), dict) else {}
         raw = event.get('output', '')
+        side_effecting = name in SIDE_EFFECTING_TOOLS
         try:
             payload = json.loads(raw) if isinstance(raw, str) else raw
         except Exception:
@@ -34,75 +41,59 @@ class VerificationEngine:
 
         if not isinstance(payload, dict) or payload.get('ok') is not True:
             error = payload.get('error', 'Tool did not report success.') if isinstance(payload, dict) else 'Invalid tool output.'
-            return {
-                'name': name,
+            return _base(event, name, side_effecting=side_effecting) | {
                 'verified': False,
                 'status': 'FAILED',
                 'evidence': str(error)[:1000],
-                'side_effecting': name in SIDE_EFFECTING_TOOLS,
             }
 
         result = payload.get('result')
 
         if name == 'write_local_text_file':
-            return self._verify_file_write(name, args, result)
+            return self._verify_file_write(event, name, args, result)
         if name == 'run_project_tests':
             code = result.get('returncode') if isinstance(result, dict) else None
-            return {
-                'name': name,
+            return _base(event, name, side_effecting=False) | {
                 'verified': code == 0,
                 'status': 'VERIFIED' if code == 0 else 'FAILED',
                 'evidence': {'returncode': code},
-                'side_effecting': False,
             }
         if name == 'gmail_send':
             message_id = result.get('id') if isinstance(result, dict) else None
-            return {
-                'name': name,
+            return _base(event, name, side_effecting=True) | {
                 'verified': bool(message_id),
                 'status': 'VERIFIED' if message_id else 'UNVERIFIED',
                 'evidence': {'message_id': message_id, 'provider_acknowledgement': bool(message_id)},
-                'side_effecting': True,
             }
         if name == 'calendar_create':
             event_id = result.get('id') if isinstance(result, dict) else None
-            return {
-                'name': name,
+            return _base(event, name, side_effecting=True) | {
                 'verified': bool(event_id),
                 'status': 'VERIFIED' if event_id else 'UNVERIFIED',
                 'evidence': {'event_id': event_id, 'provider_acknowledgement': bool(event_id)},
-                'side_effecting': True,
             }
         if name in PARTIAL_VERIFICATION_TOOLS:
-            return {
-                'name': name,
+            return _base(event, name, side_effecting=True) | {
                 'verified': False,
                 'status': 'ACKNOWLEDGED_NOT_OBSERVED',
                 'evidence': result,
-                'side_effecting': True,
             }
 
-        # Read-only queries and local database operations can rely on their structured
-        # successful return as evidence; stronger strategies are added per tool later.
-        return {
-            'name': name,
+        return _base(event, name, side_effecting=side_effecting) | {
             'verified': True,
             'status': 'VERIFIED',
             'evidence': result,
-            'side_effecting': name in SIDE_EFFECTING_TOOLS,
         }
 
     @staticmethod
-    def _verify_file_write(name: str, args: dict, result) -> dict:
+    def _verify_file_write(event: dict, name: str, args: dict, result) -> dict:
         path_value = result.get('path') if isinstance(result, dict) else None
         expected = str(args.get('content', ''))
         if not path_value:
-            return {
-                'name': name,
+            return _base(event, name, side_effecting=True) | {
                 'verified': False,
                 'status': 'UNVERIFIED',
                 'evidence': 'Write result did not contain a path.',
-                'side_effecting': True,
             }
         path = Path(str(path_value))
         try:
@@ -117,18 +108,14 @@ class VerificationEngine:
         except Exception as exc:
             verified = False
             evidence = {'path': str(path), 'verification_error': f'{type(exc).__name__}: {exc}'}
-        return {
-            'name': name,
+        return _base(event, name, side_effecting=True) | {
             'verified': verified,
             'status': 'VERIFIED' if verified else 'FAILED',
             'evidence': evidence,
-            'side_effecting': True,
         }
 
     def verify_step(self, result_text: str, tool_events: list[dict]) -> VerificationResult:
         if not tool_events:
-            # A reasoning/planning step may complete without an external action. This
-            # verifies that an answer was produced, not that any external state changed.
             ok = bool(result_text.strip())
             return VerificationResult(
                 verified=ok,
@@ -160,7 +147,4 @@ class VerificationEngine:
 
     @staticmethod
     def has_unsafe_retry_risk(tool_events: list[dict]) -> bool:
-        for event in tool_events:
-            if str(event.get('name', '')) in SIDE_EFFECTING_TOOLS:
-                return True
-        return False
+        return any(str(event.get('name', '')) in SIDE_EFFECTING_TOOLS for event in tool_events)
