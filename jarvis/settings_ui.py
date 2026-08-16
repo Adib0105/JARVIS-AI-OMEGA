@@ -1,0 +1,186 @@
+from __future__ import annotations
+
+import os
+import re
+import tkinter as tk
+import webbrowser
+from pathlib import Path
+from tkinter import messagebox
+
+from .config import ROOT, settings
+from .logging_utils import CRASH_DIR, LOG_DIR
+from .updater import check_latest_release
+
+
+EDITABLE_KEYS = {
+    'ENABLE_VOICE_OUTPUT',
+    'EDGE_VOICE_RATE',
+    'EDGE_VOICE_VOLUME',
+    'EDGE_VOICE_PITCH',
+    'ENABLE_MIC_INPUT',
+    'ENABLE_WAKE_WORD',
+    'WAKE_WORD',
+    'SPEECH_LANGUAGE',
+    'MIC_RECORD_SECONDS',
+    'REQUIRE_LOCAL_APPROVAL',
+    'ENABLE_DESKTOP_AUTOMATION',
+    'ENABLE_DOCUMENT_INTELLIGENCE',
+    'ENABLE_CODING_TOOLS',
+    'MISSION_MAX_STEPS',
+    'SYSTEM_REFRESH_MS',
+    'REMINDER_POLL_SECONDS',
+}
+
+
+def _env_path() -> Path:
+    return ROOT / '.env'
+
+
+def _read_env_lines() -> list[str]:
+    path = _env_path()
+    if not path.exists():
+        example = ROOT / '.env.example'
+        if example.exists():
+            path.write_text(example.read_text(encoding='utf-8'), encoding='utf-8')
+        else:
+            path.write_text('', encoding='utf-8')
+    return path.read_text(encoding='utf-8', errors='replace').splitlines()
+
+
+def update_env_values(values: dict[str, str]) -> None:
+    """Update only an allowlisted set of non-secret UI settings without exposing API keys."""
+    cleaned = {k: str(v).strip() for k, v in values.items() if k in EDITABLE_KEYS}
+    if not cleaned:
+        return
+    lines = _read_env_lines()
+    seen: set[str] = set()
+    out: list[str] = []
+    pattern = re.compile(r'^\s*([A-Z0-9_]+)\s*=')
+    for line in lines:
+        match = pattern.match(line)
+        key = match.group(1) if match else None
+        if key in cleaned:
+            out.append(f'{key}={cleaned[key]}')
+            seen.add(key)
+        else:
+            out.append(line)
+    if out and out[-1].strip():
+        out.append('')
+    for key, value in cleaned.items():
+        if key not in seen:
+            out.append(f'{key}={value}')
+    _env_path().write_text('\n'.join(out).rstrip() + '\n', encoding='utf-8')
+
+
+def _open_folder(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    if os.name == 'nt':
+        os.startfile(str(path))  # type: ignore[attr-defined]
+    else:
+        webbrowser.open(path.as_uri())
+
+
+def show_update_dialog(root: tk.Misc) -> None:
+    try:
+        result = check_latest_release(settings.app_version)
+    except Exception as exc:
+        messagebox.showerror('JARVIS V6 Update Check', str(exc), parent=root)
+        return
+    message = result.get('message', 'Update check completed.')
+    if result.get('available') and result.get('url'):
+        if messagebox.askyesno('JARVIS V6 Update Available', message + '\n\nOpen GitHub release page?', parent=root):
+            webbrowser.open(result['url'], new=2)
+    else:
+        messagebox.showinfo('JARVIS V6 Update Check', message, parent=root)
+
+
+def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
+    win = tk.Toplevel(root)
+    win.title('JARVIS OMEGA V6 // SETTINGS')
+    win.geometry('610x660')
+    win.resizable(False, False)
+    win.configure(bg='#06111a')
+    win.transient(root)
+    win.grab_set()
+
+    tk.Label(
+        win, text='V6 CORE SETTINGS', bg='#06111a', fg='#53e7ff',
+        font=('Segoe UI', 16, 'bold')
+    ).pack(anchor='w', padx=18, pady=(16, 2))
+    tk.Label(
+        win,
+        text='API keys are intentionally hidden and cannot be edited from this panel.\nSaved changes apply after JARVIS restarts.',
+        bg='#06111a', fg='#86a8b8', justify='left', font=('Segoe UI', 9)
+    ).pack(anchor='w', padx=18, pady=(0, 12))
+
+    body = tk.Frame(win, bg='#091a26', padx=14, pady=12)
+    body.pack(fill='both', expand=True, padx=18, pady=(0, 12))
+
+    values: dict[str, tk.Variable] = {}
+
+    def bool_row(label: str, key: str, current: bool):
+        var = tk.BooleanVar(value=current)
+        values[key] = var
+        tk.Checkbutton(
+            body, text=label, variable=var, bg='#091a26', fg='#dff9ff',
+            selectcolor='#0b2a3a', activebackground='#091a26', activeforeground='white',
+            font=('Segoe UI', 9)
+        ).pack(anchor='w', pady=2)
+
+    def text_row(label: str, key: str, current, width: int = 24):
+        row = tk.Frame(body, bg='#091a26')
+        row.pack(fill='x', pady=3)
+        tk.Label(row, text=label, bg='#091a26', fg='#86a8b8', width=28, anchor='w').pack(side='left')
+        var = tk.StringVar(value=str(current))
+        values[key] = var
+        tk.Entry(
+            row, textvariable=var, width=width, bg='#07131d', fg='white',
+            insertbackground='#53e7ff', relief='flat'
+        ).pack(side='right', ipady=4)
+
+    bool_row('Spoken replies', 'ENABLE_VOICE_OUTPUT', settings.enable_voice_output)
+    bool_row('Microphone / push-to-talk', 'ENABLE_MIC_INPUT', settings.enable_mic_input)
+    bool_row('Wake-word auto start', 'ENABLE_WAKE_WORD', settings.enable_wake_word)
+    bool_row('Require local action approvals', 'REQUIRE_LOCAL_APPROVAL', settings.require_local_approval)
+    bool_row('Desktop automation tools', 'ENABLE_DESKTOP_AUTOMATION', settings.enable_desktop_automation)
+    bool_row('Document intelligence', 'ENABLE_DOCUMENT_INTELLIGENCE', settings.enable_document_intelligence)
+    bool_row('Coding workspace tools', 'ENABLE_CODING_TOOLS', settings.enable_coding_tools)
+
+    text_row('Wake word', 'WAKE_WORD', settings.wake_word)
+    text_row('Speech language', 'SPEECH_LANGUAGE', settings.speech_language)
+    text_row('MIC seconds', 'MIC_RECORD_SECONDS', settings.mic_record_seconds)
+    text_row('Voice rate', 'EDGE_VOICE_RATE', settings.edge_voice_rate)
+    text_row('Voice volume', 'EDGE_VOICE_VOLUME', settings.edge_voice_volume)
+    text_row('Voice pitch', 'EDGE_VOICE_PITCH', settings.edge_voice_pitch)
+    text_row('Mission max steps', 'MISSION_MAX_STEPS', settings.mission_max_steps)
+    text_row('Telemetry refresh ms', 'SYSTEM_REFRESH_MS', settings.system_refresh_ms)
+    text_row('Reminder poll seconds', 'REMINDER_POLL_SECONDS', settings.reminder_poll_seconds)
+
+    action = tk.Frame(win, bg='#06111a')
+    action.pack(fill='x', padx=18, pady=(0, 16))
+
+    def save():
+        payload: dict[str, str] = {}
+        for key, var in values.items():
+            value = var.get()
+            if isinstance(var, tk.BooleanVar):
+                payload[key] = 'true' if bool(value) else 'false'
+            else:
+                payload[key] = str(value)
+        try:
+            update_env_values(payload)
+        except Exception as exc:
+            messagebox.showerror('Settings', str(exc), parent=win)
+            return
+        messagebox.showinfo('Settings', 'Settings saved. Restart JARVIS to apply all changes.', parent=win)
+        if on_saved:
+            try:
+                on_saved()
+            except Exception:
+                pass
+        win.destroy()
+
+    tk.Button(action, text='SAVE & RESTART LATER', command=save, bg='#0b2a3a', fg='#6affb8', relief='flat', padx=12, pady=7).pack(side='left')
+    tk.Button(action, text='CHECK UPDATE', command=lambda: show_update_dialog(win), bg='#0b2a3a', fg='#53e7ff', relief='flat', padx=12, pady=7).pack(side='left', padx=5)
+    tk.Button(action, text='OPEN LOGS', command=lambda: _open_folder(LOG_DIR), bg='#0b2a3a', fg='#ffd166', relief='flat', padx=12, pady=7).pack(side='left', padx=5)
+    tk.Button(action, text='CRASH REPORTS', command=lambda: _open_folder(CRASH_DIR), bg='#0b2a3a', fg='#ff5c73', relief='flat', padx=12, pady=7).pack(side='left', padx=5)
