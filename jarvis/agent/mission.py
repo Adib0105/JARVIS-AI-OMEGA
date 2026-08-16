@@ -32,6 +32,7 @@ class StepStatus(str, Enum):
     COMPLETED = 'COMPLETED'
     FAILED = 'FAILED'
     CANCELLED = 'CANCELLED'
+    SUPERSEDED = 'SUPERSEDED'
 
 
 @dataclass
