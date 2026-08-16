@@ -1,7 +1,8 @@
 """Public JARVIS OMEGA V7 compatibility core.
 
 `JarvisOmega` keeps the existing import/API surface while layering the V7 mission
-orchestrator and evidence-recording tool runtime over the provider-neutral core.
+orchestrator, evidence-recording tools, capability permissions and audit context
+over the provider-neutral core.
 """
 
 from __future__ import annotations
@@ -16,11 +17,34 @@ from .core_v7 import JarvisOmega as _ProviderCore
 
 
 class JarvisOmega(_ProviderCore):
-    def __init__(self, confirmer: Callable[[str, dict], bool] | None = None):
+    def __init__(self, confirmer: Callable[[str, dict], object] | None = None):
         super().__init__(confirmer=confirmer)
-        self.tools = RecordingToolRegistry(self.memory, confirmer)
+        self.tools = RecordingToolRegistry(
+            self.memory,
+            confirmer,
+            context_provider=self._tool_audit_context,
+        )
         self.orchestrator = MissionOrchestrator(self)
         self.last_mission_id: str | None = None
+
+    def _tool_audit_context(self) -> dict:
+        request_summary = ''
+        try:
+            rows = self.memory.recent_messages(self.session_id)
+            for role, content in reversed(rows):
+                if role == 'user':
+                    request_summary = str(content)[:800]
+                    break
+        except Exception:
+            pass
+        orchestrator = getattr(self, 'orchestrator', None)
+        return {
+            'session_id': self.session_id,
+            'mission_id': getattr(orchestrator, 'current_mission_id', None),
+            'request_summary': request_summary,
+            'provider': getattr(self, 'last_provider_used', None),
+            'model': getattr(self, 'last_model_used', None),
+        }
 
     @staticmethod
     def _extract_plan(raw: str, max_steps: int) -> list[str]:
