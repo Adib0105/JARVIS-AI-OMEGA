@@ -7,8 +7,8 @@ from typing import Any
 from ..logging_utils import redact_text, redact_value
 
 # Tool arguments that may contain private/free-form user or document data. Persist
-# only shape/length information for these fields; verification may still use the
-# original in-memory event before it is written to mission history.
+# only shape/length information for these fields; verification may still use safe
+# cryptographic hints rather than the original content.
 _PRIVATE_ARGUMENT_KEYS = {
     'content', 'text', 'body', 'prompt', 'messages', 'message', 'query_text',
     'password', 'passwd', 'secret', 'token', 'api_key', 'authorization',
@@ -38,7 +38,8 @@ def _sha256(value: Any) -> str:
 def _string_summary(value: str, *, private: bool = False, max_chars: int = 240) -> str:
     safe = redact_text(value)
     if private:
-        return f'[PRIVATE_TEXT:{len(value)} chars; sha256={hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:16]}]'
+        digest = hashlib.sha256(value.encode('utf-8', errors='replace')).hexdigest()[:16]
+        return f'[PRIVATE_TEXT:{len(value)} chars; sha256={digest}]'
     if len(safe) <= max_chars:
         return safe
     return safe[:max_chars] + f'… [{len(safe)} chars]'
@@ -82,7 +83,11 @@ def safe_evidence(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, (list, tuple, set)):
         items = list(value)
         if len(items) > 20:
-            return {'type': 'list', 'items': len(items), 'sample': [safe_evidence(x, depth=depth + 1) for x in items[:5]]}
+            return {
+                'type': 'list',
+                'items': len(items),
+                'sample': [safe_evidence(x, depth=depth + 1) for x in items[:5]],
+            }
         return [safe_evidence(x, depth=depth + 1) for x in items]
     if isinstance(value, dict):
         out: dict[str, Any] = {}
@@ -109,7 +114,10 @@ def sanitize_tool_output(output: Any) -> str:
     try:
         payload = json.loads(output) if isinstance(output, str) else output
     except Exception:
-        return json.dumps({'summary': _string_summary(str(output), max_chars=600)}, ensure_ascii=False)
+        return json.dumps(
+            {'summary': _string_summary(str(output), max_chars=600)},
+            ensure_ascii=False,
+        )
     return json.dumps(safe_evidence(payload), ensure_ascii=False, default=str)
 
 
@@ -124,7 +132,7 @@ def sanitize_tool_event(event: dict[str, Any]) -> dict[str, Any]:
     }
     for key in (
         'risk_level', 'capabilities', 'approval_status', 'audit_id', 'started_at',
-        'completed_at', 'latency_ms',
+        'completed_at', 'latency_ms', 'verification_hints',
     ):
         if key in event:
             safe[key] = safe_evidence(event.get(key))
