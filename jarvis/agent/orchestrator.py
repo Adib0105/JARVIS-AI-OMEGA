@@ -1,0 +1,453 @@
+from __future__ import annotations
+
+import json
+import threading
+import time
+from dataclasses import dataclass
+from typing import Callable
+
+from ..errors import ErrorCategory, Failure, classify_exception
+from ..logging_utils import log_event
+from .mission import Mission, MissionStatus, MissionStep, StepStatus, VerificationResult, utc_now
+from .mission_store import MissionStore
+from .recovery import RetryManager
+from .verification import VerificationEngine
+
+
+@dataclass
+class MissionControl:
+    cancel_event: threading.Event
+    pause_event: threading.Event
+
+    @classmethod
+    def create(cls) -> 'MissionControl':
+        return cls(threading.Event(), threading.Event())
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+        self.pause_event.clear()
+
+    def pause(self) -> None:
+        self.pause_event.set()
+
+    def resume(self) -> None:
+        self.pause_event.clear()
+
+    @property
+    def cancelled(self) -> bool:
+        return self.cancel_event.is_set()
+
+    @property
+    def paused(self) -> bool:
+        return self.pause_event.is_set()
+
+    def wait_if_paused(self, progress: Callable[[str], None]) -> bool:
+        announced = False
+        while self.paused and not self.cancelled:
+            if not announced:
+                progress('MISSION PAUSED')
+                announced = True
+            time.sleep(0.1)
+        return not self.cancelled
+
+
+class MissionOrchestrator:
+    """Persisted V7 mission state machine.
+
+    This phase deliberately keeps planning/execution intelligence in the existing
+    core while making state, retries, verification, recovery and reporting explicit.
+    """
+
+    MAX_REPLANS = 2
+
+    def __init__(self, core, store: MissionStore | None = None) -> None:
+        self.core = core
+        self.store = store or MissionStore()
+        self.verifier = VerificationEngine()
+        self.retry = RetryManager()
+        self._controls: dict[str, MissionControl] = {}
+        self._lock = threading.RLock()
+        self.current_mission_id: str | None = None
+
+    def _control(self, mission_id: str) -> MissionControl | None:
+        with self._lock:
+            return self._controls.get(mission_id)
+
+    def cancel(self, mission_id: str | None = None) -> bool:
+        target = mission_id or self.current_mission_id
+        if not target:
+            return False
+        control = self._control(target)
+        if not control:
+            return False
+        control.cancel()
+        self.store.add_event(target, 'control.cancel_requested')
+        return True
+
+    def pause(self, mission_id: str | None = None) -> bool:
+        target = mission_id or self.current_mission_id
+        if not target:
+            return False
+        control = self._control(target)
+        if not control:
+            return False
+        control.pause()
+        mission = self.store.get(target)
+        if mission and mission.status not in {MissionStatus.COMPLETED, MissionStatus.FAILED, MissionStatus.CANCELLED}:
+            mission.touch(MissionStatus.PAUSED)
+            self.store.save(mission)
+        self.store.add_event(target, 'control.pause_requested')
+        return True
+
+    def resume(self, mission_id: str | None = None) -> bool:
+        target = mission_id or self.current_mission_id
+        if not target:
+            return False
+        control = self._control(target)
+        if not control:
+            return False
+        control.resume()
+        self.store.add_event(target, 'control.resume_requested')
+        return True
+
+    def get(self, mission_id: str) -> Mission | None:
+        return self.store.get(mission_id)
+
+    def recent(self, limit: int = 20) -> list[dict]:
+        return self.store.list_recent(limit)
+
+    def _transition(self, mission: Mission, status: MissionStatus, progress: Callable[[str], None], detail: str = '') -> None:
+        mission.touch(status)
+        self.store.save(mission)
+        payload = {'status': status.value}
+        if detail:
+            payload['detail'] = detail[:1000]
+        self.store.add_event(mission.id, 'mission.state', payload)
+        log_event('MISSION', 'mission.state', mission_id=mission.id, status=status.value, detail=detail[:500])
+        label = status.value.replace('_', ' ')
+        progress(f'{label}' + (f': {detail}' if detail else ''))
+
+    def _collect_tool_events(self) -> list[dict]:
+        tools = getattr(self.core, 'tools', None)
+        drain = getattr(tools, 'drain_events', None)
+        if callable(drain):
+            return drain()
+        return []
+
+    def _clear_tool_events(self) -> None:
+        tools = getattr(self.core, 'tools', None)
+        clear = getattr(tools, 'clear_events', None)
+        if callable(clear):
+            clear()
+
+    @staticmethod
+    def _failure_from_verification(verification: VerificationResult) -> Failure:
+        evidence_text = json.dumps(verification.evidence, ensure_ascii=False, default=str)
+        lower = evidence_text.lower()
+        if 'not approved' in lower or 'permission' in lower:
+            return Failure(ErrorCategory.PERMISSION_ERROR, verification.summary, retryable=False)
+        return classify_exception(RuntimeError(verification.summary), operation='mission-step-verification')
+
+    def _execute_step(
+        self,
+        mission: Mission,
+        step: MissionStep,
+        control: MissionControl,
+        progress: Callable[[str], None],
+    ) -> tuple[bool, Failure | None]:
+        step.started_at = step.started_at or utc_now()
+        step.status = StepStatus.EXECUTING
+        mission.current_step = step.index
+        self._transition(mission, MissionStatus.EXECUTING, progress, f'Step {step.index}: {step.description}')
+
+        attempt = 0
+        while True:
+            if control.cancelled:
+                step.status = StepStatus.CANCELLED
+                step.completed_at = utc_now()
+                self.store.save(mission)
+                return False, Failure(ErrorCategory.UNKNOWN_ERROR, 'Mission cancelled.', retryable=False)
+            if not control.wait_if_paused(progress):
+                step.status = StepStatus.CANCELLED
+                step.completed_at = utc_now()
+                self.store.save(mission)
+                return False, Failure(ErrorCategory.UNKNOWN_ERROR, 'Mission cancelled.', retryable=False)
+
+            attempt += 1
+            step.attempts = attempt
+            self._clear_tool_events()
+            prompt = (
+                'JARVIS OMEGA V7 MISSION STEP\n'
+                f'Mission ID: {mission.id}\n'
+                f'Overall goal: {mission.goal}\n'
+                f'Current step {step.index}: {step.description}\n'
+                'Use available tools only when needed. Respect every permission gate. '
+                'Do not repeat a side-effecting action just because the prior result is uncertain. '
+                'Return a concise factual step result and never invent tool success.'
+            )
+            try:
+                result = self.core.chat(prompt)
+                events = self._collect_tool_events()
+                step.result = result
+                step.tool_events = events
+                step.status = StepStatus.VERIFYING
+                self._transition(mission, MissionStatus.VERIFYING, progress, f'Step {step.index}')
+                verification = self.verifier.verify_step(result, events)
+                step.verification = verification
+                step.completed_at = utc_now()
+                self.store.add_event(mission.id, 'step.verification', {
+                    'step_id': step.id,
+                    'step': step.index,
+                    'status': verification.status,
+                    'verified': verification.verified,
+                    'summary': verification.summary,
+                    'unverified_actions': verification.unverified_actions,
+                })
+
+                if verification.status != 'FAILED':
+                    step.status = StepStatus.COMPLETED
+                    mission.completed_steps.append(step.id)
+                    mission.results.append({
+                        'step': step.index,
+                        'description': step.description,
+                        'result': result,
+                        'verification': verification.status,
+                    })
+                    self.store.save(mission)
+                    progress(
+                        f'STEP {step.index} {verification.status}: {verification.summary}'
+                    )
+                    return True, None
+
+                failure = self._failure_from_verification(verification)
+            except Exception as exc:
+                events = self._collect_tool_events()
+                step.tool_events = events
+                step.error = f'{type(exc).__name__}: {exc}'[:2000]
+                failure = classify_exception(exc, provider=getattr(self.core, 'last_provider_used', None), operation='mission-step')
+
+            side_effecting = self.verifier.has_unsafe_retry_risk(step.tool_events)
+            policy = self.retry.policy_for(failure, side_effecting=side_effecting)
+            if attempt <= policy.max_attempts and failure.retryable:
+                mission.retry_count += 1
+                self._transition(
+                    mission,
+                    MissionStatus.RECOVERING,
+                    progress,
+                    f'Step {step.index} retry {attempt}/{policy.max_attempts} after {failure.category.value}',
+                )
+                if not self.retry.wait(failure, attempt, policy, lambda: control.cancelled):
+                    return False, failure
+                continue
+
+            step.status = StepStatus.FAILED
+            step.completed_at = utc_now()
+            step.error = failure.message[:2000]
+            mission.failed_steps.append(step.id)
+            mission.last_error = failure.message[:2000]
+            self.store.save(mission)
+            self.store.add_event(mission.id, 'step.failed', {
+                'step_id': step.id,
+                'step': step.index,
+                'category': failure.category.value,
+                'message': failure.message[:1000],
+                'side_effecting_retry_blocked': side_effecting,
+            })
+            return False, failure
+
+    def _replan(
+        self,
+        mission: Mission,
+        failed_step: MissionStep,
+        failure: Failure,
+        progress: Callable[[str], None],
+    ) -> list[MissionStep]:
+        completed = [
+            {'step': step.index, 'description': step.description, 'result': step.result[:1200]}
+            for step in mission.plan
+            if step.status == StepStatus.COMPLETED
+        ]
+        raw = self.core._one_shot_text(
+            'You are JARVIS OMEGA V7 Replanner. Return only a JSON array of the smallest safe remaining steps. '
+            'Preserve already completed work. Do not repeat uncertain side effects. Do not bypass permissions. '
+            'If recovery is impossible, return an empty JSON array.',
+            (
+                f'Goal: {mission.goal}\n'
+                f'Completed work: {json.dumps(completed, ensure_ascii=False)}\n'
+                f'Failed step: {failed_step.description}\n'
+                f'Failure category: {failure.category.value}\n'
+                f'Failure: {failure.message[:1500]}\n'
+                f'Max new steps: {max(1, getattr(self.core, "last_plan", []) and len(self.core.last_plan) or 5)}'
+            ),
+            'mission',
+        )
+        descriptions = self.core._extract_plan(raw, 5)
+        if len(descriptions) == 1 and descriptions[0].strip() in {'[]', ''}:
+            descriptions = []
+        start = max((step.index for step in mission.plan), default=0) + 1
+        steps = [MissionStep(index=start + i, description=text) for i, text in enumerate(descriptions) if text.strip()]
+        self.store.add_event(mission.id, 'mission.replanned', {
+            'failed_step': failed_step.index,
+            'new_steps': [step.description for step in steps],
+        })
+        progress('REPLAN: ' + (' | '.join(step.description for step in steps) if steps else 'No safe recovery plan.'))
+        return steps
+
+    def _final_verification(self, mission: Mission) -> VerificationResult:
+        verifications = [step.verification for step in mission.plan if step.status == StepStatus.COMPLETED and step.verification]
+        failures = [step for step in mission.plan if step.status == StepStatus.FAILED]
+        unverified = []
+        evidence = []
+        for verification in verifications:
+            evidence.extend(verification.evidence)
+            unverified.extend(verification.unverified_actions)
+        verified = bool(mission.plan) and not failures and all(v.verified for v in verifications) and len(verifications) == len([
+            step for step in mission.plan if step.status == StepStatus.COMPLETED
+        ])
+        if failures:
+            status = 'FAILED'
+            summary = f'{len(failures)} mission step(s) failed.'
+        elif unverified:
+            status = 'PARTIAL'
+            summary = f'Mission completed with {len(unverified)} externally unverified action(s).'
+        elif verified:
+            status = 'VERIFIED'
+            summary = 'All completed mission steps have verification evidence.'
+        else:
+            status = 'PARTIAL'
+            summary = 'Mission produced results but final verification is incomplete.'
+        return VerificationResult(
+            verified=verified,
+            status=status,
+            summary=summary,
+            evidence=evidence[-100:],
+            unverified_actions=unverified,
+        )
+
+    def _build_report(self, mission: Mission) -> str:
+        verification = mission.final_verification
+        lines = [
+            f'Mission {mission.id}',
+            f'Goal: {mission.goal}',
+            f'Status: {mission.status.value}',
+        ]
+        if verification:
+            lines.append(f'Verification: {verification.status} — {verification.summary}')
+        lines.append('Steps:')
+        for step in mission.plan:
+            check = step.verification.status if step.verification else 'NOT VERIFIED'
+            lines.append(f'- {step.index}. {step.description} [{step.status.value}; {check}]')
+        if mission.last_error:
+            lines.append(f'Blocker: {mission.last_error}')
+        if verification and verification.unverified_actions:
+            lines.append('Unverified external actions: ' + ', '.join(sorted(set(verification.unverified_actions))))
+        if mission.status == MissionStatus.COMPLETED and verification and not verification.verified:
+            lines.append('Important: JARVIS is not claiming full verified success for the unverified actions above.')
+        return '\n'.join(lines)
+
+    def run(self, goal: str, progress: Callable[[str], None] | None = None) -> Mission:
+        progress = progress or (lambda _message: None)
+        goal = goal.strip()
+        if not goal:
+            raise ValueError('Mission goal is empty.')
+
+        mission = Mission(goal=goal, session_id=self.core.session_id)
+        control = MissionControl.create()
+        with self._lock:
+            self._controls[mission.id] = control
+            self.current_mission_id = mission.id
+        self.store.save(mission)
+        self.store.add_event(mission.id, 'mission.created', {'goal': goal[:2000]})
+        log_event('MISSION', 'mission.created', mission_id=mission.id, goal=goal[:500])
+
+        try:
+            self._transition(mission, MissionStatus.UNDERSTANDING, progress)
+            if control.cancelled:
+                self._transition(mission, MissionStatus.CANCELLED, progress)
+                mission.final_report = self._build_report(mission)
+                self.store.save(mission)
+                return mission
+
+            self._transition(mission, MissionStatus.PLANNING, progress)
+            descriptions = self.core.plan_mission(goal)
+            if not descriptions:
+                mission.last_error = 'Planner returned no executable steps.'
+                self._transition(mission, MissionStatus.FAILED, progress, mission.last_error)
+                mission.final_verification = VerificationResult(False, 'FAILED', mission.last_error)
+                mission.final_report = self._build_report(mission)
+                self.store.save(mission)
+                return mission
+
+            mission.plan = [MissionStep(index=i + 1, description=text) for i, text in enumerate(descriptions)]
+            self.store.save(mission)
+            self.store.add_event(mission.id, 'mission.plan', {'steps': descriptions})
+            progress('PLAN: ' + ' | '.join(descriptions))
+
+            cursor = 0
+            replans = 0
+            while cursor < len(mission.plan):
+                if control.cancelled:
+                    self._transition(mission, MissionStatus.CANCELLED, progress)
+                    break
+                if not control.wait_if_paused(progress):
+                    self._transition(mission, MissionStatus.CANCELLED, progress)
+                    break
+
+                step = mission.plan[cursor]
+                if step.status == StepStatus.COMPLETED:
+                    cursor += 1
+                    continue
+                ok, failure = self._execute_step(mission, step, control, progress)
+                if ok:
+                    cursor += 1
+                    continue
+                if control.cancelled:
+                    self._transition(mission, MissionStatus.CANCELLED, progress)
+                    break
+
+                if failure and failure.category == ErrorCategory.PERMISSION_ERROR:
+                    mission.last_error = 'User permission was denied; mission stopped without bypassing the decision.'
+                    self._transition(mission, MissionStatus.FAILED, progress, mission.last_error)
+                    break
+
+                if failure and replans < self.MAX_REPLANS:
+                    replans += 1
+                    mission.recovery_count += 1
+                    self._transition(mission, MissionStatus.REPLANNING, progress, f'After step {step.index} failure')
+                    try:
+                        replacements = self._replan(mission, step, failure, progress)
+                    except Exception as exc:
+                        mission.last_error = f'Replanning failed: {type(exc).__name__}: {exc}'[:2000]
+                        self._transition(mission, MissionStatus.FAILED, progress, mission.last_error)
+                        break
+                    if replacements:
+                        mission.plan.extend(replacements)
+                        self.store.save(mission)
+                        cursor += 1
+                        continue
+
+                mission.last_error = failure.message if failure else 'Mission step failed.'
+                self._transition(mission, MissionStatus.FAILED, progress, mission.last_error)
+                break
+
+            if mission.status not in {MissionStatus.FAILED, MissionStatus.CANCELLED}:
+                mission.final_verification = self._final_verification(mission)
+                # PARTIAL is completion with explicit evidence limitations, not a false verified success.
+                self._transition(mission, MissionStatus.COMPLETED, progress, mission.final_verification.summary)
+            else:
+                mission.final_verification = self._final_verification(mission)
+
+            mission.final_report = self._build_report(mission)
+            self.store.save(mission)
+            self.store.add_event(mission.id, 'mission.finished', {
+                'status': mission.status.value,
+                'verification': mission.final_verification.status if mission.final_verification else 'UNKNOWN',
+                'retry_count': mission.retry_count,
+                'recovery_count': mission.recovery_count,
+            })
+            return mission
+        finally:
+            with self._lock:
+                self._controls.pop(mission.id, None)
+                if self.current_mission_id == mission.id:
+                    self.current_mission_id = None
