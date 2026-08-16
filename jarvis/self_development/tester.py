@@ -72,8 +72,12 @@ class SelfDevelopmentTester:
     def run_regression(self, worktree: Path) -> TestReport:
         worktree = worktree.resolve()
         started = time.perf_counter()
+        # ``-f`` is intentional: self-repair can rewrite a file to same-size content
+        # within one filesystem timestamp tick (for example 'old' -> 'new'). Python
+        # 3.11 can otherwise reuse a stale timestamp/size-based .pyc and report a
+        # false regression after the source was actually repaired.
         checks = (
-            self._run('compileall', ['-m', 'compileall', '-q', '.'], worktree),
+            self._run('compileall', ['-m', 'compileall', '-f', '-q', '.'], worktree),
             self._run('unittest', ['-m', 'unittest', 'discover', '-s', 'tests', '-v'], worktree),
         )
         return TestReport(
