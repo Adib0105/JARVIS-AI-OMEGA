@@ -2,7 +2,7 @@
 
 `JarvisOmega` keeps the existing import/API surface while layering V7 orchestration,
 security, layered memory, capability awareness, self-evaluation, gap detection and
-bounded context over the provider-neutral core.
+bounded self-development over the provider-neutral core.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from .agent.context import ContextManager
 from .agent.orchestrator_memory import MemoryAwareMissionOrchestrator
 from .agent.tool_runtime import RecordingToolRegistry
 from .capability_registry import CapabilityRegistry
+from .config import settings
 from .core_v7 import JarvisOmega as _ProviderCore
 from .evaluation import CapabilityGapDetector, SelfEvaluationEngine
 from .memory_v7 import MemoryKind, V7MemoryStore
@@ -47,6 +48,9 @@ class JarvisOmega(_ProviderCore):
             audit=self.tools.audit,
             registry=self.capability_registry,
         )
+        # Self-development stays lazy because packaged/frozen installs may not have
+        # Git or a repository checkout. Normal chat must not depend on those tools.
+        self._self_development_engine = None
         self.last_mission_id: str | None = None
         self.last_context_stats: dict = {}
 
@@ -115,6 +119,60 @@ class JarvisOmega(_ProviderCore):
 
     def capability_gap_history(self, limit: int = 100) -> list[dict]:
         return self.gap_detector.list_open(limit)
+
+    def _get_self_development_engine(self):
+        if not settings.self_development_enabled:
+            raise RuntimeError('Controlled self-development is disabled by configuration.')
+        if self._self_development_engine is None:
+            from .self_development import SelfDevelopmentEngine
+            try:
+                self._self_development_engine = SelfDevelopmentEngine(self.memory.db_path)
+            except Exception as exc:
+                raise RuntimeError(
+                    'Self-development sandbox is unavailable in this installation. '
+                    f'Git/repository/workspace check failed: {type(exc).__name__}: {exc}'
+                ) from exc
+        return self._self_development_engine
+
+    def propose_improvement(self, gap: dict) -> dict:
+        """Create a persisted improvement proposal from an evidence-backed gap only."""
+        proposal = self._get_self_development_engine().proposal_from_gap(dict(gap))
+        return proposal.as_dict()
+
+    def prepare_improvement_sandbox(self, proposal_id: str) -> dict:
+        proposal = self._get_self_development_engine().prepare_sandbox(proposal_id)
+        return proposal.as_dict()
+
+    def run_self_coding(self, proposal_id: str) -> dict:
+        """Generate/repair code in the proposal sandbox; production is never merged here."""
+        from .self_development.coding import SelfCodingEngine
+
+        engine = self._get_self_development_engine()
+
+        def reasoner(system: str, user: str) -> str:
+            # Provider-neutral one-shot path already supports explicitly configured
+            # local fallback. Returned text is still policy-gated JSON before writes.
+            return self._one_shot_text(system, user, 'mission')
+
+        result = SelfCodingEngine(engine, reasoner).run(proposal_id)
+        return result.as_dict()
+
+    def self_development_proposals(self, limit: int = 50) -> list[dict]:
+        return self._get_self_development_engine().recent(limit)
+
+    def self_development_proposal(self, proposal_id: str) -> dict | None:
+        return self._get_self_development_engine().get(proposal_id)
+
+    def approve_improvement_for_release(self, proposal_id: str, *, explicit_user_approval: bool) -> dict:
+        """Mark a reviewed proposal approved; this still does not deploy it to production."""
+        proposal = self._get_self_development_engine().approve(
+            proposal_id,
+            explicit_user_approval=explicit_user_approval,
+        )
+        return proposal.as_dict()
+
+    def reject_improvement(self, proposal_id: str) -> dict:
+        return self._get_self_development_engine().reject(proposal_id).as_dict()
 
     def _tool_audit_context(self) -> dict:
         request_summary = self._latest_user_request()[:800]
