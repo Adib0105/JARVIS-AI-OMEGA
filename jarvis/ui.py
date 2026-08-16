@@ -27,38 +27,40 @@ def confirmer(tool: str, args: dict) -> bool:
 
 
 def banner() -> None:
-    title = Text('J A R V I S   O M E G A   V3', style='bold cyan')
+    title = Text('J A R V I S   O M E G A   V5', style='bold cyan')
     provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
     subtitle = (
-        f'Agent • Free Web • Screen Vision • Memory • Knowledge • Deep Neural Voice • '
+        f'Multimodal • Image Upload • Free Web • Screen Vision • Memory • Knowledge • Neural Voice • '
         f'Creator: {settings.creator_name} • Provider: {provider}'
     )
     console.print(Panel.fit(Text.assemble(title, '\n', subtitle), border_style='cyan'))
-    console.print('[dim]No microphone input. You type; JARVIS reasons, uses tools, answers and speaks.[/dim]\n')
+    console.print('[dim]No microphone input. You type; JARVIS reasons, can inspect images, answers and speaks.[/dim]\n')
 
 
 def help_table() -> Table:
-    table = Table(title='JARVIS OMEGA V3 Commands', show_header=True, header_style='bold cyan')
+    table = Table(title='JARVIS OMEGA V5 Commands', show_header=True, header_style='bold cyan')
     table.add_column('Command')
     table.add_column('Action')
     commands = [
         ('/help', 'Show this command list'),
+        ('/version', 'Show JARVIS version'),
         ('/new', 'Start a fresh conversation session'),
-        ('/status', 'Show provider/model/tools/voice status'),
-        ('/screen [prompt]', 'Capture the current screen with approval and analyze it using AI vision'),
-        ('/web <query>', 'Free public web search without using paid OpenAI web search'),
+        ('/status', 'Show provider/model/tools/image/voice status'),
+        ('/image "path" | prompt', 'Upload and analyze a PNG/JPG/JPEG/WEBP image'),
+        ('/screen [prompt]', 'Capture the current screen with approval and analyze it'),
+        ('/web <query>', 'Free public web search'),
         ('/news <query>', 'Search recent public news'),
         ('/remember <text>', 'Save a fact to local long-term memory'),
         ('/recall <query>', 'Search local long-term memory'),
         ('/learn <file>', 'Index an approved local text/code file into JARVIS knowledge'),
         ('/knowledge <query>', 'Search indexed local knowledge'),
         ('/history [n]', 'Show recent messages from this session'),
-        ('/export', 'Export this chat to Markdown in the exports folder'),
+        ('/export', 'Export this chat to Markdown'),
         ('/stats', 'Show memory/knowledge statistics'),
-        ('/voice-test [hinglish|hindi|english]', 'Test the deep neural voice'),
+        ('/voice-test [hinglish|hindi|english]', 'Test neural voice'),
         ('/mute', 'Mute spoken replies'),
         ('/unmute', 'Enable spoken replies'),
-        ('/clear', 'Clear the terminal display'),
+        ('/clear', 'Clear terminal display'),
         ('/sessions', 'Show recent chat sessions'),
         ('/exit', 'Close JARVIS'),
     ]
@@ -107,22 +109,27 @@ def run_cli() -> None:
         if low == '/help':
             console.print(help_table())
             continue
+        if low == '/version':
+            console.print(f'[cyan]JARVIS AI OMEGA[/cyan] {settings.app_version}')
+            continue
         if low == '/clear':
             console.clear()
             banner()
             continue
         if low == '/new':
             sid = jarvis.new_session()
-            console.print(f'[green]New session:[/green] {sid}')
+            console.print(f'[green]New V5 session:[/green] {sid}')
             continue
         if low == '/status':
             provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
             console.print(Panel(
+                f'Version: {settings.app_version}\n'
                 f'Provider: {provider}\nConfigured model: {settings.model}\nLast model used: {jarvis.last_model_used}\n'
-                f'Tool mode: {jarvis.last_tool_mode}\n'
-                f'Reasoning setting: {settings.reasoning_effort if settings.provider == "openai" else "provider-managed"}\n'
+                f'Last request: {jarvis.last_request_kind}\nTool mode: {jarvis.last_tool_mode}\n'
+                f'Reasoning: {settings.reasoning_effort if settings.provider == "openai" else "provider-managed"}\n'
                 f'Free custom web search: {settings.enable_public_web_tools}\n'
-                f'Screen vision: {settings.provider == "openrouter"}\n'
+                f'Image upload: True • max {settings.max_image_attachments} images • {settings.max_image_mb} MB each\n'
+                f'Screen vision: True\nAI timeout: {settings.ai_timeout_seconds}s\nVision timeout: {settings.vision_timeout_seconds}s\n'
                 f'Hosted web search: {settings.hosted_web_search_enabled}\n'
                 f'Code Interpreter: {settings.code_interpreter_enabled}\n'
                 f'Local tools: {settings.enable_local_tools}\n'
@@ -131,11 +138,29 @@ def run_cli() -> None:
                 f'Voice rate/pitch: {settings.edge_voice_rate} / {settings.edge_voice_pitch}\n'
                 f'Microphone input: False\nSession: {jarvis.session_id}\n'
                 f'Last latency: {jarvis.last_latency:.2f}s',
-                title='OMEGA V3 Status', border_style='green'))
+                title='OMEGA V5 Status', border_style='green'))
+            continue
+
+        if low.startswith('/image '):
+            raw = text[len('/image '):].strip()
+            if '|' in raw:
+                path_text, prompt = raw.split('|', 1)
+                prompt = prompt.strip()
+            else:
+                path_text = raw
+                prompt = 'Analyze this image carefully and tell me the important details.'
+            path = path_text.strip().strip('"')
+            try:
+                with console.status('[magenta]Uploading and analyzing image...[/magenta]'):
+                    answer = jarvis.analyze_image(path, prompt)
+                console.print(Panel(Markdown(answer), title='JARVIS IMAGE VISION', border_style='magenta'))
+                voice.speak(answer)
+            except Exception as exc:
+                console.print(Panel(str(exc), title='Image Analysis Error', border_style='red'))
             continue
 
         if low.startswith('/screen'):
-            prompt = text[len('/screen'):].strip() or 'Analyze this screenshot. Tell me what is visible, identify any errors or important UI state, and explain what I should do next.'
+            prompt = text[len('/screen'):].strip() or 'Analyze this screenshot. Tell me what is visible, identify errors or important UI state, and explain what I should do next.'
             decision = jarvis.tools.permissions.check('capture_screen', {'purpose': prompt})
             if not decision.allowed:
                 console.print(f'[yellow]{decision.reason}[/yellow]')
