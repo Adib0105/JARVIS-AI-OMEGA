@@ -5,6 +5,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .sqlite_utils import connect_sqlite
+
 
 TARGET_SCHEMA_VERSION = 7
 
@@ -21,9 +23,7 @@ class SchemaMigrator:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=10)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return connect_sqlite(self.db_path, timeout=10)
 
     def _ensure_meta(self, conn: sqlite3.Connection) -> None:
         conn.execute('''CREATE TABLE IF NOT EXISTS jarvis_schema_meta (
@@ -120,7 +120,6 @@ class SchemaMigrator:
             chunk_count INTEGER NOT NULL DEFAULT 0
         )''')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_v7_document_hash ON v7_document_index(content_hash)')
-        # Working memory is intentionally separated from long-lived semantic memory.
         conn.execute('''CREATE TABLE IF NOT EXISTS v7_working_memory (
             session_id TEXT NOT NULL,
             mission_id TEXT NOT NULL DEFAULT '',
