@@ -54,7 +54,6 @@ def local_identity_answer(text: str) -> str | None:
 
 
 def clean_display_text(text: str) -> str:
-    """Convert common Markdown/model artifacts into readable desktop-console text."""
     if not text:
         return ''
     value = unicodedata.normalize('NFKC', str(text)).replace('\r\n', '\n').replace('\r', '\n')
@@ -73,7 +72,6 @@ def clean_display_text(text: str) -> str:
 
 
 def looks_garbled(answer: str, user_text: str = '') -> bool:
-    """Conservative detector for mixed-script/router corruption."""
     if not answer or len(answer.strip()) < 2:
         return True
     if '\ufffd' in answer:
@@ -111,7 +109,6 @@ def preferred_text_model(configured_model: str, kind: str = 'chat') -> str:
 
 
 def _repair_answer(self, user_text: str, bad_answer: str) -> str:
-    """Retry once through the provider abstraction when a completion is visibly corrupted."""
     if settings.provider != 'openrouter':
         return bad_answer
     try:
@@ -183,6 +180,42 @@ def install_runtime_guards() -> None:
     JarvisOmega._v7_runtime_guard_installed = True
 
 
+def _rebrand_widget_tree(widget) -> None:
+    """Temporary compatibility rebrand until the Phase-8 GUI cleanup removes V6 literals."""
+    try:
+        text = widget.cget('text')
+        if isinstance(text, str) and 'V6' in text:
+            widget.configure(text=text.replace('V6', 'V7'))
+    except Exception:
+        pass
+    try:
+        for child in widget.winfo_children():
+            _rebrand_widget_tree(child)
+    except Exception:
+        pass
+
+
+def _rebrand_chat_history(app) -> None:
+    chat = getattr(app, 'chat', None)
+    if chat is None:
+        return
+    try:
+        previous_state = str(chat.cget('state'))
+        chat.configure(state='normal')
+        start = '1.0'
+        while True:
+            index = chat.search('V6', start, stopindex='end')
+            if not index:
+                break
+            end = f'{index}+2c'
+            chat.delete(index, end)
+            chat.insert(index, 'V7')
+            start = f'{index}+2c'
+        chat.configure(state=previous_state)
+    except Exception:
+        pass
+
+
 def run_adaptive_gui() -> None:
     """Launch the GUI with a balanced compact layout on common 1366x768 laptops."""
     import tkinter as tk
@@ -228,7 +261,11 @@ def run_adaptive_gui() -> None:
 
         gui_module.JarvisDesktop._button = staticmethod(compact_button)
 
-    gui_module.JarvisDesktop(root)
+    app = gui_module.JarvisDesktop(root)
+    root.title('JARVIS AI OMEGA V7 // RELIABLE ARC DESKTOP AGENT')
+    _rebrand_widget_tree(root)
+    _rebrand_chat_history(app)
+
     if compact:
         root.minsize(min(1040, screen_w - 40), min(620, screen_h - 100))
     try:
