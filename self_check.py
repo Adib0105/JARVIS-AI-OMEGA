@@ -30,6 +30,11 @@ def main() -> None:
     except Exception as exc:
         results.append(check('Free public web search', False, str(exc)))
     try:
+        from PIL import Image
+        results.append(check('Screen vision image support', True, getattr(Image, '__version__', 'Pillow installed')))
+    except Exception as exc:
+        results.append(check('Screen vision image support', False, str(exc)))
+    try:
         import edge_tts
         results.append(check('Neural Hindi/Hinglish TTS', True, getattr(edge_tts, '__version__', 'installed')))
     except Exception as exc:
@@ -61,6 +66,7 @@ def main() -> None:
                                  settings.model))
 
         results.append(check('Custom free web tools', settings.enable_public_web_tools, 'DDGS metasearch'))
+        results.append(check('Screen vision mode', settings.provider == 'openrouter', 'OpenRouter multimodal'))
         voice_detail = (
             f'engine={settings.voice_engine}, hindi={settings.voice_hindi}, '
             f'hinglish={settings.voice_hinglish}, pitch={settings.edge_voice_pitch}, rate={settings.edge_voice_rate}'
