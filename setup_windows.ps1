@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-Write-Host "=== JARVIS OMEGA - Windows Setup ===" -ForegroundColor Cyan
+Write-Host "=== JARVIS OMEGA V3 - Windows Setup ===" -ForegroundColor Cyan
 
 $python = $null
 if (Get-Command py -ErrorAction SilentlyContinue) { $python = "py" }
@@ -29,4 +29,7 @@ Write-Host "2. Set AI_PROVIDER=openrouter"
 Write-Host "3. Set OPENROUTER_API_KEY=your_key"
 Write-Host "4. Keep OPENROUTER_MODEL=openrouter/free"
 Write-Host "5. Run: .\.venv\Scripts\python.exe self_check.py"
-Write-Host "6. Start: .\.venv\Scripts\python.exe main.py"
+Write-Host "6. Terminal JARVIS: .\.venv\Scripts\python.exe main.py"
+Write-Host "7. Desktop OMEGA UI: .\.venv\Scripts\python.exe desktop_app.py"
+Write-Host ""
+Write-Host "OMEGA V3 includes free public web search, local knowledge indexing, chat export, and deeper neural voice." -ForegroundColor Cyan
