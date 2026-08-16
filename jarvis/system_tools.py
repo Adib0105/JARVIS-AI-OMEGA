@@ -16,6 +16,12 @@ APP_COMMANDS = {
     'calc': ['calc.exe'],
     'explorer': ['explorer.exe'],
     'paint': ['mspaint.exe'],
+    'task manager': ['taskmgr.exe'],
+    'taskmgr': ['taskmgr.exe'],
+    'vscode': ['code'],
+    'vs code': ['code'],
+    'chrome': ['chrome.exe'],
+    'edge': ['msedge.exe'],
 }
 
 
@@ -27,7 +33,28 @@ def system_info() -> dict:
         'python': sys.version.split()[0],
         'hostname': platform.node(),
         'cwd': str(Path.cwd()),
+        'user': os.getenv('USERNAME') or os.getenv('USER') or '',
     }
+
+
+def system_metrics() -> dict:
+    try:
+        import psutil
+
+        vm = psutil.virtual_memory()
+        disk = psutil.disk_usage(str(Path.home().anchor or '/'))
+        battery = psutil.sensors_battery()
+        return {
+            'cpu_percent': round(psutil.cpu_percent(interval=None), 1),
+            'memory_percent': round(vm.percent, 1),
+            'memory_available_gb': round(vm.available / (1024 ** 3), 2),
+            'disk_percent': round(disk.percent, 1),
+            'battery_percent': round(battery.percent, 1) if battery else None,
+            'battery_plugged': bool(battery.power_plugged) if battery else None,
+            'processes': len(psutil.pids()),
+        }
+    except Exception as exc:
+        return {'available': False, 'error': str(exc)}
 
 
 def current_time() -> str:
@@ -48,7 +75,10 @@ def open_app(app: str) -> str:
     command = APP_COMMANDS.get(key)
     if not command:
         raise PermissionError(f"App '{app}' is not in the allowlist: {', '.join(sorted(APP_COMMANDS))}")
-    subprocess.Popen(command)
+    try:
+        subprocess.Popen(command, shell=False)
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"'{key}' was allowlisted but Windows could not find its executable.") from exc
     return f'Opened {key}.'
 
 
