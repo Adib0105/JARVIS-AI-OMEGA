@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 
 from rich.console import Console
 from rich.markdown import Markdown
@@ -11,6 +12,8 @@ from rich.text import Text
 
 from .config import settings
 from .core import JarvisOmega
+from .microphone import record_and_transcribe
+from .system_tools import system_metrics
 from .vision import capture_screen
 from .voice import VoiceOutput
 from .web_tools import search_news, search_web
@@ -20,48 +23,57 @@ console = Console()
 
 def confirmer(tool: str, args: dict) -> bool:
     console.print(Panel.fit(
-        f'[bold yellow]Local tool request[/bold yellow]\nTool: [cyan]{tool}[/cyan]\nArgs: {args}',
+        f'[bold yellow]V6 local action request[/bold yellow]\nTool: [cyan]{tool}[/cyan]\nArgs: {args}',
         title='Permission Gate', border_style='yellow'
     ))
     return Confirm.ask('Allow this local action?', default=False)
 
 
 def banner() -> None:
-    title = Text('J A R V I S   O M E G A   V5', style='bold cyan')
+    title = Text('J A R V I S   O M E G A   V6', style='bold cyan')
     provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
     subtitle = (
-        f'Multimodal • Image Upload • Free Web • Screen Vision • Memory • Knowledge • Neural Voice • '
-        f'Creator: {settings.creator_name} • Provider: {provider}'
+        f'ARC Agent • Mission Planner • Images • Documents • Web • Memory • Desktop Tools • Neural Voice\n'
+        f'OPERATOR: {settings.creator_name} • Provider: {provider} • Model: {settings.model}'
     )
     console.print(Panel.fit(Text.assemble(title, '\n', subtitle), border_style='cyan'))
-    console.print('[dim]No microphone input. You type; JARVIS reasons, can inspect images, answers and speaks.[/dim]\n')
+    console.print('[dim]Type normally, or /help for V6 power commands. Sensitive local actions remain approval-gated.[/dim]\n')
 
 
 def help_table() -> Table:
-    table = Table(title='JARVIS OMEGA V5 Commands', show_header=True, header_style='bold cyan')
+    table = Table(title='JARVIS OMEGA V6 Commands', show_header=True, header_style='bold cyan')
     table.add_column('Command')
     table.add_column('Action')
     commands = [
-        ('/help', 'Show this command list'),
-        ('/version', 'Show JARVIS version'),
-        ('/new', 'Start a fresh conversation session'),
-        ('/status', 'Show provider/model/tools/image/voice status'),
-        ('/image "path" | prompt', 'Upload and analyze a PNG/JPG/JPEG/WEBP image'),
-        ('/screen [prompt]', 'Capture the current screen with approval and analyze it'),
+        ('/mission <goal>', 'Planner → Executor → Reviewer mission mode'),
+        ('/mic', 'Push-to-talk microphone input, then send to JARVIS'),
+        ('/image "path" | prompt', 'Analyze image'),
+        ('/screen [prompt]', 'Analyze current screen with approval'),
+        ('/document "path"', 'Extract/index PDF/DOCX/XLSX/CSV/TXT with approval'),
         ('/web <query>', 'Free public web search'),
-        ('/news <query>', 'Search recent public news'),
-        ('/remember <text>', 'Save a fact to local long-term memory'),
-        ('/recall <query>', 'Search local long-term memory'),
-        ('/learn <file>', 'Index an approved local text/code file into JARVIS knowledge'),
-        ('/knowledge <query>', 'Search indexed local knowledge'),
-        ('/history [n]', 'Show recent messages from this session'),
-        ('/export', 'Export this chat to Markdown'),
-        ('/stats', 'Show memory/knowledge statistics'),
-        ('/voice-test [hinglish|hindi|english]', 'Test neural voice'),
-        ('/mute', 'Mute spoken replies'),
-        ('/unmute', 'Enable spoken replies'),
-        ('/clear', 'Clear terminal display'),
-        ('/sessions', 'Show recent chat sessions'),
+        ('/news <query>', 'Recent news search'),
+        ('/browser <engine> | <query>', 'Open google/youtube/github/bing search with approval'),
+        ('/app <name>', 'Open allowlisted Windows app with approval'),
+        ('/todo <text>', 'Add local todo'),
+        ('/todos', 'List open todos'),
+        ('/done <id>', 'Complete todo'),
+        ('/remind YYYY-MM-DD HH:MM | text', 'Create local reminder'),
+        ('/reminders', 'List pending reminders'),
+        ('/remember <text>', 'Store long-term fact'),
+        ('/recall <query>', 'Recall facts'),
+        ('/search-history <query>', 'Search prior local chats'),
+        ('/learn <file>', 'Index safe local text/code file'),
+        ('/knowledge <query>', 'Search indexed knowledge'),
+        ('/metrics', 'Live CPU/RAM/disk/battery metrics'),
+        ('/history [n]', 'Show recent messages'),
+        ('/export', 'Export current chat to Markdown'),
+        ('/stats', 'Memory/task/knowledge stats'),
+        ('/status', 'Full V6 status'),
+        ('/voice-test [mode]', 'Test neural voice'),
+        ('/mute / /unmute', 'Control speech'),
+        ('/new', 'New session'),
+        ('/sessions', 'List sessions'),
+        ('/version', 'Show V6 version'),
         ('/exit', 'Close JARVIS'),
     ]
     for cmd, desc in commands:
@@ -81,6 +93,10 @@ def _print_search_results(title: str, results: list[dict]) -> None:
     for i, row in enumerate(results, 1):
         table.add_row(str(i), row.get('title', ''), row.get('snippet', '')[:300], row.get('url', ''))
     console.print(table)
+
+
+def _show_json(title: str, value) -> None:
+    console.print(Panel(json.dumps(value, ensure_ascii=False, indent=2, default=str), title=title, border_style='magenta'))
 
 
 def run_cli() -> None:
@@ -105,118 +121,150 @@ def run_cli() -> None:
             voice.speak(goodbye)
             voice.stop()
             break
-
         if low == '/help':
-            console.print(help_table())
-            continue
+            console.print(help_table()); continue
         if low == '/version':
-            console.print(f'[cyan]JARVIS AI OMEGA[/cyan] {settings.app_version}')
-            continue
+            console.print(f'[cyan]JARVIS AI OMEGA[/cyan] {settings.app_version}'); continue
         if low == '/clear':
-            console.clear()
-            banner()
-            continue
+            console.clear(); banner(); continue
         if low == '/new':
-            sid = jarvis.new_session()
-            console.print(f'[green]New V5 session:[/green] {sid}')
-            continue
+            console.print(f'[green]New V6 session:[/green] {jarvis.new_session()}'); continue
+
         if low == '/status':
+            stats = jarvis.memory.stats()
             provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
             console.print(Panel(
-                f'Version: {settings.app_version}\n'
-                f'Provider: {provider}\nConfigured model: {settings.model}\nLast model used: {jarvis.last_model_used}\n'
-                f'Last request: {jarvis.last_request_kind}\nTool mode: {jarvis.last_tool_mode}\n'
-                f'Reasoning: {settings.reasoning_effort if settings.provider == "openai" else "provider-managed"}\n'
-                f'Free custom web search: {settings.enable_public_web_tools}\n'
-                f'Image upload: True • max {settings.max_image_attachments} images • {settings.max_image_mb} MB each\n'
-                f'Screen vision: True\nAI timeout: {settings.ai_timeout_seconds}s\nVision timeout: {settings.vision_timeout_seconds}s\n'
-                f'Hosted web search: {settings.hosted_web_search_enabled}\n'
-                f'Code Interpreter: {settings.code_interpreter_enabled}\n'
-                f'Local tools: {settings.enable_local_tools}\n'
-                f'Voice output: {settings.enable_voice_output and not voice.muted}\nVoice engine: {settings.voice_engine}\n'
-                f'Hindi voice: {settings.voice_hindi}\nHinglish voice: {settings.voice_hinglish}\n'
-                f'Voice rate/pitch: {settings.edge_voice_rate} / {settings.edge_voice_pitch}\n'
-                f'Microphone input: False\nSession: {jarvis.session_id}\n'
-                f'Last latency: {jarvis.last_latency:.2f}s',
-                title='OMEGA V5 Status', border_style='green'))
+                f'Version: {settings.app_version}\nOperator: {settings.creator_name}\nProvider: {provider}\n'
+                f'Model: {settings.model}\nLast model: {jarvis.last_model_used}\nLast request: {jarvis.last_request_kind}\n'
+                f'Tool mode: {jarvis.last_tool_mode}\nDesktop automation: {settings.enable_desktop_automation}\n'
+                f'Document intelligence: {settings.enable_document_intelligence}\nCoding tools: {settings.enable_coding_tools}\n'
+                f'Microphone: {settings.enable_mic_input}\nWake default: {settings.enable_wake_word}\n'
+                f'Voice: {settings.voice_engine} • pitch {settings.edge_voice_pitch}\n'
+                f'Images: {settings.max_image_attachments} max\nAI/Vision timeout: {settings.ai_timeout_seconds}/{settings.vision_timeout_seconds}s\n'
+                f'Open todos: {stats["open_todos"]}\nPending reminders: {stats["pending_reminders"]}\n'
+                f'Session: {jarvis.session_id}\nLast latency: {jarvis.last_latency:.2f}s',
+                title='OMEGA V6 Status', border_style='green'))
+            continue
+
+        if low.startswith('/mission '):
+            goal = text[len('/mission '):].strip()
+            try:
+                with console.status('[magenta]V6 mission planner/executor running...[/magenta]'):
+                    result = jarvis.run_mission(goal, lambda m: console.print(f'[magenta]MISSION[/magenta] {m}'))
+                console.print(Panel(Markdown(result), title='MISSION REVIEW', border_style='magenta'))
+                voice.speak(result)
+            except Exception as exc:
+                console.print(Panel(str(exc), title='Mission Error', border_style='red'))
+            continue
+
+        if low == '/mic':
+            if not settings.enable_mic_input:
+                console.print('[yellow]ENABLE_MIC_INPUT=false in .env[/yellow]'); continue
+            try:
+                with console.status('[magenta]Listening...[/magenta]'):
+                    heard = record_and_transcribe(settings.mic_record_seconds, settings.speech_language)
+                console.print(f'[green]HEARD:[/green] {heard}')
+                with console.status('[cyan]JARVIS is thinking...[/cyan]'):
+                    answer = jarvis.chat(heard)
+                console.print(Panel(Markdown(answer), title='JARVIS', border_style='cyan'))
+                voice.speak(answer)
+            except Exception as exc:
+                console.print(Panel(str(exc), title='Microphone Error', border_style='red'))
             continue
 
         if low.startswith('/image '):
             raw = text[len('/image '):].strip()
-            if '|' in raw:
-                path_text, prompt = raw.split('|', 1)
-                prompt = prompt.strip()
-            else:
-                path_text = raw
-                prompt = 'Analyze this image carefully and tell me the important details.'
+            path_text, prompt = (raw.split('|', 1) + [''])[:2] if '|' in raw else (raw, '')
             path = path_text.strip().strip('"')
+            prompt = prompt.strip() or 'Analyze this image carefully and tell me the important details.'
             try:
-                with console.status('[magenta]Uploading and analyzing image...[/magenta]'):
+                with console.status('[magenta]Analyzing image...[/magenta]'):
                     answer = jarvis.analyze_image(path, prompt)
-                console.print(Panel(Markdown(answer), title='JARVIS IMAGE VISION', border_style='magenta'))
+                console.print(Panel(Markdown(answer), title='JARVIS VISION', border_style='magenta'))
                 voice.speak(answer)
             except Exception as exc:
-                console.print(Panel(str(exc), title='Image Analysis Error', border_style='red'))
+                console.print(Panel(str(exc), title='Image Error', border_style='red'))
             continue
 
         if low.startswith('/screen'):
-            prompt = text[len('/screen'):].strip() or 'Analyze this screenshot. Tell me what is visible, identify errors or important UI state, and explain what I should do next.'
+            prompt = text[len('/screen'):].strip() or 'Analyze my screen and tell me what matters and what to do next.'
             decision = jarvis.tools.permissions.check('capture_screen', {'purpose': prompt})
             if not decision.allowed:
-                console.print(f'[yellow]{decision.reason}[/yellow]')
-                continue
+                console.print(f'[yellow]{decision.reason}[/yellow]'); continue
             try:
-                with console.status('[cyan]Capturing and analyzing screen...[/cyan]'):
+                with console.status('[magenta]Capturing/analyzing screen...[/magenta]'):
                     screenshot = capture_screen()
                     answer = jarvis.analyze_image(screenshot, prompt)
-                console.print(Panel(Markdown(answer), title=f'JARVIS VISION • {screenshot.name}', border_style='magenta'))
+                console.print(Panel(Markdown(answer), title=f'VISION • {screenshot.name}', border_style='magenta'))
                 voice.speak(answer)
             except Exception as exc:
                 console.print(Panel(str(exc), title='Screen Vision Error', border_style='red'))
             continue
 
+        if low.startswith('/document '):
+            path = text[len('/document '):].strip().strip('"')
+            result = jarvis.tools.call('index_document', {'file_path': path})
+            console.print(Panel(result, title='Document Intelligence', border_style='magenta')); continue
+
         if low.startswith('/web '):
-            query = text[5:].strip()
             try:
-                with console.status('[cyan]Searching the web...[/cyan]'):
-                    results = search_web(query, 7)
-                _print_search_results('Free Web Search', results)
+                _print_search_results('Free Web Search', search_web(text[5:].strip(), 7))
             except Exception as exc:
                 console.print(f'[red]Web search failed:[/red] {exc}')
             continue
         if low.startswith('/news '):
-            query = text[6:].strip()
             try:
-                with console.status('[cyan]Searching recent news...[/cyan]'):
-                    results = search_news(query, 7, 'w')
-                _print_search_results('Recent News', results)
+                _print_search_results('Recent News', search_news(text[6:].strip(), 7, 'w'))
             except Exception as exc:
                 console.print(f'[red]News search failed:[/red] {exc}')
             continue
+        if low.startswith('/browser '):
+            raw = text[len('/browser '):].strip()
+            if '|' not in raw:
+                console.print('[yellow]Use: /browser google | your query[/yellow]'); continue
+            engine, query = [x.strip() for x in raw.split('|', 1)]
+            console.print(jarvis.tools.call('browser_search', {'query': query, 'engine': engine})); continue
+        if low.startswith('/app '):
+            console.print(jarvis.tools.call('open_app', {'app': text[len('/app '):].strip()})); continue
+
+        if low.startswith('/todo '):
+            _show_json('Todo', jarvis.memory.add_todo(text[len('/todo '):])); continue
+        if low == '/todos':
+            _show_json('Open Todos', jarvis.memory.list_todos(False, 30)); continue
+        if low.startswith('/done '):
+            try:
+                _show_json('Todo', jarvis.memory.complete_todo(int(text[len('/done '):].strip())))
+            except Exception as exc:
+                console.print(f'[red]{exc}[/red]')
+            continue
+        if low.startswith('/remind '):
+            raw = text[len('/remind '):].strip()
+            if '|' not in raw:
+                console.print('[yellow]Use: /remind YYYY-MM-DD HH:MM | message[/yellow]'); continue
+            due_text, reminder_text = [x.strip() for x in raw.split('|', 1)]
+            try:
+                due = datetime.strptime(due_text, '%Y-%m-%d %H:%M').astimezone()
+                _show_json('Reminder', jarvis.memory.add_reminder(reminder_text, due.isoformat()))
+            except Exception as exc:
+                console.print(f'[red]{exc}[/red]')
+            continue
+        if low == '/reminders':
+            _show_json('Pending Reminders', jarvis.memory.list_reminders(False, 30)); continue
 
         if low.startswith('/remember '):
-            console.print(jarvis.memory.remember(text[len('/remember '):]))
-            continue
+            console.print(jarvis.memory.remember(text[len('/remember '):])); continue
         if low.startswith('/recall '):
-            facts = jarvis.memory.recall(text[len('/recall '):], 10)
-            console.print('\n'.join(f'• {f}' for f in facts) if facts else '[dim]No matching memories.[/dim]')
-            continue
+            _show_json('Memory', jarvis.memory.recall(text[len('/recall '):], 10)); continue
+        if low.startswith('/search-history '):
+            _show_json('Chat History', jarvis.memory.search_messages(text[len('/search-history '):], 20)); continue
         if low.startswith('/learn '):
             path = text[len('/learn '):].strip().strip('"')
-            result = jarvis.tools.call('index_local_text_file', {'file_path': path})
-            console.print(Panel(result, title='Knowledge Import', border_style='magenta'))
-            continue
+            console.print(Panel(jarvis.tools.call('index_local_text_file', {'file_path': path}), title='Knowledge Import')); continue
         if low.startswith('/knowledge '):
-            query = text[len('/knowledge '):].strip()
-            rows = jarvis.memory.search_knowledge(query, 8)
-            if not rows:
-                console.print('[dim]No matching indexed knowledge.[/dim]')
-            else:
-                table = Table('Score', 'Source', 'Chunk', 'Preview', title='Local Knowledge')
-                for row in rows:
-                    table.add_row(str(row['score']), row['source'], str(row['chunk_index']), row['content'][:300])
-                console.print(table)
-            continue
+            _show_json('Local Knowledge', jarvis.memory.search_knowledge(text[len('/knowledge '):], 8)); continue
+        if low == '/metrics':
+            _show_json('System Telemetry', system_metrics()); continue
+
         if low.startswith('/history'):
             parts = text.split(maxsplit=1)
             try:
@@ -229,43 +277,24 @@ def run_cli() -> None:
                 console.print(Panel(Markdown(row['content']), title=label, border_style='green' if label == 'YOU' else 'cyan'))
             continue
         if low == '/export':
-            target = jarvis.memory.export_session(jarvis.session_id, settings.export_dir)
-            console.print(f'[green]Exported:[/green] {target}')
-            continue
+            console.print(f'[green]Exported:[/green] {jarvis.memory.export_session(jarvis.session_id, settings.export_dir)}'); continue
         if low == '/stats':
-            console.print(Panel(json.dumps(jarvis.memory.stats(), indent=2), title='Memory & Knowledge Stats', border_style='magenta'))
-            continue
-
+            _show_json('Memory & Knowledge Stats', jarvis.memory.stats()); continue
         if low.startswith('/voice-test'):
             parts = text.split(maxsplit=1)
-            mode = parts[1].strip().lower() if len(parts) > 1 else 'hinglish'
-            voice.test(mode)
-            console.print(f'[cyan]Voice test queued:[/cyan] {mode}')
-            continue
+            voice.test(parts[1].strip().lower() if len(parts) > 1 else 'hinglish'); continue
         if low == '/mute':
-            voice.mute()
-            console.print('[yellow]Spoken replies muted.[/yellow]')
-            continue
+            voice.mute(); console.print('[yellow]Spoken replies muted.[/yellow]'); continue
         if low == '/unmute':
-            voice.unmute()
-            console.print('[green]Spoken replies enabled.[/green]')
-            voice.test('hinglish')
-            continue
-
+            voice.unmute(); voice.test('hinglish'); console.print('[green]Spoken replies enabled.[/green]'); continue
         if low == '/sessions':
-            rows = jarvis.memory.list_sessions()
-            table = Table('ID', 'Title', 'Created')
-            for row in rows:
-                table.add_row(row['id'], row['title'], row['created_at'])
-            console.print(table)
-            continue
+            _show_json('Sessions', jarvis.memory.list_sessions()); continue
 
-        with console.status('[cyan]JARVIS is thinking...[/cyan]', spinner='dots12'):
+        with console.status('[cyan]JARVIS V6 is thinking...[/cyan]', spinner='dots12'):
             try:
                 answer = jarvis.chat(text)
             except Exception as exc:
                 console.print(Panel(str(exc), title='JARVIS Error', border_style='red'))
                 continue
-
-        console.print(Panel(Markdown(answer), title='JARVIS', border_style='cyan'))
+        console.print(Panel(Markdown(answer), title='JARVIS V6', border_style='cyan'))
         voice.speak(answer)
