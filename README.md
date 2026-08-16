@@ -1,38 +1,59 @@
 # JARVIS AI OMEGA
 
-> **A text-first, tool-using personal AI agent created by Adib Azam — you type, JARVIS speaks.**
+> **A typed-input, spoken-reply personal AI agent created by Adib Azam.**
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![Model](https://img.shields.io/badge/OpenAI-GPT--5.6-black)
+![Free Test](https://img.shields.io/badge/OpenRouter-openrouter%2Ffree-purple)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Voice](https://img.shields.io/badge/Voice-Spoken%20Replies%20Only-cyan)
 
-JARVIS AI OMEGA is a public, portfolio-grade personal AI project focused on **powerful typed interaction with spoken AI replies**. It combines OpenAI's Responses API with configurable high reasoning, web search, Code Interpreter, persistent local memory, multi-step custom tool calling, safe local file intelligence, a permission-gated Windows action layer, and local text-to-speech output.
+JARVIS AI OMEGA is a public personal AI project with **free testing mode through OpenRouter**, persistent local memory, multi-step local tool calling, safe local file intelligence, permission-gated Windows actions, and local text-to-speech output.
 
-There is **no microphone or speech-recognition input in this release**. The user types a message or command; JARVIS generates the answer, displays it, and speaks the reply.
+There is **no microphone or speech-recognition input** in this release. You type; JARVIS displays and speaks its reply.
 
-**Creator identity:** if you ask the custom assistant who built this JARVIS project, it answers that it was created by **Adib Azam** while still correctly distinguishing the JARVIS application from its underlying AI provider.
+## Default free testing mode
 
-## What makes OMEGA different
+The project now defaults to:
 
-- **GPT-5.6 brain** by default
-- **xhigh reasoning** configurable through `.env`
-- **Multi-step agent loop**: plan → tool use → verify → answer
-- **Live web search** for fresh public information
-- **Hosted Code Interpreter** for calculations, Python, and data analysis
-- **Persistent SQLite memory** with sessions and reusable user facts
-- **Hinglish + English auto style matching**
-- **Typed prompts + spoken JARVIS replies**
-- **No microphone / no voice-input dependency**
-- **Background speech queue** so spoken replies do not block normal chat interaction
-- **Speech-friendly cleanup** so large code blocks are not read aloud verbatim
-- **Safe local file intelligence** for Desktop, Documents, Downloads, and the project directory
-- **Permission gate** before privacy-sensitive/local actions
-- **Windows app launcher** limited to an explicit allowlist
-- **No arbitrary host shell**
-- **No credential extraction, file deletion, stealth control, or security bypass tools**
-- **Rich terminal UI** with commands, panels, status, and local approvals
-- **Automated CI** on multiple Python versions
+```env
+AI_PROVIDER=openrouter
+OPENROUTER_MODEL=openrouter/free
+```
+
+`openrouter/free` automatically routes requests to currently available free models. Free models can have lower rate limits, changing availability, and variable latency/quality, so this mode is intended for testing, demos, learning, and low-volume personal use.
+
+OpenAI mode remains available as an optional provider for later.
+
+## Features
+
+- **OpenRouter Free Models Router** by default
+- Optional OpenAI provider mode
+- Hinglish + English auto style matching
+- Typed prompts + spoken JARVIS replies
+- No microphone dependency
+- Background offline TTS queue
+- Persistent SQLite memory and sessions
+- Multi-step custom function calling
+- Safe local file search/read tools
+- Permission-gated app and URL opening
+- System information + local time tools
+- Rich terminal UI
+- No arbitrary host shell
+- No credential extraction, file deletion, stealth control, or security-bypass tools
+- Automated GitHub Actions CI
+
+### Provider differences
+
+| Capability | OpenRouter free mode | OpenAI mode |
+|---|---:|---:|
+| General chat | ✅ | ✅ |
+| Local memory/tools | ✅ | ✅ |
+| Spoken reply output | ✅ | ✅ |
+| Free-model testing | ✅ | — |
+| Hosted OpenAI web search | — | ✅ when enabled |
+| Hosted OpenAI Code Interpreter | — | ✅ when enabled |
+
+OpenRouter free mode uses only the tools that are portable across providers. Hosted OpenAI-specific tools are automatically disabled in free mode.
 
 ## Architecture
 
@@ -40,10 +61,11 @@ There is **no microphone or speech-recognition input in this release**. The user
 flowchart TD
     U[User - Typed Text] --> UI[Rich CLI]
     UI --> CORE[JARVIS OMEGA Core]
-    CORE --> MODEL[GPT-5.6 Responses API]
-    MODEL --> WEB[Web Search]
-    MODEL --> CODE[Code Interpreter]
-    MODEL --> TOOLS[Custom Function Tools]
+    CORE --> ROUTER{AI Provider}
+    ROUTER --> OR[OpenRouter / openrouter-free]
+    ROUTER --> OA[OpenAI Optional]
+    OR --> TOOLS[Local Function Tools]
+    OA --> TOOLS
     TOOLS --> GATE[Permission Gate]
     GATE --> MEM[SQLite Memory]
     GATE --> FILES[Read-only Local Files]
@@ -79,18 +101,24 @@ JARVIS-AI-OMEGA/
 
 ## Windows quick start
 
-Open PowerShell inside the cloned repository:
+Clone/pull the repository and run:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\setup_windows.ps1
 ```
 
-Then open `.env` and set:
+### Configure free mode
+
+Open `.env` and set:
 
 ```env
-OPENAI_API_KEY=your_key_here
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=your_openrouter_key_here
+OPENROUTER_MODEL=openrouter/free
 ```
+
+If you already had an older `.env`, setup intentionally keeps it unchanged, so add the OpenRouter lines manually.
 
 Spoken replies are enabled by default:
 
@@ -100,13 +128,13 @@ VOICE_RATE=185
 VOICE_VOLUME=1.0
 ```
 
-Validate the installation:
+Validate:
 
 ```powershell
 .\.venv\Scripts\python.exe self_check.py
 ```
 
-Start JARVIS:
+Start:
 
 ```powershell
 .\.venv\Scripts\python.exe main.py
@@ -114,94 +142,49 @@ Start JARVIS:
 
 Or double-click `run_jarvis.bat`.
 
-## How interaction works
+## Example
 
 ```text
-YOU: Tumhe kisne banaya?
+YOU: tumhe kisne bnaya
 JARVIS: Adib Azam ne mujhe banaya hai.
 ```
 
-The second line is shown in the terminal **and spoken through the computer speakers**. You do not need to speak into a microphone.
+The JARVIS answer appears in the terminal and is also spoken through the computer speakers.
 
-## Example prompts
+## Status command
+
+Type:
 
 ```text
-Tumhe kisne banaya?
-Explain neural networks in Hinglish like I am a CST student.
-Latest AI news search karke 5 important points batao.
-Calculate a 5-year SIP projection with Python.
-Remember that I prefer concise Hinglish answers.
-Mere Downloads me resume naam ki file search karo.
-Is Python file ko read karke bugs batao.
-Calculator kholo.
+/status
 ```
 
-## Built-in slash commands
+JARVIS shows:
 
-| Command | Purpose |
-|---|---|
-| `/help` | Show command list |
-| `/new` | Start a new conversation session |
-| `/status` | Show model, tools, voice-output and session status |
-| `/remember <text>` | Store a local long-term fact |
-| `/recall <query>` | Search local long-term memory |
-| `/sessions` | Show recent sessions |
-| `/exit` | Exit JARVIS |
+- active provider
+- configured model/router
+- actual last model returned by the provider
+- hosted-tool availability
+- local tools
+- voice output status
+- session and latency
 
-## Safety model
+## Optional OpenAI mode later
 
-OMEGA is intentionally powerful **without giving the model unrestricted control of the host PC**.
+To switch back later:
 
-Local actions such as reading a file, searching local folders, opening a URL, or launching an app can require explicit confirmation. Local file reads are restricted to configured roots and safe text/code extensions. Secret-like paths are blocked. The agent does not expose arbitrary shell execution, passwords, credential scraping, deletion, installation, persistence, or security-bypass functions.
+```env
+AI_PROVIDER=openai
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-5.6
+REASONING_EFFORT=xhigh
+```
 
-Speech in this release is **output-only**. No microphone listener or speech-recognition loop is installed.
+In OpenAI mode the project can also enable its hosted web-search and Code Interpreter integrations.
 
-## Configuration
+## Safety
 
-`.env.example` includes:
-
-- `OPENAI_MODEL=gpt-5.6`
-- `REASONING_EFFORT=xhigh`
-- `ENABLE_VOICE_OUTPUT=true`
-- `VOICE_RATE=185`
-- `VOICE_VOLUME=1.0`
-- web search on/off
-- Code Interpreter on/off
-- local tools on/off
-- local approval requirement
-- maximum tool rounds
-- memory history size
-- allowed local file roots
-
-## Roadmap
-
-### Current release — Text + Spoken Reply Core
-- [x] Advanced typed chat
-- [x] Spoken AI reply output
-- [x] No microphone input
-- [x] Web search
-- [x] Code Interpreter
-- [x] Local long-term memory
-- [x] Multi-tool agent loop
-- [x] Permission-gated local tools
-- [x] Public-ready documentation and CI
-
-### Future releases
-- [ ] Streaming text UI
-- [ ] Optional desktop/web dashboard
-- [ ] Document ingestion and semantic knowledge base
-- [ ] Plugin/skill marketplace layer
-- [ ] Calendar and email connectors
-- [ ] Screen vision module
-- [ ] Optional microphone / wake word / realtime voice input
-
-## Security
-
-Please read [SECURITY.md](SECURITY.md). Never commit your `.env` or API key.
-
-## Contributing
-
-Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+OMEGA is intentionally powerful without unrestricted host control. Local file access is read-only and restricted to approved roots and safe text/code formats. Secret-like paths are blocked. The project does not expose arbitrary shell execution, credential scraping, deletion, installation, persistence, or security-bypass functions.
 
 ## License
 
