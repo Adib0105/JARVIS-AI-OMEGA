@@ -13,7 +13,7 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\run_desktop.bat
 ```
 
-The setup script keeps your existing `.env` and installs the new V6 document/telemetry packages plus optional Windows microphone/desktop-automation packages.
+The setup script keeps your existing `.env` and installs V6 document/telemetry packages plus optional Windows microphone/desktop-automation packages.
 
 ## ARC HUD states
 
@@ -29,55 +29,75 @@ The top-right header permanently identifies the configured operator/creator. Def
 
 Type in the bottom command bar and press **SEND** or Enter. JARVIS answers in the center console and, when voice is enabled, speaks the response.
 
-## Push-to-talk
+## Push-to-talk / wake word
 
 Click **MIC / CTRL+M** or press `Ctrl+M`. V6 records a short microphone sample, transcribes it, sends the recognized text to the AI, then speaks the response.
-
-Relevant `.env` settings:
 
 ```env
 ENABLE_MIC_INPUT=true
 SPEECH_LANGUAGE=en-IN
 MIC_RECORD_SECONDS=6
-```
-
-## Wake word
-
-Wake word is optional and defaults OFF. Click **WAKE WORD: OFF** to enable it at runtime, or configure automatic start:
-
-```env
-ENABLE_WAKE_WORD=true
+ENABLE_WAKE_WORD=false
 WAKE_WORD=hey jarvis
 ```
 
-Keeping wake-word mode off and using push-to-talk is recommended when you do not want continuous microphone listening.
+Wake-word mode is optional and can remain off while push-to-talk stays available.
 
 ## Mission mode
 
-Press **F2** or click **MISSION**. Give JARVIS a goal. The high-level flow is:
+Press **F2** or click **MISSION**. V6 uses:
 
-1. Planner creates a short safe plan.
-2. Executor works through each step using available tools.
-3. Every sensitive local tool still requests permission.
-4. Reviewer summarizes what actually completed, blockers, and next action.
+1. Planner — creates a short safe high-level plan.
+2. Executor — works through steps using available tools.
+3. Permission Gate — remains active on sensitive local/cloud actions.
+4. Reviewer — summarizes confirmed outcomes, blockers, and next action.
 
-Mission mode never bypasses the permission gate.
+Mission mode never bypasses permissions.
+
+## Model routing and optional local fallback
+
+V6 can route requests between configured fast/smart/vision model names. Blank route-model values simply reuse your main provider model:
+
+```env
+MODEL_ROUTING=auto
+FAST_MODEL=
+SMART_MODEL=
+VISION_MODEL=
+```
+
+You may also point V6 at a local **OpenAI-compatible** server as a fallback. This is disabled unless you explicitly configure a local model:
+
+```env
+ENABLE_LOCAL_FALLBACK=false
+LOCAL_AI_BASE_URL=http://127.0.0.1:11434/v1
+LOCAL_AI_MODEL=
+LOCAL_AI_API_KEY=local
+```
+
+The fallback is not a hidden cloud service: you must run/configure the compatible local server yourself. Local fallback chat does not receive the desktop tool registry.
+
+## Memory, notes, summaries and local relevance search
+
+V6 stores chat sessions, non-secret facts, notes, todos, reminders, document chunks, and optional conversation continuity summaries in local SQLite storage.
+
+- `search_knowledge` — exact/keyword-oriented search.
+- `vector_search_knowledge` — lightweight local sparse hashing-vector relevance search; it does **not** call an external embedding API.
+- Session summaries are off by default and can be enabled with:
+
+```env
+AUTO_SUMMARIZE=false
+SUMMARIZE_AFTER_MESSAGES=60
+```
+
+Never store API keys, passwords, recovery codes, banking secrets, or other sensitive credentials as JARVIS notes/facts.
 
 ## Image intelligence
 
-### Upload
+- **UPLOAD IMAGE / Ctrl+O** — select existing PNG/JPG/JPEG/WEBP files.
+- **PASTE IMAGE** — attach an image copied to the Windows clipboard.
+- **SCREEN VISION** — current desktop capture only after permission.
 
-Click **UPLOAD IMAGE** or press `Ctrl+O`, select up to the configured attachment limit, type a question, and press SEND.
-
-### Clipboard
-
-Copy an image in Windows and click **PASTE IMAGE**.
-
-### Current screen
-
-Click **SCREEN VISION**. JARVIS asks permission before capture and provider upload.
-
-Do not include API keys, passwords, recovery codes, banking details, or other secrets in images sent to an AI provider.
+After attaching an image, type your question and press SEND. Do not send API keys, passwords, recovery codes, banking details, or other secrets in screenshots.
 
 ## Document intelligence
 
@@ -89,7 +109,7 @@ Click **LEARN DOCUMENT** and choose an approved:
 - CSV
 - TXT / Markdown
 
-V6 extracts text and indexes it into the local SQLite knowledge store. The file must be inside an approved local root and access remains permission-gated.
+V6 extracts text and indexes it into local knowledge. The document must be inside an approved local root and access remains permission-gated.
 
 ## Computer controls
 
@@ -103,44 +123,86 @@ V6 can request approved actions such as:
 - click a specific screen coordinate
 - open an approved local file/folder
 
-These actions are not silent. The default configuration asks you to approve them.
+PyAutoGUI fail-safe remains enabled. These actions are not silent: the default configuration asks you to approve them.
 
-## Coding workspace
+## Coding workspace + Git diagnostics
 
-V6 can inspect approved project trees, read safe source files, write safe text/code files, and run the allowlisted Python `unittest` action.
+V6 can inspect approved project trees, read safe source files, write safe text/code files, and run allowlisted Python `unittest` discovery. Existing files receive a timestamped backup before guarded replacement.
 
-When V6 replaces an existing source/text file through its guarded write tool, it creates a timestamped backup first.
+Read-only Git diagnostics are also available through the AI tool layer:
 
-There is no unrestricted shell command executor.
+- `git_status`
+- `git_diff`
+- `git_log`
 
-## Todos and reminders
+Git tools do not commit, push, reset, delete, or modify repository history. There is intentionally no unrestricted shell command executor.
 
-Use the right-side task panel to add/complete todos and create local reminders. While the desktop app is running, due reminders appear in the chat, trigger a system bell, and are spoken when voice output is enabled.
+## Todos, reminders and agenda
 
-Terminal commands are also available:
+The desktop panel can add/complete todos and create reminders. While the desktop app is running, due reminders appear in chat, trigger a system bell, and are spoken when voice output is enabled.
+
+JARVIS also exposes an agenda tool combining open todos, pending reminders, and recent notes.
+
+## Optional Gmail + Google Calendar
+
+Google integration is **disabled by default** and contains no bundled credentials.
+
+First run:
+
+```powershell
+.\setup_google.ps1
+```
+
+Then in Google Cloud:
+
+1. Enable **Gmail API** and **Google Calendar API**.
+2. Configure the OAuth consent screen.
+3. Create an OAuth client with application type **Desktop app**.
+4. Download the OAuth JSON and save it in the JARVIS repository as:
 
 ```text
-/todo Finish project
-/todos
-/done 1
-/remind 2026-08-16 18:30 | Check JARVIS build
-/reminders
+google_credentials.json
 ```
+
+5. Set:
+
+```env
+ENABLE_GOOGLE_WORKSPACE=true
+```
+
+6. Restart JARVIS. The first approved Gmail/Calendar action opens the browser OAuth consent flow.
+
+The local OAuth token is stored under:
+
+```text
+data/google_token.json
+```
+
+and `data/` is excluded from Git. If Google OAuth scopes are changed later, remove the saved token and authorize again.
+
+Available agent actions after setup:
+
+- search Gmail messages
+- send Gmail messages
+- list upcoming primary-calendar events
+- create primary-calendar events
+
+**All Google account actions are approval-gated, including reads.**
 
 ## Settings panel
 
-Click **SETTINGS**. The panel can edit non-secret options such as:
+Click **SETTINGS**. It can edit non-secret V6 options including:
 
-- voice on/off, pitch/rate/volume
-- push-to-talk and wake-word options
-- approval-gate setting
-- desktop/document/coding feature toggles
+- voice, mic, wake word
+- approval gates
+- desktop/document/coding/Google feature toggles
+- model routing
+- optional local fallback URL/model
+- auto conversation summaries
 - mission step limit
 - telemetry/reminder refresh settings
 
-API keys are deliberately hidden and cannot be edited through this panel. Changes are written to `.env` and apply after restart.
-
-The same panel also opens logs and crash-report folders.
+API keys and OAuth secrets are deliberately hidden and cannot be edited through this panel. Changes apply after restart.
 
 ## Logs and crash reports
 
@@ -156,7 +218,7 @@ Unhandled crash reports:
 data/crash-reports/
 ```
 
-These folders are excluded from Git by the existing `data/` ignore rule.
+The Settings panel can open both folders.
 
 ## Update checker
 
@@ -168,34 +230,30 @@ Click **CHECK UPDATE** or run:
 
 The checker only checks the repository's latest GitHub Release and offers its page. It does not silently replace files.
 
-## Build a Windows EXE
+## Build a Windows EXE / installer
+
+Build PyInstaller folder:
 
 ```powershell
 .\build_windows.ps1
 ```
 
-The PyInstaller build output is placed under:
+Output:
 
 ```text
 dist/JARVIS-OMEGA-V6/
 ```
 
-API keys are intentionally not bundled. Configure a `.env` alongside the built executable.
+API keys are intentionally not bundled. Configure `.env` alongside the built executable.
 
-## Build a Windows installer
-
-After building the EXE, install Inno Setup 6 and run:
+After installing Inno Setup 6:
 
 ```powershell
 .\build_installer.ps1
 ```
 
-The installer definition can create Start Menu and optional desktop shortcuts.
+The installer definition supports Start Menu and optional desktop shortcuts.
 
 ## What V6 intentionally does not do
 
-For safety, V6 does not provide unrestricted shell execution, credential/password extraction, arbitrary file deletion, stealth persistence, security bypass tools, or silent software installation.
-
-Cloud account integrations such as Gmail/Google Calendar require the user's own OAuth application credentials and consent flow and are therefore not hard-coded into the public repository. A future integration can be added without weakening the local permission model.
-
-A local offline LLM backend is also optional future work; the current free-testing path is OpenRouter and the optional premium path is OpenAI.
+For safety, V6 does not provide unrestricted shell execution, credential/password extraction, arbitrary file deletion, stealth persistence, security bypass tools, or silent software installation. Cloud actions require explicit account authorization and remain approval-gated.
