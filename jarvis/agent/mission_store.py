@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .mission import Mission, utc_now
 from ..config import settings
+from ..storage.sqlite_utils import connect_sqlite
 
 
 class MissionStore:
@@ -23,9 +24,7 @@ class MissionStore:
         self._init_db()
 
     def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=10)
-        conn.row_factory = sqlite3.Row
-        return conn
+        return connect_sqlite(self.db_path, timeout=10)
 
     def _init_db(self) -> None:
         with self._lock, self._connect() as conn:
