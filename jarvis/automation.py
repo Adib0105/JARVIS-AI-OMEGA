@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import urllib.parse
 import webbrowser
 from pathlib import Path
@@ -89,7 +90,7 @@ def open_local_path(path: str) -> str:
     if os.name == 'nt':
         os.startfile(str(target))  # type: ignore[attr-defined]
     elif sys.platform == 'darwin':
-        subprocess.Popen(['open', str(target)])
+        subprocess.Popen(['open', str(target)], shell=False)
     else:
-        subprocess.Popen(['xdg-open', str(target)])
+        subprocess.Popen(['xdg-open', str(target)], shell=False)
     return f'Opened {target}.'
