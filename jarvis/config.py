@@ -21,14 +21,14 @@ def _path(name: str, default: Path) -> Path:
 
 @dataclass(frozen=True)
 class Settings:
-    app_version: str = '5.0.0'
+    app_version: str = '6.0.0'
     provider: str = os.getenv('AI_PROVIDER', 'openrouter').strip().lower()
 
     openrouter_api_key: str = os.getenv('OPENROUTER_API_KEY', '')
     openrouter_model: str = os.getenv('OPENROUTER_MODEL', 'openrouter/free')
     openrouter_base_url: str = os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1')
     openrouter_app_url: str = os.getenv('OPENROUTER_APP_URL', 'https://github.com/Adib0105/JARVIS-AI-OMEGA')
-    openrouter_app_title: str = os.getenv('OPENROUTER_APP_TITLE', 'JARVIS AI OMEGA')
+    openrouter_app_title: str = os.getenv('OPENROUTER_APP_TITLE', 'JARVIS AI OMEGA V6')
 
     openai_api_key: str = os.getenv('OPENAI_API_KEY', '')
     openai_model: str = os.getenv('OPENAI_MODEL', 'gpt-5.6')
@@ -44,6 +44,9 @@ class Settings:
     enable_code_interpreter: bool = _bool('ENABLE_CODE_INTERPRETER', True)
     enable_local_tools: bool = _bool('ENABLE_LOCAL_TOOLS', True)
     require_local_approval: bool = _bool('REQUIRE_LOCAL_APPROVAL', True)
+    enable_desktop_automation: bool = _bool('ENABLE_DESKTOP_AUTOMATION', True)
+    enable_document_intelligence: bool = _bool('ENABLE_DOCUMENT_INTELLIGENCE', True)
+    enable_coding_tools: bool = _bool('ENABLE_CODING_TOOLS', True)
 
     enable_voice_output: bool = _bool('ENABLE_VOICE_OUTPUT', True)
     voice_engine: str = os.getenv('VOICE_ENGINE', 'edge').strip().lower()
@@ -52,20 +55,30 @@ class Settings:
     voice_english: str = os.getenv('VOICE_ENGLISH', 'en-IN-PrabhatNeural')
     edge_voice_rate: str = os.getenv('EDGE_VOICE_RATE', '-2%')
     edge_voice_volume: str = os.getenv('EDGE_VOICE_VOLUME', '+5%')
-    edge_voice_pitch: str = os.getenv('EDGE_VOICE_PITCH', '-18Hz')
-    voice_rate: int = int(os.getenv('VOICE_RATE', '175'))
+    edge_voice_pitch: str = os.getenv('EDGE_VOICE_PITCH', '-20Hz')
+    voice_rate: int = int(os.getenv('VOICE_RATE', '170'))
     voice_volume: float = float(os.getenv('VOICE_VOLUME', '1.0'))
+
+    enable_mic_input: bool = _bool('ENABLE_MIC_INPUT', True)
+    enable_wake_word: bool = _bool('ENABLE_WAKE_WORD', False)
+    wake_word: str = os.getenv('WAKE_WORD', 'hey jarvis')
+    speech_language: str = os.getenv('SPEECH_LANGUAGE', 'en-IN')
+    mic_record_seconds: float = float(os.getenv('MIC_RECORD_SECONDS', '6'))
 
     ai_timeout_seconds: float = float(os.getenv('AI_TIMEOUT_SECONDS', '60'))
     vision_timeout_seconds: float = float(os.getenv('VISION_TIMEOUT_SECONDS', '75'))
     api_max_retries: int = int(os.getenv('API_MAX_RETRIES', '2'))
-    max_tool_rounds: int = int(os.getenv('MAX_TOOL_ROUNDS', '10'))
-    history_messages: int = int(os.getenv('HISTORY_MESSAGES', '30'))
+    max_tool_rounds: int = int(os.getenv('MAX_TOOL_ROUNDS', '12'))
+    history_messages: int = int(os.getenv('HISTORY_MESSAGES', '36'))
+    mission_max_steps: int = int(os.getenv('MISSION_MAX_STEPS', '5'))
 
     max_image_attachments: int = int(os.getenv('MAX_IMAGE_ATTACHMENTS', '4'))
     max_image_mb: int = int(os.getenv('MAX_IMAGE_MB', '12'))
     image_max_dimension: int = int(os.getenv('IMAGE_MAX_DIMENSION', '1600'))
     image_jpeg_quality: int = int(os.getenv('IMAGE_JPEG_QUALITY', '82'))
+
+    system_refresh_ms: int = int(os.getenv('SYSTEM_REFRESH_MS', '1200'))
+    reminder_poll_seconds: float = float(os.getenv('REMINDER_POLL_SECONDS', '5'))
 
     db_path: Path = _path('JARVIS_DB_PATH', ROOT / 'data' / 'jarvis.db')
     export_dir: Path = _path('JARVIS_EXPORT_DIR', ROOT / 'exports')
