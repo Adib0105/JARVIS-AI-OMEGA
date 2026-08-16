@@ -6,6 +6,7 @@ from typing import Callable
 from .automation import browser_search, click_screen, hotkey, open_local_path, press_key, type_text
 from .coding_tools import CodingWorkspace
 from .config import settings
+from .contracts import PermissionChecker
 from .documents import DocumentReader
 from .git_tools import GitWorkspace
 from .google_workspace import GoogleWorkspace
@@ -32,14 +33,22 @@ def _fn(name: str, description: str, properties: dict | None = None, required: l
 
 
 class ToolRegistry:
-    def __init__(self, memory: MemoryStore, confirmer: Callable[[str, dict], bool] | None = None):
+    def __init__(
+        self,
+        memory: MemoryStore,
+        confirmer: Callable[[str, dict], bool] | None = None,
+        *,
+        permission_checker: PermissionChecker | None = None,
+    ):
         self.memory = memory
         self.files = LocalFiles()
         self.documents = DocumentReader(self.files)
         self.coding = CodingWorkspace(self.files)
         self.git = GitWorkspace(self.files)
         self.google = GoogleWorkspace(settings.google_credentials_file, settings.google_token_file)
-        self.permissions = PermissionGate(confirmer)
+        # V6 callers retain the legacy gate by default. V7 injects the capability
+        # gate explicitly so there is one permission authority for the runtime.
+        self.permissions: PermissionChecker = permission_checker or PermissionGate(confirmer)
 
     def schemas(self, include_local: bool = True) -> list[dict]:
         s = {'type': 'string'}
