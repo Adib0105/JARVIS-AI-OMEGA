@@ -33,6 +33,7 @@ class Settings:
     language_mode: str = os.getenv('LANGUAGE_MODE', 'auto')
 
     enable_web_search: bool = _bool('ENABLE_WEB_SEARCH', True)
+    enable_public_web_tools: bool = _bool('ENABLE_PUBLIC_WEB_TOOLS', True)
     enable_code_interpreter: bool = _bool('ENABLE_CODE_INTERPRETER', True)
     enable_local_tools: bool = _bool('ENABLE_LOCAL_TOOLS', True)
     require_local_approval: bool = _bool('REQUIRE_LOCAL_APPROVAL', True)
@@ -42,14 +43,16 @@ class Settings:
     voice_hindi: str = os.getenv('VOICE_HINDI', 'hi-IN-MadhurNeural')
     voice_hinglish: str = os.getenv('VOICE_HINGLISH', 'en-IN-PrabhatNeural')
     voice_english: str = os.getenv('VOICE_ENGLISH', 'en-IN-PrabhatNeural')
-    edge_voice_rate: str = os.getenv('EDGE_VOICE_RATE', '+3%')
-    edge_voice_volume: str = os.getenv('EDGE_VOICE_VOLUME', '+0%')
-    voice_rate: int = int(os.getenv('VOICE_RATE', '180'))
+    edge_voice_rate: str = os.getenv('EDGE_VOICE_RATE', '-2%')
+    edge_voice_volume: str = os.getenv('EDGE_VOICE_VOLUME', '+5%')
+    edge_voice_pitch: str = os.getenv('EDGE_VOICE_PITCH', '-18Hz')
+    voice_rate: int = int(os.getenv('VOICE_RATE', '175'))
     voice_volume: float = float(os.getenv('VOICE_VOLUME', '1.0'))
 
     max_tool_rounds: int = int(os.getenv('MAX_TOOL_ROUNDS', '10'))
-    history_messages: int = int(os.getenv('HISTORY_MESSAGES', '24'))
+    history_messages: int = int(os.getenv('HISTORY_MESSAGES', '30'))
     db_path: Path = Path(os.getenv('JARVIS_DB_PATH', str(ROOT / 'data' / 'jarvis.db'))).expanduser()
+    export_dir: Path = Path(os.getenv('JARVIS_EXPORT_DIR', str(ROOT / 'exports'))).expanduser()
 
     @property
     def api_key(self) -> str:
