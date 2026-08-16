@@ -43,6 +43,15 @@ class Settings:
     enable_local_tools: bool = _bool('ENABLE_LOCAL_TOOLS', True)
     require_local_approval: bool = _bool('REQUIRE_LOCAL_APPROVAL', True)
 
+    # Keep provider calls bounded so the desktop UI cannot sit on THINKING/VISION forever.
+    ai_timeout_seconds: float = float(os.getenv('AI_TIMEOUT_SECONDS', '60'))
+    ai_max_retries: int = int(os.getenv('AI_MAX_RETRIES', '1'))
+
+    # Screen vision capture is resized/compressed before it is sent to the provider.
+    vision_max_width: int = int(os.getenv('VISION_MAX_WIDTH', '1600'))
+    vision_max_height: int = int(os.getenv('VISION_MAX_HEIGHT', '1000'))
+    vision_jpeg_quality: int = int(os.getenv('VISION_JPEG_QUALITY', '80'))
+
     enable_voice_output: bool = _bool('ENABLE_VOICE_OUTPUT', True)
     voice_engine: str = os.getenv('VOICE_ENGINE', 'edge').strip().lower()
     voice_hindi: str = os.getenv('VOICE_HINDI', 'hi-IN-MadhurNeural')
