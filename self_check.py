@@ -73,6 +73,13 @@ def main() -> None:
     except Exception as exc:
         results.append(check('V7 error taxonomy', False, str(exc)))
 
+    try:
+        from jarvis.security import AuditStore, Capability
+        _ = (AuditStore, Capability)
+        results.append(check('V7 capability security + audit', True, 'security primitives loaded'))
+    except Exception as exc:
+        results.append(check('V7 capability security + audit', False, str(exc)))
+
     # Optional Windows modules: text chat remains usable if these are missing.
     try:
         import pyautogui
@@ -90,6 +97,8 @@ def main() -> None:
         from jarvis import __version__
         from jarvis.config import settings
         from jarvis.config_validation import ValidationLevel, validate_settings
+        from jarvis.memory_v7 import V7MemoryStore
+        from jarvis.storage import TARGET_SCHEMA_VERSION
 
         results.append(check('JARVIS version', __version__ == settings.app_version == '7.0.0', __version__))
         findings = validate_settings(settings)
@@ -111,13 +120,36 @@ def main() -> None:
             optional('Free/test model route', settings.model == 'openrouter/free' or ':free' in settings.model, settings.model)
 
         results.append(check('Public web tools', settings.enable_public_web_tools, 'DDGS metasearch'))
-        results.append(check('Desktop automation config', settings.enable_desktop_automation, 'approval-gated'))
+        results.append(check('Desktop automation config', settings.enable_desktop_automation, 'capability/approval gated'))
         results.append(check('Document intelligence config', settings.enable_document_intelligence, 'PDF/DOCX/XLSX/CSV'))
         results.append(check('Coding workspace config', settings.enable_coding_tools, 'safe writes + unittest'))
         results.append(check('Mission planner config', settings.mission_max_steps >= 1, f'max steps={settings.mission_max_steps}'))
         results.append(check('Image attachments', settings.max_image_attachments >= 1, f'max={settings.max_image_attachments}'))
         results.append(check('AI timeout', settings.ai_timeout_seconds > 0, f'{settings.ai_timeout_seconds}s'))
         results.append(check('Vision timeout', settings.vision_timeout_seconds > 0, f'{settings.vision_timeout_seconds}s'))
+
+        memory = V7MemoryStore(settings.db_path)
+        memory_stats = memory.v7_stats()
+        results.append(check(
+            'V7 SQLite schema migration',
+            memory_stats.get('schema_version') == TARGET_SCHEMA_VERSION,
+            f"schema={memory_stats.get('schema_version')} target={TARGET_SCHEMA_VERSION}",
+        ))
+        results.append(check(
+            'V7 layered memory tables',
+            isinstance(memory_stats.get('memory_layers'), dict),
+            f"layers={memory_stats.get('memory_layers', {})}; working={memory_stats.get('working_memory_items', 0)}",
+        ))
+        optional(
+            'Hybrid embedding reranker',
+            bool(memory_stats.get('embedding_reranker_configured')),
+            'explicitly configured' if memory_stats.get('embedding_reranker_configured') else 'off by default; local BM25+sparse retrieval remains active',
+        )
+        optional(
+            'Pre-V7 database backup',
+            bool(memory.migration_result.get('backup')),
+            memory.migration_result.get('backup') or 'not needed/already migrated',
+        )
 
         voice_detail = (
             f'engine={settings.voice_engine}, hindi={settings.voice_hindi}, '
@@ -134,7 +166,7 @@ def main() -> None:
         roots = [str(p) for p in settings.allowed_file_roots if p.exists()]
         results.append(check('Local roots', bool(roots), '; '.join(roots) or 'none'))
     except Exception as exc:
-        results.append(check('JARVIS config', False, str(exc)))
+        results.append(check('JARVIS config/memory', False, str(exc)))
 
     print('\nJARVIS OMEGA V7:', 'READY' if all(results) else 'NEEDS ATTENTION')
 
