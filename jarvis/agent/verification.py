@@ -11,12 +11,18 @@ SIDE_EFFECTING_TOOLS = {
     'index_local_text_file', 'index_document',
     'open_url', 'open_app', 'open_local_path', 'browser_search',
     'type_text', 'press_key', 'hotkey', 'click_screen',
+    'browser_agent_open', 'semantic_click', 'semantic_type',
     'write_local_text_file', 'gmail_send', 'calendar_create',
 }
 
 PARTIAL_VERIFICATION_TOOLS = {
     'open_url', 'open_app', 'open_local_path', 'browser_search',
     'type_text', 'press_key', 'hotkey', 'click_screen',
+}
+
+_EXPLICIT_STATUSES = {
+    'VERIFIED', 'PARTIAL', 'UNVERIFIED', 'FAILED',
+    'ACKNOWLEDGED_NOT_OBSERVED', 'VERIFIED_MODEL_OUTPUT',
 }
 
 
@@ -44,6 +50,28 @@ class VerificationEngine:
             # Audit synchronization must never make an otherwise safe verification crash.
             pass
 
+    @staticmethod
+    def _explicit_verification(event: dict, name: str, payload: dict, *, side_effecting: bool) -> dict | None:
+        """Honor structured verification produced by trusted local tool handlers.
+
+        Computer-use tools can directly observe post-action UI state. That evidence
+        is more specific than the generic verifier fallback and must not be silently
+        upgraded from PARTIAL/UNVERIFIED to VERIFIED.
+        """
+        explicit = payload.get('verification')
+        if not isinstance(explicit, dict):
+            return None
+        status = str(explicit.get('status', '')).strip().upper()
+        if status not in _EXPLICIT_STATUSES:
+            return None
+        declared_verified = bool(explicit.get('verified', False))
+        verified = declared_verified and status in {'VERIFIED', 'VERIFIED_MODEL_OUTPUT'}
+        return _base(event, name, side_effecting=side_effecting) | {
+            'verified': verified,
+            'status': status,
+            'evidence': explicit.get('evidence', payload.get('result')),
+        }
+
     def verify_tool_event(self, event: dict) -> dict:
         name = str(event.get('name', ''))
         args = event.get('args') if isinstance(event.get('args'), dict) else {}
@@ -61,6 +89,10 @@ class VerificationEngine:
                 'status': 'FAILED',
                 'evidence': str(error)[:1000],
             }
+
+        explicit = self._explicit_verification(event, name, payload, side_effecting=side_effecting)
+        if explicit is not None:
+            return explicit
 
         result = payload.get('result')
 
