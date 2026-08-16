@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +9,7 @@ from typing import Any
 
 from ..config import settings
 from ..logging_utils import redact_text, redact_value
+from ..storage.sqlite_utils import connect_sqlite
 
 
 def _now() -> str:
@@ -30,10 +30,8 @@ class AuditStore:
         self._lock = threading.RLock()
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, timeout=10)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _connect(self):
+        return connect_sqlite(self.db_path, timeout=10)
 
     def _init_db(self) -> None:
         with self._lock, self._connect() as conn:
