@@ -65,11 +65,11 @@ def _provider_ready() -> tuple[bool, str]:
 
 
 class CapabilityRegistry:
-    """Runtime-derived registry of what this JARVIS installation can actually do.
+    """Runtime-derived inventory of what this JARVIS installation can actually do.
 
-    The registry intentionally derives status from code/config/dependency state instead
-    of hard-coding every capability as available. Evaluation success rates are left
-    unset until measured historical results can be attached by observability/evaluation.
+    Status is derived from code/config/dependency state rather than marketing claims.
+    A feature that still needs a live provider/device/operator release step remains
+    EXPERIMENTAL or DEGRADED even when its deterministic engineering tests are green.
     """
 
     def __init__(self) -> None:
@@ -112,7 +112,7 @@ class CapabilityRegistry:
         records['Chat'] = self._record(
             'Chat', 'Provider-neutral conversational reasoning and tool calling.',
             CapabilityStatus.AVAILABLE if provider_ready else CapabilityStatus.DEGRADED,
-            dependencies=('openai',), permissions=('WEB_READ',), risk='LOW',
+            dependencies=('openai-compatible SDK',), permissions=('WEB_READ',), risk='LOW',
             tests=('tests/test_v7_foundation.py', 'tests/test_runtime_guard.py'),
             implementation_path='jarvis/core_v7.py; jarvis/providers/', detail=provider_detail,
         )
@@ -126,7 +126,7 @@ class CapabilityRegistry:
             dependencies=('Pillow', 'vision-capable AI model'), permissions=('SCREEN_READ',), risk='MEDIUM',
             tests=('tests/test_attachments.py', 'tests/test_vision.py'),
             implementation_path='jarvis/attachments.py; jarvis/vision.py',
-            detail='image pipeline present; provider/model capability is required at runtime',
+            detail='image pipeline present; provider/model vision support is required at runtime',
         )
 
         records['Memory'] = self._record(
@@ -136,61 +136,81 @@ class CapabilityRegistry:
             tests=('tests/test_memory.py', 'tests/test_v7_memory.py'),
             implementation_path='jarvis/memory.py; jarvis/memory_v7.py; jarvis/retrieval.py',
         )
+        records['Memory Lifecycle'] = self._record(
+            'Memory Lifecycle', 'Reinforcement, contradiction detection, superseding and stale-confidence decay.',
+            CapabilityStatus.AVAILABLE if _module('jarvis.memory_lifecycle') else CapabilityStatus.MISSING,
+            dependencies=('sqlite3', 'V7 layered memory'), permissions=('MEMORY_READ', 'MEMORY_WRITE'), risk='MEDIUM',
+            tests=('tests/test_v75_memory_lifecycle.py',),
+            implementation_path='jarvis/memory_lifecycle.py',
+            detail='additive status lifecycle preserves existing V7 memory data',
+        )
 
         records['Missions'] = self._record(
             'Missions', 'Persisted mission orchestration with verification, retry, recovery and replanning.',
             CapabilityStatus.AVAILABLE,
             dependencies=('sqlite3',), permissions=('capability-dependent',), risk='MEDIUM',
-            tests=('tests/test_v7_missions.py',),
-            implementation_path='jarvis/agent/',
+            tests=('tests/test_v7_missions.py',), implementation_path='jarvis/agent/',
         )
+
+        visual_available = False
+        visual_detail = 'local OCR not checked'
+        try:
+            from .computer_use.visual_fallback import VisualTargetBackend
+            visual = VisualTargetBackend().status()
+            visual_available = bool(visual.available)
+            visual_detail = visual.detail
+        except Exception as exc:
+            visual_detail = f'{type(exc).__name__}: {exc}'
 
         if not settings.enable_desktop_automation:
             computer_status = CapabilityStatus.DISABLED
             computer_detail = 'desktop automation disabled by configuration'
         elif os.name != 'nt':
             computer_status = CapabilityStatus.DEGRADED
-            computer_detail = 'semantic Windows UI Automation requires Windows; non-Windows runtime can only test logic'
+            computer_detail = 'Windows UIA/action execution needs Windows; semantic/OCR logic remains testable'
         else:
             try:
                 from .computer_use.windows_ui import WindowsUIBackend
                 backend = WindowsUIBackend().status()
                 if backend.available:
                     computer_status = CapabilityStatus.AVAILABLE
-                    computer_detail = backend.detail
+                    computer_detail = f'UIA ready; OCR fallback={visual_available}'
+                elif _module('pyautogui') and visual_available:
+                    computer_status = CapabilityStatus.DEGRADED
+                    computer_detail = f'UIA unavailable ({backend.detail}); confidence-gated local OCR fallback ready'
                 elif _module('pyautogui'):
                     computer_status = CapabilityStatus.DEGRADED
-                    computer_detail = f'UIA unavailable ({backend.detail}); coordinate fallback available'
+                    computer_detail = f'UIA unavailable ({backend.detail}); low-level fallback exists but OCR unavailable ({visual_detail})'
                 else:
                     computer_status = CapabilityStatus.MISSING
-                    computer_detail = f'UIA unavailable ({backend.detail}) and coordinate fallback dependency missing'
+                    computer_detail = f'UIA unavailable ({backend.detail}) and action fallback dependency missing'
             except Exception as exc:
                 computer_status = CapabilityStatus.BROKEN
                 computer_detail = f'{type(exc).__name__}: {exc}'
         records['Computer Use'] = self._record(
-            'Computer Use', 'Semantic Windows UI targeting with confidence thresholds and verified actions.',
+            'Computer Use', 'UIA-first semantic targeting with stricter OCR fallback, no-guess policy and post-action evidence.',
             computer_status,
-            dependencies=('pywinauto (semantic UIA)', 'pyautogui (fallback)'),
+            dependencies=('pywinauto (semantic UIA)', 'pyautogui (actions)', 'optional pytesseract/Tesseract OCR'),
             permissions=('APP_CONTROL', 'SCREEN_CONTROL', 'KEYBOARD_CONTROL', 'MOUSE_CONTROL'), risk='HIGH',
-            tests=('tests/test_v7_computer_use.py',),
+            tests=('tests/test_v7_computer_use.py', 'tests/test_v75_computer_use_integration.py', 'tests/test_v75_visual_fallback.py'),
             implementation_path='jarvis/computer_use/', detail=computer_detail,
         )
 
         records['Browser'] = self._record(
-            'Browser', 'Browser navigation/search abstraction with untrusted-content handling and verification.',
+            'Browser', 'Browser navigation/read/search with public-address checks, prompt-injection scanning and untrusted-content handling.',
             CapabilityStatus.AVAILABLE if settings.enable_desktop_automation else CapabilityStatus.DISABLED,
-            dependencies=('webbrowser',), permissions=('BROWSER_READ', 'BROWSER_CONTROL'), risk='MEDIUM',
-            tests=('tests/test_v7_computer_use.py',),
-            implementation_path='jarvis/computer_use/browser.py; jarvis/automation.py',
+            dependencies=('webbrowser', 'DDGS for public reads/search'), permissions=('BROWSER_READ', 'BROWSER_CONTROL'), risk='MEDIUM',
+            tests=('tests/test_v7_computer_use.py', 'tests/test_v75_browser_security.py', 'tests/evaluation/test_adversarial_security.py'),
+            implementation_path='jarvis/computer_use/browser.py; jarvis/computer_use/browser_security.py; jarvis/automation.py',
         )
 
         records['Coding'] = self._record(
-            'Coding', 'Approved project inspection, safe text/code editing, tests and Git diagnostics.',
+            'Coding', 'Approved project inspection, safe editing, tests, Git diagnostics and bounded coding-agent workflows.',
             CapabilityStatus.AVAILABLE if settings.enable_coding_tools else CapabilityStatus.DISABLED,
             dependencies=('git executable for Git operations',),
             permissions=('CODE_READ', 'CODE_WRITE', 'CODE_TEST', 'GIT_READ'), risk='HIGH',
-            tests=('tests/test_v6_coding.py', 'tests/test_v6_git_tools.py'),
-            implementation_path='jarvis/coding_tools.py; jarvis/git_tools.py',
+            tests=('tests/test_v6_coding.py', 'tests/test_v6_git_tools.py', 'tests/test_v75_coding_agent.py'),
+            implementation_path='jarvis/coding_tools.py; jarvis/git_tools.py; jarvis/coding_agent.py',
         )
 
         document_deps = _all_modules('pypdf', 'docx', 'openpyxl')
@@ -201,35 +221,33 @@ class CapabilityRegistry:
         else:
             document_status = CapabilityStatus.DEGRADED
         records['Documents'] = self._record(
-            'Documents', 'PDF, DOCX, XLSX/XLSM, CSV, TXT and Markdown extraction/indexing.',
+            'Documents', 'PDF, DOCX, XLSX/XLSM, CSV, TXT/Markdown extraction plus hash-based dedupe/provenance indexing.',
             document_status,
             dependencies=('pypdf', 'python-docx', 'openpyxl'), permissions=('DOCUMENT_READ', 'FILE_READ'), risk='MEDIUM',
             tests=('tests/test_v6_documents.py', 'tests/test_v7_memory.py'),
-            implementation_path='jarvis/documents.py',
-            detail='full advertised document set requires all optional document dependencies',
+            implementation_path='jarvis/documents.py; jarvis/memory_v7.py',
+            detail='full advertised document set requires all document dependencies',
         )
 
         voice_deps = _module('edge_tts') or _module('pyttsx3')
-        if not settings.enable_voice_output:
-            voice_status = CapabilityStatus.DISABLED
-        else:
-            voice_status = CapabilityStatus.AVAILABLE if voice_deps else CapabilityStatus.MISSING
+        voice_status = CapabilityStatus.DISABLED if not settings.enable_voice_output else (
+            CapabilityStatus.AVAILABLE if voice_deps else CapabilityStatus.MISSING
+        )
         records['Voice'] = self._record(
-            'Voice', 'Hindi/Hinglish/English spoken output with runtime playback controls.', voice_status,
+            'Voice', 'Hindi/Hinglish/English spoken output with play/pause/stop/speed and shutdown-safe playback.', voice_status,
             dependencies=('edge-tts or pyttsx3',), permissions=(), risk='LOW',
-            tests=('tests/test_voice.py',), implementation_path='jarvis/voice.py; jarvis/voice_ui.py',
+            tests=('tests/test_voice.py', 'tests/test_voice_controls.py'), implementation_path='jarvis/voice.py; jarvis/voice_ui.py',
         )
 
         mic_deps = _all_modules('sounddevice', 'speech_recognition')
-        if not settings.enable_mic_input:
-            mic_status = CapabilityStatus.DISABLED
-        else:
-            mic_status = CapabilityStatus.AVAILABLE if mic_deps else CapabilityStatus.DEGRADED
+        mic_status = CapabilityStatus.DISABLED if not settings.enable_mic_input else (
+            CapabilityStatus.AVAILABLE if mic_deps else CapabilityStatus.DEGRADED
+        )
         records['Microphone'] = self._record(
             'Microphone', 'Push-to-talk and optional wake-word speech input.', mic_status,
             dependencies=('sounddevice', 'SpeechRecognition', 'working microphone device'), permissions=(), risk='MEDIUM',
             tests=(), implementation_path='jarvis/microphone.py',
-            detail='device availability is verified only when recording is attempted',
+            detail='physical microphone availability is verified only when recording is attempted',
         )
 
         if not settings.enable_google_workspace:
@@ -243,7 +261,7 @@ class CapabilityRegistry:
                 google_detail = 'OAuth dependencies/client file present; user authorization still required'
             else:
                 google_status = CapabilityStatus.DEGRADED
-                google_detail = 'enabled but OAuth dependencies or client credential file are missing'
+                google_detail = 'enabled but OAuth dependencies or OAuth client file are missing'
         records['Google Workspace'] = self._record(
             'Google Workspace', 'Optional Gmail and Google Calendar integration through OAuth.', google_status,
             dependencies=('Google OAuth client', 'google-api-python-client'),
@@ -253,18 +271,18 @@ class CapabilityRegistry:
 
         local_configured = settings.enable_local_fallback and bool(settings.local_ai_model.strip())
         records['Local AI'] = self._record(
-            'Local AI', 'Provider-neutral local OpenAI-compatible fallback runtime.',
+            'Local AI', 'Provider-neutral local OpenAI-compatible fallback and optional offline-development reasoning.',
             CapabilityStatus.EXPERIMENTAL if local_configured else CapabilityStatus.MISSING,
             dependencies=('local OpenAI-compatible server', 'configured local model'), permissions=(), risk='MEDIUM',
-            tests=('tests/test_v7_foundation.py',), implementation_path='jarvis/providers/local_provider.py',
-            detail='configured' if local_configured else 'provider adapter exists but no local model is configured',
+            tests=('tests/test_v7_foundation.py', 'tests/test_v75_offline_development.py'),
+            implementation_path='jarvis/providers/local_provider.py; jarvis/self_development/offline.py',
+            detail='configured' if local_configured else 'adapter exists but no local model is configured',
         )
 
         records['Capability Registry'] = self._record(
             'Capability Registry', 'Runtime-derived inventory of actual JARVIS capabilities and status.',
             CapabilityStatus.AVAILABLE,
-            dependencies=(), permissions=(), risk='LOW',
-            tests=('tests/test_v75_capability_registry.py',),
+            dependencies=(), permissions=(), risk='LOW', tests=('tests/test_v75_capability_registry.py',),
             implementation_path='jarvis/capability_registry.py',
         )
 
@@ -274,7 +292,7 @@ class CapabilityRegistry:
             CapabilityStatus.AVAILABLE if evaluation_exists else CapabilityStatus.MISSING,
             dependencies=('sqlite3', 'mission history', 'audit evidence'), permissions=(), risk='LOW',
             tests=('tests/test_v75_evaluation.py',), implementation_path='jarvis/evaluation/engine.py',
-            detail='measures only supported evidence; unsupported accuracy metrics remain N/A',
+            detail='unsupported metrics remain N/A rather than fabricated percentages',
         )
 
         gaps_exist = _module('jarvis.evaluation.gaps')
@@ -285,6 +303,51 @@ class CapabilityRegistry:
             tests=('tests/test_v75_gap_detector.py',), implementation_path='jarvis/evaluation/gaps.py',
         )
 
+        records['Evaluation Benchmarks'] = self._record(
+            'Evaluation Benchmarks', 'Stores deterministic before/after task, tool, verification, recovery, safety, memory, computer-use and browser metrics.',
+            CapabilityStatus.AVAILABLE if _module('jarvis.evaluation.benchmark') else CapabilityStatus.MISSING,
+            dependencies=('sqlite3',), permissions=(), risk='LOW',
+            tests=('tests/evaluation/test_self_improvement_benchmark.py',), implementation_path='jarvis/evaluation/benchmark.py',
+        )
+
+        records['Observability'] = self._record(
+            'Observability', 'Structured model/mission/system telemetry, latency/fallback counters and provider-reported-only cost tracking.',
+            CapabilityStatus.AVAILABLE if _module('jarvis.observability.manager') else CapabilityStatus.MISSING,
+            dependencies=('sqlite3', 'psutil'), permissions=(), risk='LOW',
+            tests=('tests/test_v75_observability.py',), implementation_path='jarvis/observability/manager.py',
+            detail='cost is N/A when the provider does not explicitly report it',
+        )
+        records['Health System'] = self._record(
+            'Health System', 'Runtime health checks for database, capabilities and local system dependencies.',
+            CapabilityStatus.AVAILABLE if _module('jarvis.observability.health') else CapabilityStatus.MISSING,
+            dependencies=('psutil', 'Capability Registry'), permissions=(), risk='LOW',
+            tests=('tests/test_v75_observability.py',), implementation_path='jarvis/observability/health.py',
+        )
+
+        records['Backup / Restore'] = self._record(
+            'Backup / Restore', 'Consistent SQLite backups, hash manifests, export/import, pre-restore checkpoints and integrity verification.',
+            CapabilityStatus.AVAILABLE if _module('jarvis.storage.backup') else CapabilityStatus.MISSING,
+            dependencies=('sqlite3',), permissions=('MEMORY_WRITE',), risk='HIGH',
+            tests=('tests/test_v75_backup.py',), implementation_path='jarvis/storage/backup.py',
+            detail='restore/import remain explicitly confirmed destructive transitions',
+        )
+
+        records['Workflow Learning'] = self._record(
+            'Workflow Learning', 'Detects repeated audited workflows and persists reusable automation proposals without silent activation.',
+            CapabilityStatus.AVAILABLE if _module('jarvis.skills.workflow') else CapabilityStatus.MISSING,
+            dependencies=('audit evidence', 'sqlite3'), permissions=(), risk='MEDIUM',
+            tests=('tests/test_v75_skills.py',), implementation_path='jarvis/skills/workflow.py',
+        )
+
+        records['Skill Generation'] = self._record(
+            'Skill Generation', 'Gap-to-skill manifest, isolated build/test pipeline and activation only after verified deployment/evaluation.',
+            CapabilityStatus.EXPERIMENTAL if _module('jarvis.skills.activation') and _module('jarvis.skills.builder') else CapabilityStatus.MISSING,
+            dependencies=('Self Development', 'controlled release', 'Git'), permissions=('CODE_WRITE',), risk='CRITICAL',
+            tests=('tests/test_v75_skills.py', 'tests/test_v75_skill_activation.py', 'tests/test_v75_skill_runtime_extension.py'),
+            implementation_path='jarvis/skills/; jarvis/skill_runtime_extension.py; jarvis/ui_skill_extension.py',
+            detail='build/activation gates are implemented; generated skills remain inactive until operator-approved deployment and evaluation pass',
+        )
+
         self_dev_exists = _module('jarvis.self_development.engine')
         self_dev_enabled = getattr(settings, 'self_development_enabled', True)
         if not self_dev_enabled:
@@ -292,16 +355,15 @@ class CapabilityRegistry:
             self_dev_detail = 'controlled self-development disabled by configuration'
         elif self_dev_exists:
             self_dev_status = CapabilityStatus.EXPERIMENTAL
-            self_dev_detail = 'sandbox proposal/build/test/diff/approval pipeline exists; production release activation is intentionally separate'
+            self_dev_detail = 'sandbox proposal/build/test/evaluate/diff/approval pipeline is integrated; production release remains locked by default'
         else:
             self_dev_status = CapabilityStatus.MISSING
             self_dev_detail = 'self-development package is absent'
         records['Self Development'] = self._record(
-            'Self Development', 'Controlled sandboxed improvement proposal/build/test/evaluate/diff/approval pipeline.',
+            'Self Development', 'Controlled sandboxed improvement discovery/build/test/evaluate/diff/approval pipeline.',
             self_dev_status,
             dependencies=('Git', 'sandbox', 'Self Evaluation', 'rollback checkpointing'), permissions=('CODE_WRITE',), risk='CRITICAL',
-            tests=('tests/test_v75_self_development.py',), implementation_path='jarvis/self_development/',
-            detail=self_dev_detail,
+            tests=('tests/test_v75_self_development.py',), implementation_path='jarvis/self_development/', detail=self_dev_detail,
         )
 
         self_coding_exists = _module('jarvis.self_development.coding')
@@ -312,7 +374,7 @@ class CapabilityRegistry:
             ),
             dependencies=('Self Development', 'reasoning provider', 'Git'), permissions=('CODE_WRITE',), risk='CRITICAL',
             tests=('tests/test_v75_self_coding.py',), implementation_path='jarvis/self_development/coding.py',
-            detail='production merge is not exposed; live provider integration remains guarded/experimental',
+            detail='sandbox generation/repair is tested; production modification is not automatic',
         )
 
         self_debug_exists = _module('jarvis.self_development.debugger')
@@ -326,13 +388,30 @@ class CapabilityRegistry:
             detail=f'max repair attempts={getattr(settings, "max_self_repair_attempts", 3)}',
         )
 
-        rollback_exists = _module('jarvis.self_development.rollback')
+        release_exists = _module('jarvis.self_development.release')
+        release_status = CapabilityStatus.EXPERIMENTAL if release_exists and self_dev_enabled else (
+            CapabilityStatus.DISABLED if not self_dev_enabled else CapabilityStatus.MISSING
+        )
+        records['Controlled Release'] = self._record(
+            'Controlled Release', 'APPROVED-only, clean-HEAD, fast-forward production deployment with pre/post regression gates.',
+            release_status,
+            dependencies=('Git', 'Self Development', 'regression suite'), permissions=('CODE_WRITE',), risk='CRITICAL',
+            tests=('tests/test_v75_release.py',),
+            implementation_path='jarvis/self_development/release.py; jarvis/ui_release_extension.py',
+            detail=(
+                'release engine is implemented/tested; PRODUCTION_SELF_MODIFICATION is OFF by default'
+                if release_exists else 'release engine missing'
+            ),
+        )
+
+        rollback_exists = _module('jarvis.self_development.rollback') and release_exists
         records['Rollback'] = self._record(
-            'Rollback', 'Stores known-good before/deployed commit checkpoints for controlled release recovery.',
+            'Rollback', 'Known-good checkpoints plus history-preserving Git revert and regression verification.',
             CapabilityStatus.EXPERIMENTAL if rollback_exists else CapabilityStatus.MISSING,
-            dependencies=('Git', 'controlled release engine'), permissions=('CODE_WRITE',), risk='CRITICAL',
-            tests=('tests/test_v75_self_development.py',), implementation_path='jarvis/self_development/rollback.py',
-            detail='checkpointing exists; automatic production revert remains planned until release-engine verification',
+            dependencies=('Git', 'Controlled Release'), permissions=('CODE_WRITE',), risk='CRITICAL',
+            tests=('tests/test_v75_self_development.py', 'tests/test_v75_release.py'),
+            implementation_path='jarvis/self_development/rollback.py; jarvis/self_development/release.py',
+            detail='controlled rollback is implemented/tested; automatic rollback is configuration-gated',
         )
 
         self._records = records
