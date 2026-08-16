@@ -44,6 +44,7 @@ def system_metrics() -> dict:
         vm = psutil.virtual_memory()
         disk = psutil.disk_usage(str(Path.home().anchor or '/'))
         battery = psutil.sensors_battery()
+        net = psutil.net_io_counters()
         return {
             'cpu_percent': round(psutil.cpu_percent(interval=None), 1),
             'memory_percent': round(vm.percent, 1),
@@ -52,6 +53,8 @@ def system_metrics() -> dict:
             'battery_percent': round(battery.percent, 1) if battery else None,
             'battery_plugged': bool(battery.power_plugged) if battery else None,
             'processes': len(psutil.pids()),
+            'network_sent_mb': round(net.bytes_sent / (1024 ** 2), 1),
+            'network_received_mb': round(net.bytes_recv / (1024 ** 2), 1),
         }
     except Exception as exc:
         return {'available': False, 'error': str(exc)}
