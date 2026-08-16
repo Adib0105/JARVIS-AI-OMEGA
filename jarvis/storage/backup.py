@@ -67,6 +67,10 @@ class BackupManager:
         except Exception as exc:
             return {'ok': False, 'result': f'{type(exc).__name__}: {exc}', 'path': str(path)}
 
+    def integrity_check(self) -> dict:
+        """Check the active JARVIS database; convenient for health/self-check UIs."""
+        return self.integrity(self.db_path)
+
     def _sqlite_backup(self, destination: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         with connect_sqlite(self.db_path, timeout=10) as source:
