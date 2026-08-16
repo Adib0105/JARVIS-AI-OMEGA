@@ -22,7 +22,11 @@ class JarvisOmega:
             key_name = 'OPENROUTER_API_KEY' if settings.provider == 'openrouter' else 'OPENAI_API_KEY'
             raise RuntimeError(f'{key_name} is missing. Add it to your .env file.')
 
-        client_kwargs = {'api_key': settings.api_key}
+        client_kwargs = {
+            'api_key': settings.api_key,
+            'timeout': settings.ai_timeout_seconds,
+            'max_retries': max(0, settings.ai_max_retries),
+        }
         if settings.provider == 'openrouter':
             client_kwargs.update({
                 'base_url': settings.openrouter_base_url,
@@ -98,7 +102,10 @@ class JarvisOmega:
         if 'no endpoints found' in lower or 'model not found' in lower:
             return RuntimeError('Configured AI model abhi available nahi hai. OPENROUTER_MODEL/openai model setting check karo.')
         if 'timeout' in lower or 'timed out' in lower:
-            return RuntimeError('AI provider response timeout hua. Internet check karke retry karo.')
+            return RuntimeError(
+                f'{provider} response {settings.ai_timeout_seconds:.0f}s ke andar nahi aaya. '
+                'Free router busy ho sakta hai; retry karo.'
+            )
         return RuntimeError(f'{provider} request failed: {raw[:500]}')
 
     def chat(self, text: str) -> str:
@@ -119,7 +126,6 @@ class JarvisOmega:
             self.last_latency = time.perf_counter() - started
 
     def analyze_image(self, image_path: str | Path, prompt: str) -> str:
-        """Analyze a local image using OpenRouter multimodal chat. No microphone involved."""
         if settings.provider != 'openrouter':
             raise RuntimeError('Screen/image vision is currently wired for OpenRouter mode in this project.')
         started = time.perf_counter()
