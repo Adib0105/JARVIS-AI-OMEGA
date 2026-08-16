@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -53,7 +54,9 @@ class SelfDevelopmentPolicy:
 
     @staticmethod
     def normalize(path: str | Path) -> str:
-        raw = str(path).replace('\\', '/').lstrip('./')
+        raw = str(path).replace('\\', '/')
+        while raw.startswith('./'):
+            raw = raw[2:]
         try:
             return str(PurePosixPath(raw))
         except Exception:
@@ -62,14 +65,18 @@ class SelfDevelopmentPolicy:
     def path_allowed(self, path: str | Path) -> tuple[bool, str]:
         value = self.normalize(path)
         lower = value.lower()
+        if not value or value == '.':
+            return False, 'empty/root path is not a valid generated file'
+        if value.startswith('/') or re.match(r'^[a-zA-Z]:/', value):
+            return False, 'absolute paths are not allowed'
+        if '..' in PurePosixPath(value).parts:
+            return False, 'path traversal is not allowed'
         if lower == '.env' or lower.startswith('.env.'):
             return False, 'environment/secret files are protected'
         if any(lower.startswith(prefix.lower()) for prefix in IMMUTABLE_SECURITY_PREFIXES):
             return False, 'immutable security/rollback policy path'
         if any(lower.startswith(prefix.lower()) for prefix in PROTECTED_PRODUCTION_PREFIXES):
             return False, 'protected production/runtime data path'
-        if '..' in PurePosixPath(value).parts:
-            return False, 'path traversal is not allowed'
         return True, ''
 
     def validate_change_set(self, changed_files: list[str], lines_changed: int) -> PolicyCheck:
