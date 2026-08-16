@@ -6,6 +6,8 @@ orchestrator and evidence-recording tool runtime over the provider-neutral core.
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Callable
 
 from .agent.orchestrator import MissionOrchestrator
@@ -19,6 +21,20 @@ class JarvisOmega(_ProviderCore):
         self.tools = RecordingToolRegistry(self.memory, confirmer)
         self.orchestrator = MissionOrchestrator(self)
         self.last_mission_id: str | None = None
+
+    @staticmethod
+    def _extract_plan(raw: str, max_steps: int) -> list[str]:
+        """Structured-first plan parser that correctly preserves an intentional empty plan."""
+        cleaned = re.sub(r'^```(?:json)?\s*|\s*```$', '', raw.strip(), flags=re.IGNORECASE)
+        try:
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, dict):
+                parsed = parsed.get('steps', [])
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()][:max_steps]
+        except Exception:
+            pass
+        return _ProviderCore._extract_plan(raw, max_steps)
 
     def run_mission(self, goal: str, progress: Callable[[str], None] | None = None) -> str:
         mission = self.orchestrator.run(goal, progress)
