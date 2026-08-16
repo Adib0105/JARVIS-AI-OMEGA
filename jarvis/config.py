@@ -55,11 +55,15 @@ class Settings:
     openai_model: str = os.getenv('OPENAI_MODEL', 'gpt-5.6').strip()
     reasoning_effort: str = os.getenv('REASONING_EFFORT', 'xhigh').strip()
 
-    # Optional model routing. Blank values fall back to the configured primary model.
+    # Provider/model routing. Blank route models safely reuse broader route models.
     model_routing: str = os.getenv('MODEL_ROUTING', 'auto').strip().lower()
     fast_model: str = os.getenv('FAST_MODEL', '').strip()
     smart_model: str = os.getenv('SMART_MODEL', '').strip()
     vision_model: str = os.getenv('VISION_MODEL', '').strip()
+    coding_model: str = os.getenv('CODING_MODEL', '').strip()
+    planning_model: str = os.getenv('PLANNING_MODEL', '').strip()
+    review_model: str = os.getenv('REVIEW_MODEL', '').strip()
+    summary_model: str = os.getenv('SUMMARY_MODEL', '').strip()
 
     # Optional local OpenAI-compatible fallback.
     enable_local_fallback: bool = _bool('ENABLE_LOCAL_FALLBACK', False)
@@ -162,6 +166,22 @@ class Settings:
     @property
     def routed_vision_model(self) -> str:
         return self.vision_model or self.routed_smart_model
+
+    @property
+    def routed_coding_model(self) -> str:
+        return self.coding_model or self.routed_smart_model
+
+    @property
+    def routed_planning_model(self) -> str:
+        return self.planning_model or self.routed_smart_model
+
+    @property
+    def routed_review_model(self) -> str:
+        return self.review_model or self.routed_smart_model
+
+    @property
+    def routed_summary_model(self) -> str:
+        return self.summary_model or self.routed_fast_model
 
     @property
     def hosted_web_search_enabled(self) -> bool:
