@@ -17,10 +17,16 @@ $venvPython = Join-Path $PWD ".venv\Scripts\python.exe"
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
     Write-Host "Created .env from .env.example" -ForegroundColor Green
+} else {
+    Write-Host "Existing .env kept unchanged." -ForegroundColor Yellow
 }
 
 Write-Host ""
 Write-Host "Setup complete." -ForegroundColor Green
-Write-Host "1. Open .env and set OPENAI_API_KEY"
-Write-Host "2. Run: .\.venv\Scripts\python.exe self_check.py"
-Write-Host "3. Start: .\.venv\Scripts\python.exe main.py"
+Write-Host "Free test mode:" -ForegroundColor Cyan
+Write-Host "1. Open .env"
+Write-Host "2. Set AI_PROVIDER=openrouter"
+Write-Host "3. Set OPENROUTER_API_KEY=your_key"
+Write-Host "4. Keep OPENROUTER_MODEL=openrouter/free"
+Write-Host "5. Run: .\.venv\Scripts\python.exe self_check.py"
+Write-Host "6. Start: .\.venv\Scripts\python.exe main.py"
