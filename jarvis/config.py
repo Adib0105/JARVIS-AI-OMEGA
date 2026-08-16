@@ -35,6 +35,18 @@ class Settings:
     openai_model: str = os.getenv('OPENAI_MODEL', 'gpt-5.6')
     reasoning_effort: str = os.getenv('REASONING_EFFORT', 'xhigh')
 
+    # Optional model routing. Blank values fall back to the configured primary model.
+    model_routing: str = os.getenv('MODEL_ROUTING', 'auto').strip().lower()
+    fast_model: str = os.getenv('FAST_MODEL', '').strip()
+    smart_model: str = os.getenv('SMART_MODEL', '').strip()
+    vision_model: str = os.getenv('VISION_MODEL', '').strip()
+
+    # Optional local OpenAI-compatible fallback (for example a local server the user explicitly runs).
+    enable_local_fallback: bool = _bool('ENABLE_LOCAL_FALLBACK', False)
+    local_ai_base_url: str = os.getenv('LOCAL_AI_BASE_URL', 'http://127.0.0.1:11434/v1').strip()
+    local_ai_model: str = os.getenv('LOCAL_AI_MODEL', '').strip()
+    local_ai_api_key: str = os.getenv('LOCAL_AI_API_KEY', 'local').strip() or 'local'
+
     creator_name: str = os.getenv('CREATOR_NAME', 'Adib Azam')
     user_name: str = os.getenv('USER_NAME', 'Adib')
     assistant_name: str = os.getenv('JARVIS_NAME', 'JARVIS OMEGA')
@@ -72,6 +84,8 @@ class Settings:
     max_tool_rounds: int = int(os.getenv('MAX_TOOL_ROUNDS', '12'))
     history_messages: int = int(os.getenv('HISTORY_MESSAGES', '36'))
     mission_max_steps: int = int(os.getenv('MISSION_MAX_STEPS', '5'))
+    auto_summarize: bool = _bool('AUTO_SUMMARIZE', False)
+    summarize_after_messages: int = int(os.getenv('SUMMARIZE_AFTER_MESSAGES', '60'))
 
     max_image_attachments: int = int(os.getenv('MAX_IMAGE_ATTACHMENTS', '4'))
     max_image_mb: int = int(os.getenv('MAX_IMAGE_MB', '12'))
@@ -95,6 +109,18 @@ class Settings:
     @property
     def base_url(self) -> str | None:
         return self.openrouter_base_url if self.provider == 'openrouter' else None
+
+    @property
+    def routed_fast_model(self) -> str:
+        return self.fast_model or self.model
+
+    @property
+    def routed_smart_model(self) -> str:
+        return self.smart_model or self.model
+
+    @property
+    def routed_vision_model(self) -> str:
+        return self.vision_model or self.routed_smart_model
 
     @property
     def hosted_web_search_enabled(self) -> bool:
