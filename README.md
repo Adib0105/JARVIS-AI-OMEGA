@@ -1,45 +1,62 @@
-# JARVIS AI OMEGA V5
+# JARVIS AI OMEGA V6 — ARC Desktop Agent
 
-> **A typed-input, spoken-reply, multimodal personal AI agent created by Adib Azam.**
+> **A multimodal desktop AI agent created by Adib Azam.**
 
-![Version](https://img.shields.io/badge/JARVIS-V5-cyan)
+![Version](https://img.shields.io/badge/JARVIS-V6-cyan)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Free Test](https://img.shields.io/badge/OpenRouter-openrouter%2Ffree-purple)
-![Images](https://img.shields.io/badge/Multimodal-Image%20Upload-magenta)
-![Web](https://img.shields.io/badge/Web-Free%20Metasearch-teal)
-![Voice](https://img.shields.io/badge/Voice-Deep%20Hindi%2FHinglish-green)
+![HUD](https://img.shields.io/badge/UI-Animated%20ARC%20HUD-cyan)
+![Images](https://img.shields.io/badge/Vision-Images%20%2B%20Screen-magenta)
+![Docs](https://img.shields.io/badge/Documents-PDF%20DOCX%20XLSX%20CSV-orange)
+![Voice](https://img.shields.io/badge/Voice-Hindi%20%2F%20Hinglish-green)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-JARVIS AI OMEGA V5 is a public personal-AI project focused on **powerful typed interaction with spoken replies**. It combines free-model testing through OpenRouter, optional OpenAI mode, image upload and multimodal analysis, screen vision, free web/news search, persistent memory, a local knowledge base, permission-gated Windows tools, a Rich terminal interface, and a desktop dashboard.
+**JARVIS AI OMEGA V6** upgrades the project from a chat dashboard into an approval-gated Windows desktop agent. It combines AI chat, multimodal vision, animated ARC-style UI, spoken replies, optional microphone/wake-word input, web research, persistent memory, tasks/reminders, document intelligence, coding workspace tools, browser/app controls, and a Planner → Executor → Reviewer mission mode.
 
-**Microphone/wake-word input is intentionally not installed in this release.** You type; JARVIS reasons, can inspect attached images/screenshots, displays the answer, and speaks it.
+The interface permanently displays **OPERATOR: ADIB AZAM** and the ARC reactor changes animation state while JARVIS is idle, thinking, listening, speaking, or reporting an error.
 
-## V5 capability stack
+## V6 highlights
 
-- OpenRouter `openrouter/free` testing mode by default
-- Optional OpenAI provider mode
-- Multi-step function/tool calling with free-router compatibility fallback
-- **Upload 1–4 images and ask questions about them**
-- **Paste an image directly from the Windows clipboard**
-- Local image preview before sending
-- Automatic image validation, resize, and JPEG compression before provider upload
-- Permission-gated Screen Vision for the current desktop
-- Free public web search, recent news search, and webpage extraction
+- **Animated ARC reactor HUD** built with Tkinter Canvas
+- Speaking/listening/thinking waveform animation
+- Dark futuristic Iron-Man-inspired dashboard design
+- Typed chat with deep Hindi/Hinglish/English neural spoken replies
+- **Push-to-talk microphone** (`Ctrl+M`) using optional Windows audio packages
+- Optional runtime **“Hey Jarvis” wake-word listener**
+- OpenRouter `openrouter/free` test mode + optional OpenAI mode
+- **Mission mode:** Planner → tool-capable Executor → Reviewer
+- Multi-step function/tool calling with free-router fallback
+- Upload **1–4 images** and ask questions
+- Paste image directly from Windows clipboard
+- Permission-gated current-screen vision
+- Free web/news search and webpage reading
 - Persistent SQLite chat sessions and long-term facts
-- Local knowledge base for approved text/code files
-- Chat history, Markdown export, and memory/knowledge statistics
-- Safe local file search/read with secret-like path blocking
-- Allowlisted Windows app and URL launching with approval
-- Deep Indian neural voice with automatic Hindi/Hinglish/English selection
-- Offline TTS fallback
-- Runtime mute/unmute and voice test
-- Friendly errors for invalid keys, rate limits, unsupported models, image modality failures, and timeouts
-- Configurable AI timeout, vision timeout, retries, image limits, and image compression
-- GitHub Actions CI and unit tests
+- Search previous local chat history
+- Local knowledge base
+- **PDF / DOCX / XLSX / XLSM / CSV / TXT / Markdown intelligence**
+- Local todos and reminders with spoken reminder alerts in the desktop UI
+- Live CPU / RAM / disk / battery / process telemetry
+- Allowlisted Windows app launching
+- Browser search launch for Google / YouTube / GitHub / Bing
+- Approval-gated keyboard typing, hotkeys, key presses, and screen-coordinate clicks
+- Safe local file search/read/open
+- Guarded coding workspace tree inspection
+- Approval-gated text/code file writes with automatic backups
+- Allowlisted Python `unittest` project test runner
+- Markdown chat export
+- GitHub Actions CI across multiple Python versions
 
-## Quick update / install
+## Safety design
 
-Inside the cloned repository:
+V6 is powerful without exposing unrestricted host control. It does **not** provide arbitrary shell execution, credential scraping, password extraction, unrestricted deletion, stealth persistence, security bypasses, or silent software installation.
+
+Sensitive local actions remain permission-gated by default. Secret-like paths such as `.env`, SSH keys, credential folders, tokens, wallets, and password-like files are blocked by the local file layer. Coding writes are limited to approved roots and safe text/code file types, and existing files receive a backup before replacement.
+
+---
+
+# Install / update on Windows
+
+Inside your cloned repository:
 
 ```powershell
 git pull
@@ -48,21 +65,27 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\.venv\Scripts\python.exe self_check.py
 ```
 
-Start the desktop dashboard:
+Start the animated desktop version:
+
+```powershell
+.\run_desktop.bat
+```
+
+or:
 
 ```powershell
 .\.venv\Scripts\python.exe desktop_app.py
 ```
 
-Or start terminal mode:
+Terminal version:
 
 ```powershell
-.\.venv\Scripts\python.exe main.py
+.\run_jarvis.bat
 ```
 
-## Free testing configuration
+## Free test configuration
 
-Your `.env` should contain:
+Your `.env` can use:
 
 ```env
 AI_PROVIDER=openrouter
@@ -70,116 +93,77 @@ OPENROUTER_API_KEY=your_openrouter_key_here
 OPENROUTER_MODEL=openrouter/free
 ```
 
-The free router can choose different free models over time, so quality, latency, tool support, and image support can vary between requests.
+Never commit `.env` or API keys to GitHub. If a key appears in a public screenshot, revoke it and create a replacement.
 
 ---
 
-# Image upload — how to use it
+# ARC desktop controls
 
-V5 adds a real image-attachment workflow. This is different from **Screen Vision**:
+### Left control deck
 
-- **UPLOAD IMAGE** = you choose an existing image file from your PC.
-- **PASTE IMAGE** = JARVIS reads an image currently copied to your Windows clipboard.
-- **SCREEN VISION** = JARVIS captures your current desktop after asking permission.
+- **NEW CHAT** — fresh conversation session
+- **MISSION F2** — Planner → Executor → Reviewer agent mission
+- **SCREEN VISION** — permission-gated screen analysis
+- **UPLOAD IMAGE** — attach images from disk
+- **PASTE IMAGE** — attach copied Windows image
+- **BROWSER SEARCH** — approved browser search launch
+- **OPEN APP** — approved allowlisted app launcher
+- **WAKE WORD** — turn the optional wake listener on/off
 
-## Desktop GUI method
+### Bottom command deck
 
-1. Start:
+- Text box + **SEND**
+- **MIC / Ctrl+M** — record a short voice command and send it to JARVIS
 
-```powershell
-.\.venv\Scripts\python.exe desktop_app.py
-```
+### Right intelligence deck
 
-2. Click **UPLOAD IMAGE** or press **Ctrl+O**.
-3. Select up to **4 images**.
-4. The attachment bar shows the selected file name(s), a preview of the first image, dimensions, and size.
-5. Type a question such as:
-
-```text
-Is screenshot me kya error hai aur exact fix batao.
-```
-
-6. Press **SEND**.
-7. You can also leave the text box empty and press **SEND** for a general image analysis.
-8. Use **CLEAR IMAGES** to remove attachments before sending.
-9. Use **IMAGE HELP** inside the app for a quick usage reminder.
-
-### Clipboard image
-
-Copy an image or screenshot in Windows, then click **PASTE IMAGE**. JARVIS saves a local temporary copy under its data folder, attaches it, and lets you ask a question before sending it to the AI provider.
-
-## Terminal method
-
-Use:
-
-```text
-/image "C:\Users\user\Pictures\error.png" | isme kya problem hai aur kya karu?
-```
-
-If you omit the prompt:
-
-```text
-/image "C:\Users\user\Pictures\photo.jpg"
-```
-
-JARVIS performs a general analysis.
-
-## Supported image types
-
-- PNG
-- JPG / JPEG
-- WEBP
-
-Default V5 limits:
-
-```env
-MAX_IMAGE_ATTACHMENTS=4
-MAX_IMAGE_MB=12
-IMAGE_MAX_DIMENSION=1600
-IMAGE_JPEG_QUALITY=82
-```
-
-Before sending, V5 validates the image and compresses/resizes it **in memory**. This reduces large screenshot payloads and makes free-model vision requests more reliable.
-
-## Image privacy
-
-- Selecting an image does **not** upload it to GitHub.
-- When you press SEND, the processed image is sent to your configured AI provider for analysis.
-- Screen Vision asks for permission before capturing the desktop.
-- Do not send passwords, recovery codes, API keys, banking details, or other secrets in screenshots/images.
-- If an API key ever appears in a screenshot shared publicly, revoke it and create a new one.
-
-## Image troubleshooting
-
-**“Image vision support nahi kar raha”**  
-The free router selected a model that cannot process images. Retry later or choose a known vision-capable model if you have access to one.
-
-**Image request takes too long**  
-V5 has a configurable vision timeout:
-
-```env
-VISION_TIMEOUT_SECONDS=75
-```
-
-**Image too large**  
-Increase `MAX_IMAGE_MB` carefully, or resize the original file. The default is 12 MB per image.
+- Active todo list
+- Add/complete todos
+- Add reminder
+- Learn document
+- Run project unit tests
+- Export chat
+- Voice test
+- Mute/unmute
+- Image help
+- Full system status
 
 ---
 
-## Screen Vision
+# Image upload and vision
 
-Desktop: click **SCREEN VISION**.  
-Terminal:
+### Upload existing images
+
+1. Open the V6 desktop app.
+2. Click **UPLOAD IMAGE** or press `Ctrl+O`.
+3. Select up to the configured number of PNG/JPG/JPEG/WEBP images.
+4. Type a question such as:
 
 ```text
-/screen is screen me kya issue hai aur mujhe next kya karna chahiye?
+Is screenshot me error kya hai aur exact fix batao.
 ```
 
-The screenshot is locally captured only after approval, then compressed through the same V5 image pipeline before AI analysis.
+5. Press **SEND**.
 
-## Deep Hindi / Hinglish voice
+You can also leave the prompt empty and press SEND for a general analysis.
 
-Default neural voice profile:
+### Paste clipboard image
+
+Copy an image/screenshot in Windows, then click **PASTE IMAGE**.
+
+### Screen Vision
+
+Click **SCREEN VISION**. JARVIS asks permission before capturing the current desktop. The image is processed through the same validation/compression pipeline before being sent to the configured AI provider.
+
+Images selected in the app are **not uploaded to GitHub**. They are sent to the configured AI provider only when an analysis request is submitted.
+
+---
+
+# Voice and wake word
+
+V6 still works perfectly as typed-input + spoken-output JARVIS. Microphone input is optional.
+
+Default voice profile:
 
 ```env
 VOICE_ENGINE=edge
@@ -188,100 +172,108 @@ VOICE_HINGLISH=en-IN-PrabhatNeural
 VOICE_ENGLISH=en-IN-PrabhatNeural
 EDGE_VOICE_RATE=-2%
 EDGE_VOICE_VOLUME=+5%
-EDGE_VOICE_PITCH=-18Hz
+EDGE_VOICE_PITCH=-20Hz
 ```
 
-You still type all input. Spoken output can be muted at runtime.
-
-## Reliability settings
+Optional microphone settings:
 
 ```env
-AI_TIMEOUT_SECONDS=60
-VISION_TIMEOUT_SECONDS=75
-API_MAX_RETRIES=2
-MAX_TOOL_ROUNDS=10
-HISTORY_MESSAGES=30
+ENABLE_MIC_INPUT=true
+ENABLE_WAKE_WORD=false
+WAKE_WORD=hey jarvis
+SPEECH_LANGUAGE=en-IN
+MIC_RECORD_SECONDS=6
 ```
 
-## Desktop V5 controls
+Wake-word mode never needs to be permanently enabled. You can keep it off and use push-to-talk only.
 
-- **NEW CHAT** — new session
-- **UPLOAD IMAGE** — attach images from disk
-- **PASTE IMAGE** — attach clipboard image
-- **SCREEN VISION** — analyze current screen with permission
-- **LEARN FILE** — index an approved text/code file into local knowledge
-- **MUTE VOICE** — disable spoken replies
-- **VOICE TEST** — test the neural Hinglish voice
-- **EXPORT CHAT** — save current chat as Markdown
-- **IMAGE HELP** — image-upload instructions
-- **STATUS** — provider/model/tools/image/voice diagnostics
+---
 
-## Terminal power commands
+# Documents and local knowledge
+
+V6 can extract approved documents and index their text into its local knowledge base:
+
+- PDF (`pypdf`)
+- Word DOCX
+- Excel XLSX / XLSM
+- CSV
+- TXT / Markdown
+
+In the GUI, click **LEARN DOCUMENT**. File access remains restricted to approved roots and requires permission.
+
+---
+
+# Mission mode
+
+Press **F2** or click **MISSION** and give a goal. V6 runs:
+
+```text
+Goal
+  ↓
+Planner (short safe plan)
+  ↓
+Executor (uses available tools + permission gates)
+  ↓
+Reviewer (verifies reported outcomes and summarizes blockers/next action)
+```
+
+Mission mode does not bypass permission dialogs.
+
+---
+
+# Coding workspace
+
+V6 can help inspect and modify approved code projects through guarded tools:
+
+- inspect project tree
+- read safe code/text files
+- create/replace safe text/code files with automatic backup
+- run only `python -m unittest discover -s tests -v` through the allowlisted test action
+
+There is intentionally no arbitrary shell command tool.
+
+---
+
+# Terminal power commands
 
 | Command | Purpose |
 |---|---|
-| `/help` | Show commands |
-| `/version` | Show V5 version |
-| `/status` | Provider/model/tools/image/voice/latency status |
-| `/new` | New chat session |
-| `/image "path" | prompt` | Analyze a local image |
-| `/screen [prompt]` | Capture and analyze screen with permission |
-| `/web <query>` | Free public web search |
-| `/news <query>` | Recent news search |
-| `/remember <text>` | Store a persistent fact |
-| `/recall <query>` | Recall facts |
-| `/learn <file>` | Index approved text/code file |
-| `/knowledge <query>` | Search indexed local knowledge |
-| `/history [n]` | Show recent messages |
-| `/export` | Export current chat to Markdown |
-| `/stats` | Memory/knowledge statistics |
-| `/voice-test [hinglish|hindi|english]` | Test speech |
-| `/mute` / `/unmute` | Control spoken replies |
-| `/clear` | Clear terminal |
-| `/sessions` | Show sessions |
-| `/exit` | Exit JARVIS |
+| `/mission <goal>` | Planner → Executor → Reviewer |
+| `/mic` | Push-to-talk command |
+| `/image "path" | prompt` | Analyze image |
+| `/screen [prompt]` | Analyze screen |
+| `/document "path"` | Index approved document |
+| `/web <query>` | Public web search |
+| `/news <query>` | Recent news |
+| `/browser google | query` | Open browser search |
+| `/app <name>` | Open allowlisted app |
+| `/todo <text>` / `/todos` / `/done <id>` | Todos |
+| `/remind YYYY-MM-DD HH:MM | text` | Reminder |
+| `/remember` / `/recall` | Long-term facts |
+| `/search-history <query>` | Search previous chats |
+| `/learn <file>` / `/knowledge <query>` | Local knowledge |
+| `/metrics` | CPU/RAM/disk/battery |
+| `/export` | Export chat |
+| `/status` | Full V6 diagnostics |
 
-## Architecture
+---
 
-```mermaid
-flowchart TD
-    U[Typed User Input] --> UI{Interface}
-    UI --> CLI[Rich Terminal]
-    UI --> GUI[Desktop V5]
-    GUI --> ATT[Image Attachments / Clipboard]
-    GUI --> SCREEN[Screen Vision]
-    ATT --> IMG[Validate + Resize + Compress]
-    SCREEN --> IMG
-    IMG --> CORE[JARVIS OMEGA V5 Core]
-    CLI --> CORE
-    CORE --> ROUTER{AI Provider}
-    ROUTER --> OR[OpenRouter Free]
-    ROUTER --> OA[OpenAI Optional]
-    CORE --> WEB[Free Web + News]
-    CORE --> MEM[SQLite Memory]
-    CORE --> KB[Local Knowledge]
-    CORE --> FILES[Safe Local Files]
-    CORE --> SYS[Approved Windows Actions]
-    CORE --> TTS[Neural Hindi/Hinglish Voice]
-```
-
-## Safety model
-
-OMEGA V5 is designed to be useful without unrestricted host control. It does **not** expose arbitrary shell execution, credential scraping, password access, file deletion, software installation, persistence, stealth control, or security-bypass tools.
-
-Local file reads/indexing are limited to approved roots and safe text/code types; secret-like paths are blocked. Local actions remain permission-gated where configured. External webpages, files, screenshots, and image text are treated as untrusted data rather than instructions to override the assistant.
-
-## Project structure
+# Project structure
 
 ```text
 JARVIS-AI-OMEGA/
 ├── jarvis/
 │   ├── attachments.py
+│   ├── automation.py
+│   ├── coding_tools.py
 │   ├── config.py
 │   ├── core.py
+│   ├── documents.py
 │   ├── gui.py
+│   ├── hud.py
 │   ├── local_files.py
 │   ├── memory.py
+│   ├── microphone.py
 │   ├── permissions.py
 │   ├── prompt.py
 │   ├── system_tools.py
@@ -293,18 +285,18 @@ JARVIS-AI-OMEGA/
 ├── tests/
 ├── .github/workflows/ci.yml
 ├── .env.example
+├── requirements.txt
+├── requirements-windows.txt
+├── setup_windows.ps1
+├── run_desktop.bat
+├── run_jarvis.bat
 ├── desktop_app.py
 ├── main.py
-├── self_check.py
-├── setup_windows.ps1
-├── run_jarvis.bat
-└── requirements.txt
+└── self_check.py
 ```
 
-## License
+## Creator
 
-MIT License — see [LICENSE](LICENSE).
+**JARVIS AI OMEGA V6 — Created by Adib Azam**
 
----
-
-**JARVIS AI OMEGA V5 — Created by Adib Azam**
+MIT License — see `LICENSE`.
