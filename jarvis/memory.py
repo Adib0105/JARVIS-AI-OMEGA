@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -42,6 +43,20 @@ class MemoryStore:
                 fact TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS knowledge_docs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source TEXT NOT NULL UNIQUE,
+                added_at TEXT NOT NULL
+            )''')
+            conn.execute('''CREATE TABLE IF NOT EXISTS knowledge_chunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                doc_id INTEGER NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                FOREIGN KEY(doc_id) REFERENCES knowledge_docs(id)
+            )''')
+            conn.execute('''CREATE INDEX IF NOT EXISTS idx_knowledge_doc
+                            ON knowledge_chunks(doc_id, chunk_index)''')
             conn.commit()
 
     @staticmethod
@@ -72,6 +87,14 @@ class MemoryStore:
                 (session_id, limit),
             ).fetchall()
         return [(r['role'], r['content']) for r in reversed(rows)]
+
+    def session_messages(self, session_id: str, limit: int = 500) -> list[dict]:
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                'SELECT role, content, created_at FROM messages WHERE session_id=? ORDER BY id ASC LIMIT ?',
+                (session_id, max(1, min(limit, 2000))),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def remember(self, fact: str) -> str:
         fact = fact.strip()
@@ -105,3 +128,87 @@ class MemoryStore:
                 (limit,),
             ).fetchall()
         return [dict(r) for r in rows]
+
+    def stats(self) -> dict:
+        with self._lock, self._connect() as conn:
+            sessions = conn.execute('SELECT COUNT(*) FROM sessions').fetchone()[0]
+            messages = conn.execute('SELECT COUNT(*) FROM messages').fetchone()[0]
+            facts = conn.execute('SELECT COUNT(*) FROM facts').fetchone()[0]
+            docs = conn.execute('SELECT COUNT(*) FROM knowledge_docs').fetchone()[0]
+            chunks = conn.execute('SELECT COUNT(*) FROM knowledge_chunks').fetchone()[0]
+        return {
+            'sessions': sessions,
+            'messages': messages,
+            'facts': facts,
+            'knowledge_docs': docs,
+            'knowledge_chunks': chunks,
+        }
+
+    def export_session(self, session_id: str, export_dir: Path) -> Path:
+        export_dir.mkdir(parents=True, exist_ok=True)
+        messages = self.session_messages(session_id, 2000)
+        target = export_dir / f'jarvis-chat-{session_id}.md'
+        lines = [f'# JARVIS OMEGA Chat Export', '', f'Session: `{session_id}`', '']
+        for row in messages:
+            who = 'YOU' if row['role'] == 'user' else 'JARVIS'
+            lines.extend([f'## {who}', '', row['content'], ''])
+        target.write_text('\n'.join(lines), encoding='utf-8')
+        return target
+
+    @staticmethod
+    def _chunks(text: str, size: int = 1800, overlap: int = 180) -> list[str]:
+        clean = re.sub(r'\s+', ' ', text).strip()
+        if not clean:
+            return []
+        chunks: list[str] = []
+        start = 0
+        while start < len(clean):
+            end = min(len(clean), start + size)
+            chunks.append(clean[start:end])
+            if end >= len(clean):
+                break
+            start = max(start + 1, end - overlap)
+        return chunks
+
+    def index_knowledge(self, source: str, text: str) -> dict:
+        source = source.strip()[:1000]
+        chunks = self._chunks(text)
+        if not source or not chunks:
+            return {'source': source, 'chunks': 0}
+        with self._lock, self._connect() as conn:
+            old = conn.execute('SELECT id FROM knowledge_docs WHERE source=?', (source,)).fetchone()
+            if old:
+                conn.execute('DELETE FROM knowledge_chunks WHERE doc_id=?', (old['id'],))
+                conn.execute('UPDATE knowledge_docs SET added_at=? WHERE id=?', (self._now(), old['id']))
+                doc_id = old['id']
+            else:
+                cur = conn.execute('INSERT INTO knowledge_docs(source, added_at) VALUES (?, ?)',
+                                   (source, self._now()))
+                doc_id = cur.lastrowid
+            conn.executemany(
+                'INSERT INTO knowledge_chunks(doc_id, chunk_index, content) VALUES (?, ?, ?)',
+                [(doc_id, i, chunk) for i, chunk in enumerate(chunks)],
+            )
+            conn.commit()
+        return {'source': source, 'chunks': len(chunks)}
+
+    def search_knowledge(self, query: str, limit: int = 6) -> list[dict]:
+        terms = [t.lower() for t in re.findall(r'[\w-]{2,}', query, flags=re.UNICODE)][:12]
+        if not terms:
+            return []
+        with self._lock, self._connect() as conn:
+            rows = conn.execute('''
+                SELECT kd.source, kc.chunk_index, kc.content
+                FROM knowledge_chunks kc
+                JOIN knowledge_docs kd ON kd.id = kc.doc_id
+                ORDER BY kc.id DESC
+                LIMIT 2000
+            ''').fetchall()
+        scored = []
+        for row in rows:
+            lowered = row['content'].lower()
+            score = sum(lowered.count(term) for term in terms)
+            if score:
+                scored.append((score, dict(row)))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [item[1] | {'score': item[0]} for item in scored[:max(1, min(limit, 12))]]
