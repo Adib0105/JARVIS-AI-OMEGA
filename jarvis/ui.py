@@ -26,11 +26,11 @@ def banner() -> None:
     title = Text('J A R V I S   O M E G A', style='bold cyan')
     provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
     subtitle = (
-        f'Type commands • Spoken AI replies • Creator: {settings.creator_name} • '
+        f'Type commands • Neural Hindi/Hinglish replies • Creator: {settings.creator_name} • '
         f'Provider: {provider} • Model: {settings.model}'
     )
     console.print(Panel.fit(Text.assemble(title, '\n', subtitle), border_style='cyan'))
-    console.print('[dim]Microphone input is not installed; you type, JARVIS speaks its reply.[/dim]\n')
+    console.print('[dim]No microphone input. You type; JARVIS answers and speaks with an Indian neural voice.[/dim]\n')
 
 
 def help_table() -> Table:
@@ -85,7 +85,9 @@ def run_cli() -> None:
                 f'Reasoning setting: {settings.reasoning_effort if settings.provider == "openai" else "provider-managed"}\n'
                 f'Hosted web search: {settings.hosted_web_search_enabled}\n'
                 f'Code Interpreter: {settings.code_interpreter_enabled}\n'
-                f'Local tools: {settings.enable_local_tools}\nVoice output: {settings.enable_voice_output}\n'
+                f'Local tools: {settings.enable_local_tools}\n'
+                f'Voice output: {settings.enable_voice_output}\nVoice engine: {settings.voice_engine}\n'
+                f'Hindi voice: {settings.voice_hindi}\nHinglish voice: {settings.voice_hinglish}\n'
                 f'Microphone input: False\nSession: {jarvis.session_id}\n'
                 f'Last latency: {jarvis.last_latency:.2f}s',
                 title='Status', border_style='green'))
