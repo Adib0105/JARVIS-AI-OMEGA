@@ -1,7 +1,8 @@
 """Public JARVIS OMEGA V7 compatibility core.
 
 `JarvisOmega` keeps the existing import/API surface while layering V7 orchestration,
-security, layered memory and bounded context over the provider-neutral core.
+security, layered memory, capability awareness and bounded context over the
+provider-neutral core.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from typing import Callable
 from .agent.context import ContextManager
 from .agent.orchestrator_memory import MemoryAwareMissionOrchestrator
 from .agent.tool_runtime import RecordingToolRegistry
+from .capability_registry import CapabilityRegistry
 from .core_v7 import JarvisOmega as _ProviderCore
 from .memory_v7 import MemoryKind, V7MemoryStore
 from .prompt import system_prompt
@@ -24,6 +26,7 @@ class JarvisOmega(_ProviderCore):
         db_path = self.memory.db_path
         self.memory = V7MemoryStore(db_path)
         self.context_manager = ContextManager(self.memory)
+        self.capability_registry = CapabilityRegistry()
         self.tools = RecordingToolRegistry(
             self.memory,
             confirmer,
@@ -44,6 +47,12 @@ class JarvisOmega(_ProviderCore):
 
     def _system_instructions(self) -> str:
         prompt = system_prompt()
+        try:
+            prompt += '\n\nV7 CAPABILITY REGISTRY:\n' + self.capability_registry.summary_for_prompt()
+        except Exception:
+            # Capability inspection must never make normal chat unavailable.
+            pass
+
         request = self._latest_user_request()
         orchestrator = getattr(self, 'orchestrator', None)
         mission_id = getattr(orchestrator, 'current_mission_id', None) or ''
@@ -64,6 +73,10 @@ class JarvisOmega(_ProviderCore):
             except Exception:
                 pass
         return prompt
+
+    def capability_status(self, *, refresh: bool = True) -> list[dict]:
+        """Return the runtime-derived capability registry for UI/health/evaluation layers."""
+        return self.capability_registry.snapshot(refresh=refresh)
 
     def _tool_audit_context(self) -> dict:
         request_summary = self._latest_user_request()[:800]
