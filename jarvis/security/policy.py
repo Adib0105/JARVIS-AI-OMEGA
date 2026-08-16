@@ -46,6 +46,7 @@ DEFAULT_POLICIES: dict[Capability, PermissionPolicy] = {
     Capability.APP_CONTROL: PermissionPolicy.ASK,
     Capability.DOCUMENT_READ: PermissionPolicy.ASK,
     Capability.GIT_READ: PermissionPolicy.ALLOW,
+    Capability.ACCOUNT_CONFIG_READ: PermissionPolicy.ASK,
 }
 
 
@@ -59,11 +60,10 @@ class ApprovalRequest:
     policies: dict[str, str]
 
     def display_payload(self) -> dict:
-        target = _target_summary(self.tool_name, self.args)
         return {
             '__approval__': {
                 'action': self.tool_name,
-                'target': target,
+                'target': _target_summary(self.tool_name, self.args),
                 'risk': self.risk.value,
                 'why': self.why,
                 'capabilities': [item.value for item in self.capabilities],
@@ -89,9 +89,8 @@ def _safe_argument_summary(args: dict) -> dict:
         if any(token in lower for token in secret_tokens):
             output[str(key)] = '[REDACTED]'
             continue
-        if str(key) == 'content':
-            text = str(value)
-            output[str(key)] = f'<content {len(text)} chars>'
+        if str(key) in {'content', 'body', 'text'} and len(str(value)) > 160:
+            output[str(key)] = f'<{key} {len(str(value))} chars>'
             continue
         text = str(value)
         output[str(key)] = text if len(text) <= 500 else text[:500] + '…'
@@ -99,7 +98,7 @@ def _safe_argument_summary(args: dict) -> dict:
 
 
 def _target_summary(tool_name: str, args: dict) -> str:
-    for key in ('to', 'path', 'url', 'app', 'query', 'project', 'summary', 'subject'):
+    for key in ('to', 'file_path', 'path', 'url', 'app', 'query', 'folder', 'project_dir', 'summary', 'subject'):
         if key in args and str(args[key]).strip():
             return f'{key}: {str(args[key])[:240]}'
     if tool_name == 'click_screen':
@@ -125,7 +124,7 @@ def _normalize_policy(raw: str | None, default: PermissionPolicy) -> PermissionP
 
 def policy_for(capability: Capability) -> PermissionPolicy:
     env_name = f'PERMISSION_{capability.value}'
-    return _normalize_policy(os.getenv(env_name), DEFAULT_POLICIES[capability])
+    return _normalize_policy(os.getenv(env_name), DEFAULT_POLICIES.get(capability, PermissionPolicy.DENY))
 
 
 def normalize_decision(value) -> ApprovalDecision:
@@ -221,12 +220,10 @@ class CapabilityPermissionGate:
         decision = normalize_decision(self.confirmer(tool_name, request.display_payload()))
 
         if decision == ApprovalDecision.ALLOW_SESSION:
-            # NEVER convert ALWAYS_ASK into a session grant.
             grantable = [cap for cap in requires_ask if policies[cap.value] == PermissionPolicy.ASK]
             with self._lock:
                 self._session_grants.update(grantable)
             if requires_always:
-                # This action itself is allowed once, but always-ask capabilities remain ungranted.
                 decision = ApprovalDecision.ALLOW_ONCE
 
         allowed = decision in {ApprovalDecision.ALLOW_ONCE, ApprovalDecision.ALLOW_SESSION}
