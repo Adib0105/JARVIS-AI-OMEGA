@@ -39,7 +39,6 @@ class V7MemoryStore(MemoryStore):
     """Backward-compatible V7 layered memory built beside the V6 tables."""
 
     def __init__(self, db_path: Path | None = None):
-        # Legacy tables must exist before a fresh database is labeled/migrated.
         super().__init__(db_path)
         self.migration_result = SchemaMigrator(self.db_path).migrate()
         self.retriever = HybridRetriever(configured_embedding_backend())
@@ -73,8 +72,6 @@ class V7MemoryStore(MemoryStore):
         last_verified = now if verified else None
 
         with self._lock, self._connect() as conn:
-            # A stable semantic/procedural key represents the current version of that
-            # memory. Prior values remain inactive for provenance rather than deleted.
             if key and kind in {MemoryKind.SEMANTIC, MemoryKind.PROCEDURAL}:
                 old_rows = conn.execute(
                     '''SELECT id, content, confidence FROM v7_memories
@@ -248,7 +245,6 @@ class V7MemoryStore(MemoryStore):
             conn.commit()
         return cur.rowcount
 
-    # Enforce the same secret boundary even when GUI code calls memory directly.
     def remember(self, fact: str) -> str:
         ensure_safe_for_persistent_memory(fact)
         legacy = super().remember(fact)
@@ -316,8 +312,14 @@ class V7MemoryStore(MemoryStore):
 
     def hybrid_search_knowledge(self, query: str, limit: int = 8) -> list[dict]:
         rows = self._knowledge_rows(5000)
-        # Knowledge rows do not have confidence metadata; use neutral defaults.
-        normalized = [row | {'confidence': 0.75, 'importance': 0.5} for row in rows]
+        normalized = [
+            row | {
+                'content': row.get('chunk', ''),
+                'confidence': 0.75,
+                'importance': 0.5,
+            }
+            for row in rows
+        ]
         return self.retriever.rank(query, normalized, text_key='content', limit=limit)
 
     def v7_stats(self) -> dict:
