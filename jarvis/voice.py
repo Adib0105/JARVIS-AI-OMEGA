@@ -18,6 +18,10 @@ _CODE_BLOCK_RE = re.compile(r"```.*?```", re.DOTALL)
 _LINK_RE = re.compile(r"\[([^\]]+)\]\([^\)]+\)")
 _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
 _WORD_RE = re.compile(r"[A-Za-z']+")
+_EMOJI_RE = re.compile(
+    "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF]+",
+    flags=re.UNICODE,
+)
 _HINGLISH_HINTS = {
     'hai', 'hain', 'ho', 'haan', 'nahi', 'nahin', 'kya', 'kaise', 'kyun', 'kyu',
     'mujhe', 'mera', 'meri', 'mere', 'tum', 'tumhe', 'aap', 'aapko', 'kar', 'karo',
@@ -33,6 +37,7 @@ def clean_for_speech(text: str) -> str:
     text = _LINK_RE.sub(r"\1", text)
     text = _MARKDOWN_RE.sub("", text)
     text = re.sub(r"https?://\S+", " link ", text)
+    text = _EMOJI_RE.sub("", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
@@ -64,6 +69,7 @@ class VoiceOutput:
 
     def __init__(self) -> None:
         self.enabled = settings.enable_voice_output
+        self.muted = False
         self._queue: queue.Queue[str | None] = queue.Queue()
         self._thread: threading.Thread | None = None
         if self.enabled:
@@ -71,11 +77,29 @@ class VoiceOutput:
             self._thread.start()
 
     def speak(self, text: str) -> None:
-        if not self.enabled:
+        if not self.enabled or self.muted:
             return
         spoken = clean_for_speech(text)
         if spoken:
             self._queue.put(spoken)
+
+    def mute(self) -> None:
+        self.muted = True
+
+    def unmute(self) -> None:
+        self.muted = False
+
+    def toggle(self) -> bool:
+        self.muted = not self.muted
+        return not self.muted
+
+    def test(self, mode: str = 'hinglish') -> None:
+        samples = {
+            'hindi': 'नमस्ते आदिब। मैं जार्विस ओमेगा हूँ। मेरी आवाज़ अब थोड़ी गहरी और साफ़ है।',
+            'english': 'Hello Adib. I am JARVIS OMEGA. My voice is now deeper and clearer.',
+            'hinglish': 'Adib bhai, main JARVIS OMEGA hoon. Ab meri voice thodi deep, clear aur natural hai.',
+        }
+        self.speak(samples.get(mode, samples['hinglish']))
 
     def stop(self) -> None:
         if self.enabled:
@@ -99,6 +123,7 @@ class VoiceOutput:
                 voice,
                 f'--rate={settings.edge_voice_rate}',
                 f'--volume={settings.edge_voice_volume}',
+                f'--pitch={settings.edge_voice_pitch}',
                 '--file',
                 path,
             ]
