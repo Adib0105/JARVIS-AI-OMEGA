@@ -1,14 +1,15 @@
-"""Public JARVIS OMEGA V7 compatibility core.
+"""Public JARVIS OMEGA V7/V7.5 compatibility core.
 
-`JarvisOmega` keeps the existing import/API surface while layering V7 orchestration,
-security, layered memory, capability awareness, self-evaluation, gap detection and
-bounded self-development over the provider-neutral core.
+`JarvisOmega` preserves the established public API while layering verified missions,
+security, memory, capability awareness, evaluation, observability, skill proposals
+and bounded self-development over the provider-neutral core.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Callable
 
 from .agent.context import ContextManager
@@ -19,7 +20,11 @@ from .config import settings
 from .core_v7 import JarvisOmega as _ProviderCore
 from .evaluation import CapabilityGapDetector, SelfEvaluationEngine
 from .memory_v7 import MemoryKind, V7MemoryStore
+from .observability import JarvisHealthSystem, ObservabilityManager
 from .prompt import system_prompt
+from .providers.observed import ObservedProvider
+from .providers.router import ModelRouter
+from .skills import SkillRegistry, WorkflowLearningEngine
 
 
 class JarvisOmega(_ProviderCore):
@@ -29,6 +34,26 @@ class JarvisOmega(_ProviderCore):
         self.memory = V7MemoryStore(db_path)
         self.context_manager = ContextManager(self.memory)
         self.capability_registry = CapabilityRegistry()
+        self.model_router = ModelRouter()
+        self.observability = ObservabilityManager(db_path)
+
+        # Wrap already-created providers instead of rewriting the stable provider core.
+        # The wrapper records normalized success/failure/latency/usage and explicit
+        # provider-reported cost only. It never stores prompts or secrets.
+        self.provider = ObservedProvider(
+            self.provider,
+            self.observability,
+            context_provider=self._model_observability_context,
+            fallback=False,
+        )
+        if self.local_provider is not None:
+            self.local_provider = ObservedProvider(
+                self.local_provider,
+                self.observability,
+                context_provider=self._model_observability_context,
+                fallback=True,
+            )
+
         self.tools = RecordingToolRegistry(
             self.memory,
             confirmer,
@@ -48,11 +73,21 @@ class JarvisOmega(_ProviderCore):
             audit=self.tools.audit,
             registry=self.capability_registry,
         )
+        self.health_system = JarvisHealthSystem(db_path, registry=self.capability_registry)
+        self.skill_registry = SkillRegistry(db_path)
+        self.workflow_learning = WorkflowLearningEngine(db_path, audit_store=self.tools.audit)
+
         # Self-development stays lazy because packaged/frozen installs may not have
         # Git or a repository checkout. Normal chat must not depend on those tools.
         self._self_development_engine = None
         self.last_mission_id: str | None = None
         self.last_context_stats: dict = {}
+
+    def _select_model(self, text: str, kind: str = 'chat') -> str:
+        """Use the V7.5 category router while keeping the V6/V7 method contract."""
+        route = self.model_router.select(text, kind)
+        self.last_route = route.category.lower()
+        return route.model or settings.model
 
     def _latest_user_request(self) -> str:
         try:
@@ -93,11 +128,9 @@ class JarvisOmega(_ProviderCore):
         return prompt
 
     def capability_status(self, *, refresh: bool = True) -> list[dict]:
-        """Return the runtime-derived capability registry for UI/health/evaluation layers."""
         return self.capability_registry.snapshot(refresh=refresh)
 
     def evaluate_self(self, *, mission_limit: int = 100, audit_limit: int = 1000, persist: bool = True) -> dict:
-        """Measure JARVIS from persisted mission/audit evidence; unavailable metrics remain N/A."""
         return self.evaluation.evaluate(
             mission_limit=mission_limit,
             audit_limit=audit_limit,
@@ -108,7 +141,6 @@ class JarvisOmega(_ProviderCore):
         return self.evaluation.history(limit)
 
     def detect_capability_gaps(self, *, mission_limit: int = 100, audit_limit: int = 1000, persist: bool = True) -> list[dict]:
-        """Return evidence-backed engineering gaps; this never modifies production code."""
         return [
             gap.as_dict() for gap in self.gap_detector.detect(
                 mission_limit=mission_limit,
@@ -119,6 +151,34 @@ class JarvisOmega(_ProviderCore):
 
     def capability_gap_history(self, limit: int = 100) -> list[dict]:
         return self.gap_detector.list_open(limit)
+
+    def observability_snapshot(self) -> dict:
+        return self.observability.dashboard_snapshot()
+
+    def model_usage(self, period: str = 'today', *, mission_id: str | None = None) -> dict:
+        return self.observability.usage_summary(period, mission_id=mission_id)
+
+    def health_check(self) -> dict:
+        return self.health_system.run().as_dict()
+
+    def detect_repeated_workflows(self, *, audit_limit: int = 1000, min_occurrences: int = 3, persist: bool = True) -> list[dict]:
+        return [
+            item.as_dict() for item in self.workflow_learning.detect(
+                audit_limit=audit_limit,
+                min_occurrences=min_occurrences,
+                persist=persist,
+            )
+        ]
+
+    def workflow_proposals(self, limit: int = 100) -> list[dict]:
+        return self.workflow_learning.recent(limit)
+
+    def propose_skill_from_gap(self, gap: dict) -> dict:
+        """Create only a persisted inactive skill proposal; no skill is silently activated."""
+        return self.skill_registry.propose_from_gap(dict(gap)).as_dict()
+
+    def skill_proposals(self, limit: int = 100) -> list[dict]:
+        return self.skill_registry.recent(limit)
 
     def _get_self_development_engine(self):
         if not settings.self_development_enabled:
@@ -135,12 +195,20 @@ class JarvisOmega(_ProviderCore):
         return self._self_development_engine
 
     def propose_improvement(self, gap: dict) -> dict:
-        """Create a persisted improvement proposal from an evidence-backed gap only."""
         proposal = self._get_self_development_engine().proposal_from_gap(dict(gap))
+        self.observability.record(
+            category='SELF_DEVELOPMENT', event_type='proposal.created', status='SUCCESS',
+            session_id=self.session_id, mission_id=self.last_mission_id,
+            metadata={'proposal_id': proposal.id, 'capability': proposal.capability, 'risk': proposal.risk},
+        )
         return proposal.as_dict()
 
     def prepare_improvement_sandbox(self, proposal_id: str) -> dict:
         proposal = self._get_self_development_engine().prepare_sandbox(proposal_id)
+        self.observability.record(
+            category='SELF_DEVELOPMENT', event_type='sandbox.prepared', status='SUCCESS',
+            session_id=self.session_id, metadata={'proposal_id': proposal.id, 'branch': proposal.branch},
+        )
         return proposal.as_dict()
 
     def run_self_coding(self, proposal_id: str) -> dict:
@@ -150,19 +218,32 @@ class JarvisOmega(_ProviderCore):
         engine = self._get_self_development_engine()
 
         def reasoner(system: str, user: str) -> str:
-            # Provider-neutral one-shot path already supports explicitly configured
-            # local fallback. Returned text is still policy-gated JSON before writes.
-            return self._one_shot_text(system, user, 'mission')
+            return self._one_shot_text(system, user, 'coding')
 
-        result = SelfCodingEngine(engine, reasoner).run(proposal_id)
-        return result.as_dict()
+        started = time.perf_counter()
+        try:
+            result = SelfCodingEngine(engine, reasoner).run(proposal_id)
+            self.observability.record(
+                category='SELF_DEVELOPMENT', event_type='self_coding.completed', status=result.status.value,
+                session_id=self.session_id,
+                latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                metadata={'proposal_id': proposal_id, 'changed_files': len(result.changed_files)},
+            )
+            return result.as_dict()
+        except Exception as exc:
+            self.observability.record(
+                category='SELF_DEVELOPMENT', event_type='self_coding.failed', status='FAILED',
+                session_id=self.session_id,
+                latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                metadata={'proposal_id': proposal_id, 'error_type': type(exc).__name__},
+            )
+            raise
 
     def offline_development_status(self) -> dict:
         from .self_development.offline import OfflineDevelopmentRuntime
         return OfflineDevelopmentRuntime().status().as_dict()
 
     def run_offline_self_coding(self, proposal_id: str) -> dict:
-        """Run the same bounded coding loop using only the configured local reasoning model."""
         from .self_development.coding import SelfCodingEngine
         from .self_development.offline import OfflineDevelopmentRuntime
 
@@ -179,7 +260,7 @@ class JarvisOmega(_ProviderCore):
         return self._get_self_development_engine().get(proposal_id)
 
     def approve_improvement_for_release(self, proposal_id: str, *, explicit_user_approval: bool) -> dict:
-        """Mark a reviewed proposal approved; this still does not deploy it to production."""
+        """Mark reviewed proposal approved; this still does not deploy it to production."""
         proposal = self._get_self_development_engine().approve(
             proposal_id,
             explicit_user_approval=explicit_user_approval,
@@ -188,6 +269,14 @@ class JarvisOmega(_ProviderCore):
 
     def reject_improvement(self, proposal_id: str) -> dict:
         return self._get_self_development_engine().reject(proposal_id).as_dict()
+
+    def _model_observability_context(self) -> dict:
+        orchestrator = getattr(self, 'orchestrator', None)
+        return {
+            'session_id': getattr(self, 'session_id', None),
+            'mission_id': getattr(orchestrator, 'current_mission_id', None),
+            'route': getattr(self, 'last_route', ''),
+        }
 
     def _tool_audit_context(self) -> dict:
         request_summary = self._latest_user_request()[:800]
@@ -214,30 +303,54 @@ class JarvisOmega(_ProviderCore):
         return _ProviderCore._extract_plan(raw, max_steps)
 
     def run_mission(self, goal: str, progress: Callable[[str], None] | None = None) -> str:
-        mission = self.orchestrator.run(goal, progress)
-        self.last_mission_id = mission.id
-        self.memory.add_message(
-            self.session_id,
-            'assistant',
-            f'[V7 MISSION {mission.id}]\n{mission.final_report}',
+        started = time.perf_counter()
+        self.observability.record(
+            category='MISSION', event_type='mission.started', status='RUNNING',
+            session_id=self.session_id, metadata={'goal_chars': len(str(goal))},
         )
         try:
-            self.memory.remember_v7(
-                mission.final_report,
-                kind=MemoryKind.EPISODIC,
-                importance=0.8,
-                confidence=0.95 if mission.final_verification and mission.final_verification.verified else 0.65,
-                source=f'mission:{mission.id}',
+            mission = self.orchestrator.run(goal, progress)
+            self.last_mission_id = mission.id
+            self.memory.add_message(
+                self.session_id,
+                'assistant',
+                f'[V7 MISSION {mission.id}]\n{mission.final_report}',
+            )
+            try:
+                self.memory.remember_v7(
+                    mission.final_report,
+                    kind=MemoryKind.EPISODIC,
+                    importance=0.8,
+                    confidence=0.95 if mission.final_verification and mission.final_verification.verified else 0.65,
+                    source=f'mission:{mission.id}',
+                    metadata={
+                        'mission_id': mission.id,
+                        'status': mission.status.value,
+                        'verification': mission.final_verification.status if mission.final_verification else 'UNKNOWN',
+                    },
+                    verified=bool(mission.final_verification and mission.final_verification.verified),
+                )
+            except Exception:
+                pass
+            self.observability.record(
+                category='MISSION', event_type='mission.finished', status=mission.status.value,
+                session_id=self.session_id, mission_id=mission.id,
+                latency_ms=round((time.perf_counter() - started) * 1000, 3),
                 metadata={
-                    'mission_id': mission.id,
-                    'status': mission.status.value,
+                    'retry_count': mission.retry_count,
+                    'recovery_count': mission.recovery_count,
                     'verification': mission.final_verification.status if mission.final_verification else 'UNKNOWN',
                 },
-                verified=bool(mission.final_verification and mission.final_verification.verified),
             )
-        except Exception:
-            pass
-        return mission.final_report
+            return mission.final_report
+        except Exception as exc:
+            self.observability.record(
+                category='MISSION', event_type='mission.failed', status='FAILED',
+                session_id=self.session_id,
+                latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                metadata={'error_type': type(exc).__name__},
+            )
+            raise
 
     def cancel_mission(self, mission_id: str | None = None) -> bool:
         return self.orchestrator.cancel(mission_id)
