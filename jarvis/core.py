@@ -157,6 +157,21 @@ class JarvisOmega(_ProviderCore):
         result = SelfCodingEngine(engine, reasoner).run(proposal_id)
         return result.as_dict()
 
+    def offline_development_status(self) -> dict:
+        from .self_development.offline import OfflineDevelopmentRuntime
+        return OfflineDevelopmentRuntime().status().as_dict()
+
+    def run_offline_self_coding(self, proposal_id: str) -> dict:
+        """Run the same bounded coding loop using only the configured local reasoning model."""
+        from .self_development.coding import SelfCodingEngine
+        from .self_development.offline import OfflineDevelopmentRuntime
+
+        engine = self._get_self_development_engine()
+        offline = OfflineDevelopmentRuntime()
+        offline.require_ready()
+        result = SelfCodingEngine(engine, offline.reason).run(proposal_id)
+        return result.as_dict()
+
     def self_development_proposals(self, limit: int = 50) -> list[dict]:
         return self._get_self_development_engine().recent(limit)
 
