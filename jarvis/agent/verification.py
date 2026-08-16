@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
+from .event_safety import safe_evidence
 from .mission import VerificationResult
 
 
@@ -52,12 +54,7 @@ class VerificationEngine:
 
     @staticmethod
     def _explicit_verification(event: dict, name: str, payload: dict, *, side_effecting: bool) -> dict | None:
-        """Honor structured verification produced by trusted local tool handlers.
-
-        Computer-use tools can directly observe post-action UI state. That evidence
-        is more specific than the generic verifier fallback and must not be silently
-        upgraded from PARTIAL/UNVERIFIED to VERIFIED.
-        """
+        """Honor structured verification produced by trusted local tool handlers."""
         explicit = payload.get('verification')
         if not isinstance(explicit, dict):
             return None
@@ -69,7 +66,7 @@ class VerificationEngine:
         return _base(event, name, side_effecting=side_effecting) | {
             'verified': verified,
             'status': status,
-            'evidence': explicit.get('evidence', payload.get('result')),
+            'evidence': safe_evidence(explicit.get('evidence', payload.get('result'))),
         }
 
     def verify_tool_event(self, event: dict) -> dict:
@@ -87,7 +84,7 @@ class VerificationEngine:
             return _base(event, name, side_effecting=side_effecting) | {
                 'verified': False,
                 'status': 'FAILED',
-                'evidence': str(error)[:1000],
+                'evidence': safe_evidence(str(error)[:1000]),
             }
 
         explicit = self._explicit_verification(event, name, payload, side_effecting=side_effecting)
@@ -123,19 +120,30 @@ class VerificationEngine:
             return _base(event, name, side_effecting=True) | {
                 'verified': False,
                 'status': 'ACKNOWLEDGED_NOT_OBSERVED',
-                'evidence': result,
+                'evidence': safe_evidence(result),
             }
 
         return _base(event, name, side_effecting=side_effecting) | {
             'verified': True,
             'status': 'VERIFIED',
-            'evidence': result,
+            'evidence': safe_evidence(result),
         }
 
     @staticmethod
     def _verify_file_write(event: dict, name: str, args: dict, result) -> dict:
         path_value = result.get('path') if isinstance(result, dict) else None
-        expected = str(args.get('content', ''))
+        hints = event.get('verification_hints') if isinstance(event.get('verification_hints'), dict) else {}
+        expected_hash = str(hints.get('content_sha256') or '').strip().lower()
+        expected_chars = hints.get('content_characters')
+
+        # Backward compatibility for older in-memory events that still contained
+        # raw content. New V7.5 events use hash hints and do not persist the source.
+        if not expected_hash and isinstance(args.get('content'), str):
+            content = str(args.get('content', ''))
+            if not content.startswith('[PRIVATE_TEXT:'):
+                expected_hash = hashlib.sha256(content.encode('utf-8', errors='replace')).hexdigest()
+                expected_chars = len(content)
+
         if not path_value:
             return _base(event, name, side_effecting=True) | {
                 'verified': False,
@@ -145,12 +153,15 @@ class VerificationEngine:
         path = Path(str(path_value))
         try:
             actual = path.read_text(encoding='utf-8')
-            verified = actual == expected
+            actual_hash = hashlib.sha256(actual.encode('utf-8', errors='replace')).hexdigest()
+            verified = bool(expected_hash) and actual_hash == expected_hash
             evidence = {
                 'path': str(path),
                 'exists': path.exists(),
                 'characters': len(actual),
-                'content_match': verified,
+                'expected_characters': expected_chars,
+                'content_hash_match': verified,
+                'content_sha256': actual_hash,
             }
         except Exception as exc:
             verified = False
@@ -158,7 +169,7 @@ class VerificationEngine:
         return _base(event, name, side_effecting=True) | {
             'verified': verified,
             'status': 'VERIFIED' if verified else 'FAILED',
-            'evidence': evidence,
+            'evidence': safe_evidence(evidence),
         }
 
     def verify_step(self, result_text: str, tool_events: list[dict]) -> VerificationResult:
