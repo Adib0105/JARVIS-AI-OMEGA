@@ -123,7 +123,7 @@ def _repair_answer(self, user_text: str, bad_answer: str) -> str:
 
 
 def install_runtime_guards() -> None:
-    """Temporary quality compatibility layer until routing quality becomes a dedicated V7 service."""
+    """Quality compatibility layer around the provider-neutral V7.5 router."""
     from .core import JarvisOmega
     if getattr(JarvisOmega, '_v7_runtime_guard_installed', False):
         return
@@ -205,6 +205,7 @@ def _install_security_gui_hooks(gui_module) -> None:
     from .security.approval_ui import ask_approval
     from .security.audit_ui import show_audit_viewer
     from .security.policy import ApprovalDecision
+    from .ui_command_center import show_command_center
 
     def v7_confirm_tool(self, tool: str, args: dict):
         event = threading.Event()
@@ -237,23 +238,30 @@ def _install_security_gui_hooks(gui_module) -> None:
 
     original_right = gui_module.JarvisDesktop._build_right_panel
 
-    def v7_right_panel(self, parent):
+    def v75_right_panel(self, parent):
         original_right(self, parent)
+
+        def open_command_center() -> None:
+            show_command_center(self.root, self.jarvis)
 
         def open_audit() -> None:
             store = getattr(getattr(self.jarvis, 'tools', None), 'audit', None)
             show_audit_viewer(self.root, store)
 
+        self._button(parent, 'COMMAND CENTER', open_command_center, gui_module.CYAN).pack(
+            fill='x', padx=10, pady=(2, 1), before=self.status
+        )
         self._button(parent, 'AUDIT VIEWER', open_audit, gui_module.GOLD).pack(
             fill='x', padx=10, pady=(2, 1), before=self.status
         )
 
-    gui_module.JarvisDesktop._build_right_panel = v7_right_panel
+    gui_module.JarvisDesktop._build_right_panel = v75_right_panel
 
 
 def run_adaptive_gui() -> None:
     import tkinter as tk
     from . import gui as gui_module
+    from .ui_command_center import show_command_center
 
     root = tk.Tk()
     screen_w = max(800, root.winfo_screenwidth())
@@ -289,6 +297,7 @@ def run_adaptive_gui() -> None:
     _rebrand_widget_tree(root)
     _rebrand_chat_history(app)
     root.bind('<Control-Shift-A>', lambda _event: __import__('jarvis.security.audit_ui', fromlist=['show_audit_viewer']).show_audit_viewer(root, getattr(getattr(app.jarvis, 'tools', None), 'audit', None)))
+    root.bind('<Control-Shift-C>', lambda _event: show_command_center(root, app.jarvis))
 
     if compact:
         root.minsize(min(1040, screen_w - 40), min(620, screen_h - 100))
