@@ -13,6 +13,7 @@ from .config import settings
 from .core import JarvisOmega
 from .hud import ArcReactorHUD
 from .microphone import WakeWordListener, record_and_transcribe
+from .settings_ui import show_settings_dialog, show_update_dialog
 from .system_tools import system_metrics
 from .vision import capture_screen
 from .voice import VoiceOutput
@@ -192,7 +193,7 @@ class JarvisDesktop:
         self._button(row, 'DONE', self._complete_todo, GOLD).pack(side='left', fill='x', expand=True, padx=(2, 0))
         self._button(task_frame, '+ REMINDER', self._add_reminder, MAGENTA).pack(fill='x', pady=(5, 0))
 
-        tk.Label(parent, text='INTELLIGENCE MODULES', bg=PANEL, fg=CYAN, font=('Consolas', 9, 'bold')).pack(pady=(12, 5))
+        tk.Label(parent, text='INTELLIGENCE MODULES', bg=PANEL, fg=CYAN, font=('Consolas', 9, 'bold')).pack(pady=(10, 4))
         modules = tk.Frame(parent, bg=PANEL)
         modules.pack(fill='x', padx=10)
         for text, command, color in [
@@ -203,14 +204,16 @@ class JarvisDesktop:
             ('MUTE / UNMUTE', self._toggle_voice, GREEN),
             ('IMAGE HELP', self._image_help, MAGENTA),
             ('SYSTEM STATUS', self._show_status, CYAN),
+            ('SETTINGS', self._open_settings, GREEN),
+            ('CHECK UPDATE', self._check_update, GOLD),
         ]:
-            self._button(modules, text, command, color).pack(fill='x', pady=2)
+            self._button(modules, text, command, color).pack(fill='x', pady=1)
 
         self.status = tk.Label(
             parent,
             text='● READY', bg=PANEL, fg=GREEN, font=('Consolas', 10, 'bold'),
         )
-        self.status.pack(side='bottom', pady=12)
+        self.status.pack(side='bottom', pady=10)
 
     def _build_center(self, parent: tk.Frame) -> None:
         self.attachment_frame = tk.Frame(parent, bg=PANEL_2, padx=10, pady=7)
@@ -466,7 +469,6 @@ class JarvisDesktop:
             return
         self.entry.delete(0, 'end')
         prompt = text or 'Analyze the attached image(s) carefully and tell me the important details.'
-        label = 'VOICE' if from_voice else 'YOU'
         if images:
             names = ', '.join(path.name for path in images)
             self._append('YOU', f'{prompt}\n[Attached: {names}]')
@@ -578,7 +580,6 @@ class JarvisDesktop:
             self.root.after(0, lambda: self._set_hud('idle'))
 
     def _wake_error(self, message: str) -> None:
-        # Continuous recognition misses are expected; keep them in the status line rather than spamming chat.
         if 'clear nahi' in message.lower():
             return
         self.root.after(0, lambda: self.status.configure(text='● WAKE RETRY', fg=GOLD))
@@ -687,6 +688,16 @@ class JarvisDesktop:
         sid = self.jarvis.new_session()
         self._clear_images()
         self._append('JARVIS', f'New V6 session started: {sid}')
+
+    def _open_settings(self) -> None:
+        if self.busy:
+            return
+        show_settings_dialog(self.root, on_saved=lambda: self._append('SYSTEM', 'Settings saved. Restart JARVIS to apply all changes.'))
+
+    def _check_update(self) -> None:
+        if self.busy:
+            return
+        show_update_dialog(self.root)
 
     def _image_help(self) -> None:
         messagebox.showinfo(
