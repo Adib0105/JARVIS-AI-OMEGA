@@ -58,8 +58,10 @@ class JarvisDesktop:
         ]:
             self._button(toolbar, text, command).pack(side='left', padx=3)
 
-        toolbar2 = tk.Frame(self.root, bg='#050b12', padx=12, pady=(0, 7))
-        toolbar2.pack(side='top', fill='x')
+        # Frame internal padding must be a single screen-distance value.
+        # Tuple spacing belongs on geometry managers such as pack(), not tk.Frame(pady=...).
+        toolbar2 = tk.Frame(self.root, bg='#050b12', padx=12, pady=7)
+        toolbar2.pack(side='top', fill='x', pady=(0, 7))
         self.voice_button = self._button(toolbar2, 'MUTE VOICE', self._toggle_voice)
         self.voice_button.pack(side='left', padx=3)
         for text, command in [
