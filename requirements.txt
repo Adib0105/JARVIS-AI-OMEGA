@@ -4,3 +4,4 @@ rich>=13.9.0
 edge-tts>=7.2.4
 pyttsx3>=2.99
 ddgs>=9.0.0
+Pillow>=10.0.0
