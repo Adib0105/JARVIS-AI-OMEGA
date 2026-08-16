@@ -18,6 +18,7 @@ All notable engineering changes to JARVIS AI OMEGA are documented here.
 - Added immutable self-development policy for security/audit/secret/sandbox/rollback/production-activation controls.
 - Added public-browser private-target blocking and prompt-injection scanning.
 - Added adversarial regression cases for injection, secret extraction/persistence, permission bypass, sandbox escape and unrestricted shell exposure.
+- Expanded repository security policy with vulnerability-reporting guidance, capability/verification rules, computer-use safety, protected self-development boundaries and release/rollback requirements.
 
 ### Memory / RAG / documents
 - Preserved V7 working/episodic/semantic/procedural memory and hybrid context retrieval.
@@ -79,8 +80,17 @@ All notable engineering changes to JARVIS AI OMEGA are documented here.
 - Package smoke explicitly installs build dependencies and rejects bundled `.env`, live DB/SQLite files and Google OAuth tokens/credentials.
 - Updated Windows build and Inno Setup installer definitions to V7 naming and secret-safe packaging.
 
-### Documentation
-- Added repository audit, self-development, offline, browser, tools, testing and V7.5 status documentation.
+### Documentation / GitHub experience
+- Rebuilt the main README into a structured project landing page with architecture, status, setup, feature, safety, testing and release navigation.
+- Added `docs/README.md` as the documentation hub.
+- Added a complete Windows V7.5 setup guide.
+- Added a dedicated troubleshooting guide for provider, voice, computer-use, SQLite, self-development, packaging and installer issues.
+- Added a release/readiness/rollback guide.
+- Added a transparent top-level `ROADMAP.md` separating verified, experimental and release-candidate work.
+- Refreshed architecture, mission/agent and testing documentation to current V7.5 behavior.
+- Expanded `CONTRIBUTING.md` with quality, verification, security, computer-use and self-development contribution requirements.
+- Added structured GitHub bug-report and feature-request forms.
+- Added a pull-request template with testing, security, evidence and rollback checklists.
 - README and Capability Registry distinguish verified foundations from optional/experimental operator-gated systems.
 
 ## V7 foundation
