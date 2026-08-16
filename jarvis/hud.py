@@ -12,6 +12,7 @@ class ArcReactorHUD(tk.Canvas):
         'thinking': '#ffd166',
         'speaking': '#6affb8',
         'listening': '#d98cff',
+        'paused': '#86a8b8',
         'error': '#ff5c73',
     }
 
