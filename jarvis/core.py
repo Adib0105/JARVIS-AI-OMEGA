@@ -1,8 +1,8 @@
 """Public JARVIS OMEGA V7 compatibility core.
 
 `JarvisOmega` keeps the existing import/API surface while layering V7 orchestration,
-security, layered memory, capability awareness and bounded context over the
-provider-neutral core.
+security, layered memory, capability awareness, self-evaluation and bounded context
+over the provider-neutral core.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from .agent.orchestrator_memory import MemoryAwareMissionOrchestrator
 from .agent.tool_runtime import RecordingToolRegistry
 from .capability_registry import CapabilityRegistry
 from .core_v7 import JarvisOmega as _ProviderCore
+from .evaluation import SelfEvaluationEngine
 from .memory_v7 import MemoryKind, V7MemoryStore
 from .prompt import system_prompt
 
@@ -33,6 +34,12 @@ class JarvisOmega(_ProviderCore):
             context_provider=self._tool_audit_context,
         )
         self.orchestrator = MemoryAwareMissionOrchestrator(self)
+        self.evaluation = SelfEvaluationEngine(
+            db_path,
+            mission_store=self.orchestrator.store,
+            audit_store=self.tools.audit,
+            capability_registry=self.capability_registry,
+        )
         self.last_mission_id: str | None = None
         self.last_context_stats: dict = {}
 
@@ -77,6 +84,17 @@ class JarvisOmega(_ProviderCore):
     def capability_status(self, *, refresh: bool = True) -> list[dict]:
         """Return the runtime-derived capability registry for UI/health/evaluation layers."""
         return self.capability_registry.snapshot(refresh=refresh)
+
+    def evaluate_self(self, *, mission_limit: int = 100, audit_limit: int = 1000, persist: bool = True) -> dict:
+        """Measure JARVIS from persisted mission/audit evidence; unavailable metrics remain N/A."""
+        return self.evaluation.evaluate(
+            mission_limit=mission_limit,
+            audit_limit=audit_limit,
+            persist=persist,
+        ).as_dict()
+
+    def evaluation_history(self, limit: int = 50) -> list[dict]:
+        return self.evaluation.history(limit)
 
     def _tool_audit_context(self) -> dict:
         request_summary = self._latest_user_request()[:800]
