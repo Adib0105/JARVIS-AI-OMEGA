@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +21,7 @@ def _path(name: str, default: Path) -> Path:
 
 @dataclass(frozen=True)
 class Settings:
+    app_version: str = '5.0.0'
     provider: str = os.getenv('AI_PROVIDER', 'openrouter').strip().lower()
 
     openrouter_api_key: str = os.getenv('OPENROUTER_API_KEY', '')
@@ -43,15 +45,6 @@ class Settings:
     enable_local_tools: bool = _bool('ENABLE_LOCAL_TOOLS', True)
     require_local_approval: bool = _bool('REQUIRE_LOCAL_APPROVAL', True)
 
-    # Keep provider calls bounded so the desktop UI cannot sit on THINKING/VISION forever.
-    ai_timeout_seconds: float = float(os.getenv('AI_TIMEOUT_SECONDS', '60'))
-    ai_max_retries: int = int(os.getenv('AI_MAX_RETRIES', '1'))
-
-    # Screen vision capture is resized/compressed before it is sent to the provider.
-    vision_max_width: int = int(os.getenv('VISION_MAX_WIDTH', '1600'))
-    vision_max_height: int = int(os.getenv('VISION_MAX_HEIGHT', '1000'))
-    vision_jpeg_quality: int = int(os.getenv('VISION_JPEG_QUALITY', '80'))
-
     enable_voice_output: bool = _bool('ENABLE_VOICE_OUTPUT', True)
     voice_engine: str = os.getenv('VOICE_ENGINE', 'edge').strip().lower()
     voice_hindi: str = os.getenv('VOICE_HINDI', 'hi-IN-MadhurNeural')
@@ -63,8 +56,17 @@ class Settings:
     voice_rate: int = int(os.getenv('VOICE_RATE', '175'))
     voice_volume: float = float(os.getenv('VOICE_VOLUME', '1.0'))
 
+    ai_timeout_seconds: float = float(os.getenv('AI_TIMEOUT_SECONDS', '60'))
+    vision_timeout_seconds: float = float(os.getenv('VISION_TIMEOUT_SECONDS', '75'))
+    api_max_retries: int = int(os.getenv('API_MAX_RETRIES', '2'))
     max_tool_rounds: int = int(os.getenv('MAX_TOOL_ROUNDS', '10'))
     history_messages: int = int(os.getenv('HISTORY_MESSAGES', '30'))
+
+    max_image_attachments: int = int(os.getenv('MAX_IMAGE_ATTACHMENTS', '4'))
+    max_image_mb: int = int(os.getenv('MAX_IMAGE_MB', '12'))
+    image_max_dimension: int = int(os.getenv('IMAGE_MAX_DIMENSION', '1600'))
+    image_jpeg_quality: int = int(os.getenv('IMAGE_JPEG_QUALITY', '82'))
+
     db_path: Path = _path('JARVIS_DB_PATH', ROOT / 'data' / 'jarvis.db')
     export_dir: Path = _path('JARVIS_EXPORT_DIR', ROOT / 'exports')
 
