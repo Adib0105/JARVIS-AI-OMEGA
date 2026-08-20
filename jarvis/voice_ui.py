@@ -71,7 +71,6 @@ def install_voice_ui() -> None:
         if not settings.enable_mic_input:
             return
         if interrupt:
-            # Manual MIC / Ctrl+M is a deterministic barge-in: current speech stops now.
             self.voice.stop()
         self._live_listening = True
         self._set_busy(True, 'LISTENING', gui_module.MAGENTA, 'listening')
@@ -86,9 +85,10 @@ def install_voice_ui() -> None:
                     speech_threshold=float(os.getenv('VOICE_VAD_THRESHOLD', '420')),
                     on_speech_start=self.voice.stop,
                 )
-                self.root.after(0, lambda: vad_done(self, text, None))
+                self.root.after(0, lambda value=text: vad_done(self, value, None))
             except Exception as exc:
-                self.root.after(0, lambda: vad_done(self, '', str(exc)))
+                message = str(exc)
+                self.root.after(0, lambda value=message: vad_done(self, '', value))
 
         threading.Thread(target=worker, daemon=True, name='jarvis-live-vad').start()
 
@@ -121,14 +121,14 @@ def install_voice_ui() -> None:
         self._live_voice_enabled = _env_bool('ENABLE_LIVE_CONVERSATION', False)
         self._live_listening = False
 
-        # Keep display text untouched, but always feed a speech-optimized copy to TTS.
         raw_speak = self.voice.speak
+
         def premium_speak(text: str) -> None:
             spoken = speechify(text)
             if spoken:
                 raw_speak(spoken)
-        self.voice.speak = premium_speak
 
+        self.voice.speak = premium_speak
         root.bind('<Escape>', lambda _event: voice_stop(self))
         root.bind('<Control-space>', lambda _event: voice_play_pause(self))
         root.bind('<Control-minus>', lambda _event: voice_slower(self))
@@ -146,29 +146,24 @@ def install_voice_ui() -> None:
             highlightbackground=gui_module.CYAN_DIM, highlightthickness=1,
         )
         strip.pack(side='bottom', fill='x')
-
         self.voice_player_status = tk.StringVar(value='VOICE: IDLE')
         tk.Label(
             strip, textvariable=self.voice_player_status, bg='#061725', fg=gui_module.GREEN,
             font=('Consolas', 8, 'bold'),
         ).pack(side='left', padx=(0, 8))
-
         self._button(strip, '− SPEED', lambda: voice_slower(self), gui_module.CYAN).pack(side='left', padx=(0, 3))
         self.voice_play_button = self._button(strip, 'PLAY / PAUSE', lambda: voice_play_pause(self), gui_module.GREEN)
         self.voice_play_button.pack(side='left', padx=3)
         self._button(strip, 'STOP', lambda: voice_stop(self), gui_module.RED).pack(side='left', padx=3)
         self._button(strip, 'SPEED +', lambda: voice_faster(self), gui_module.CYAN).pack(side='left', padx=3)
-
         self.voice_speed_label = tk.Label(
             strip, text=self.voice.speed_label, bg='#0b2a3a', fg=gui_module.GOLD,
             padx=10, pady=5, font=('Consolas', 9, 'bold'), cursor='hand2',
         )
         self.voice_speed_label.pack(side='left', padx=(5, 5))
         self.voice_speed_label.bind('<Button-1>', lambda _event: voice_reset_speed(self))
-
         self.live_voice_button = self._button(strip, 'LIVE: OFF', lambda: toggle_live(self), gui_module.GREEN)
         self.live_voice_button.pack(side='left', padx=(3, 8))
-
         tk.Label(
             strip,
             text='Ctrl+M Barge-in  •  Esc Stop  •  Ctrl+Space Pause  •  Ctrl+Shift+V Live',
@@ -179,16 +174,12 @@ def install_voice_ui() -> None:
         original_voice_state(self, state)
         try:
             self.root.after(0, lambda s=state: update_voice_panel(self, s))
-            # Turn-taking: only listen after playback becomes idle. We intentionally
-            # do not keep an always-open mic during speaker playback because desktop
-            # echo cancellation is hardware/driver dependent and can self-trigger.
             if state == 'idle' and getattr(self, '_live_voice_enabled', False):
                 self.root.after(220, lambda: start_vad_turn(self))
         except Exception:
             pass
 
     def v75_push_to_talk(self) -> None:
-        # MIC/Ctrl+M doubles as a reliable interruption control while JARVIS speaks.
         if self.voice.state in {'speaking', 'paused'}:
             start_vad_turn(self, interrupt=True)
             return
