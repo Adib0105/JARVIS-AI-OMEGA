@@ -8,7 +8,6 @@ import unicodedata
 from typing import Callable
 
 from .config import settings
-from .fast_commands import execute_fast_command
 
 
 STABLE_FREE_TEXT_MODEL = os.getenv(
@@ -138,35 +137,25 @@ def install_runtime_guards() -> None:
         if not text:
             return ''
         self.last_request_kind = 'chat'
+        self._active_model = self._select_model(text, 'chat')
+        self.last_provider_used = settings.provider
         started = time.perf_counter()
         self.memory.add_message(self.session_id, 'user', text)
         try:
-            # Deterministic low-risk commands execute locally first. This removes the
-            # network/model round trip for commands such as "Chrome kholo" while the
-            # normal permission/capability gate still remains authoritative.
-            fast_answer = execute_fast_command(self, text)
-            if fast_answer is not None:
-                answer = fast_answer
-                self.last_provider_used = 'local-fast-command'
+            identity = local_identity_answer(text)
+            if identity is not None:
+                answer = identity
+                self.last_provider_used = 'local-identity-guard'
                 self.last_model_used = 'deterministic-local'
-                self.last_tool_mode = 'fast-command'
+                self.last_tool_mode = 'identity-guard'
             else:
-                self._active_model = self._select_model(text, 'chat')
-                self.last_provider_used = settings.provider
-                identity = local_identity_answer(text)
-                if identity is not None:
-                    answer = identity
-                    self.last_provider_used = 'local-identity-guard'
-                    self.last_model_used = 'deterministic-local'
-                    self.last_tool_mode = 'identity-guard'
-                else:
-                    try:
-                        answer = self._chat_provider()
-                    except Exception as exc:
-                        answer = self._chat_local_fallback(exc)
-                    if looks_garbled(answer, text):
-                        answer = _repair_answer(self, text, answer)
-                    answer = clean_display_text(answer)
+                try:
+                    answer = self._chat_provider()
+                except Exception as exc:
+                    answer = self._chat_local_fallback(exc)
+                if looks_garbled(answer, text):
+                    answer = _repair_answer(self, text, answer)
+                answer = clean_display_text(answer)
             self.memory.add_message(self.session_id, 'assistant', answer)
             self._maybe_auto_summary()
             return answer
@@ -211,10 +200,92 @@ def _rebrand_chat_history(app) -> None:
     except Exception:
         pass
 
-# Remaining GUI/security compatibility hooks are intentionally kept in their existing modules.
-# run_adaptive_gui is imported by desktop_app.py from this module in the full repository.
+
+def _install_security_gui_hooks(gui_module) -> None:
+    from .security.approval_ui import ask_approval
+    from .security.audit_ui import show_audit_viewer
+    from .security.policy import ApprovalDecision
+    from .ui_command_center import show_command_center
+
+    def v7_confirm_tool(self, tool: str, args: dict):
+        event = threading.Event()
+        result = {'decision': ApprovalDecision.DENY.value}
+
+        def ask() -> None:
+            try:
+                if isinstance(args, dict) and '__approval__' in args:
+                    result['decision'] = ask_approval(self.root, tool, args)
+                else:
+                    from tkinter import messagebox
+                    allowed = messagebox.askyesno(
+                        'JARVIS V7 // Permission Gate',
+                        f'Allow this local action?\n\nTool: {tool}\n\nArguments:\n{args}\n\nOnly approve if this matches your request.'
+                    )
+                    result['decision'] = ApprovalDecision.ALLOW_ONCE.value if allowed else ApprovalDecision.DENY.value
+                if result['decision'] == ApprovalDecision.CANCEL_MISSION.value:
+                    try:
+                        self.jarvis.cancel_mission()
+                    except Exception:
+                        pass
+            finally:
+                event.set()
+
+        self.root.after(0, ask)
+        event.wait()
+        return result['decision']
+
+    gui_module.JarvisDesktop._confirm_tool = v7_confirm_tool
+    original_right = gui_module.JarvisDesktop._build_right_panel
+
+    def v75_right_panel(self, parent):
+        original_right(self, parent)
+        def open_command_center() -> None:
+            show_command_center(self.root, self.jarvis)
+        def open_audit() -> None:
+            store = getattr(getattr(self.jarvis, 'tools', None), 'audit', None)
+            show_audit_viewer(self.root, store)
+        self._button(parent, 'COMMAND CENTER', open_command_center, gui_module.CYAN).pack(fill='x', padx=10, pady=(2, 1), before=self.status)
+        self._button(parent, 'AUDIT VIEWER', open_audit, gui_module.GOLD).pack(fill='x', padx=10, pady=(2, 1), before=self.status)
+
+    gui_module.JarvisDesktop._build_right_panel = v75_right_panel
 
 
 def run_adaptive_gui() -> None:
-    from .gui import run_gui
-    run_gui()
+    import tkinter as tk
+    from . import gui as gui_module
+    from .ui_command_center import show_command_center
+
+    root = tk.Tk()
+    screen_w = max(800, root.winfo_screenwidth())
+    screen_h = max(600, root.winfo_screenheight())
+    compact = screen_h <= 820 or screen_w <= 1400
+    if compact:
+        try:
+            current_scale = float(root.tk.call('tk', 'scaling'))
+            root.tk.call('tk', 'scaling', max(1.0, current_scale * 0.93))
+        except Exception:
+            pass
+        original_hud = gui_module.ArcReactorHUD
+        class CompactArcReactorHUD(original_hud):
+            def __init__(self, parent, size: int = 220, bg: str = '#07131d'):
+                super().__init__(parent, size=min(size, 190), bg=bg)
+        gui_module.ArcReactorHUD = CompactArcReactorHUD
+        def compact_button(parent, text: str, command: Callable, accent: str = gui_module.CYAN):
+            return tk.Button(parent, text=text, command=command, bg='#0b2a3a', fg=accent, activebackground='#12445b', activeforeground='white', relief='flat', cursor='hand2', padx=8, pady=4, font=('Segoe UI', 8, 'bold'), highlightthickness=1, highlightbackground='#123f51')
+        gui_module.JarvisDesktop._button = staticmethod(compact_button)
+
+    _install_security_gui_hooks(gui_module)
+    app = gui_module.JarvisDesktop(root)
+    root.title('JARVIS AI OMEGA V7 // RELIABLE ARC DESKTOP AGENT')
+    _rebrand_widget_tree(root)
+    _rebrand_chat_history(app)
+    root.bind('<Control-Shift-A>', lambda _event: __import__('jarvis.security.audit_ui', fromlist=['show_audit_viewer']).show_audit_viewer(root, getattr(getattr(app.jarvis, 'tools', None), 'audit', None)))
+    root.bind('<Control-Shift-C>', lambda _event: show_command_center(root, app.jarvis))
+    if compact:
+        root.minsize(min(1040, screen_w - 40), min(620, screen_h - 100))
+    try:
+        if os.name == 'nt':
+            root.state('zoomed')
+    except Exception:
+        pass
+    root.mainloop()
