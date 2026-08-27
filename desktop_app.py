@@ -1,5 +1,6 @@
 import json
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -67,11 +68,59 @@ def first_run_healthcheck() -> int:
         return 1
 
 
+def tts_worker_healthcheck() -> int:
+    try:
+        from jarvis.tts_worker import runtime_healthcheck
+
+        payload = runtime_healthcheck()
+        payload['frozen'] = bool(getattr(sys, 'frozen', False))
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0 if payload.get('status') == 'PASS' and payload['frozen'] else 1
+    except Exception as exc:
+        print(json.dumps({'status': 'FAIL', 'error': str(exc)}, ensure_ascii=False))
+        return 1
+
+
+def packaged_tts_healthcheck() -> int:
+    """Verify the frozen EXE can enter its TTS worker path without launching the GUI."""
+    if not bool(getattr(sys, 'frozen', False)):
+        print(json.dumps({'status': 'FAIL', 'frozen': False, 'error': 'Packaged TTS check requires frozen EXE.'}))
+        return 2
+    try:
+        completed = subprocess.run(
+            [sys.executable, '--tts-worker-healthcheck'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        payload = {
+            'status': 'PASS' if completed.returncode == 0 else 'FAIL',
+            'frozen': True,
+            'worker_exit_code': completed.returncode,
+            'worker_started_without_gui': completed.returncode == 0,
+        }
+        if completed.stdout.strip():
+            try:
+                payload['worker'] = json.loads(completed.stdout.strip().splitlines()[-1])
+            except Exception:
+                payload['worker_output_present'] = True
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0 if payload['status'] == 'PASS' else 1
+    except Exception as exc:
+        print(json.dumps({'status': 'FAIL', 'frozen': True, 'error': str(exc)}, ensure_ascii=False))
+        return 1
+
+
 def _is_edge_playback_worker_invocation() -> bool:
     return len(sys.argv) >= 3 and sys.argv[1] == '-m' and sys.argv[2] == 'edge_playback'
 
 
 def main() -> int:
+    if '--tts-worker-healthcheck' in sys.argv:
+        return tts_worker_healthcheck()
+
     # VoiceOutput historically launches ``sys.executable -m edge_playback`` so it
     # can interrupt playback. In a PyInstaller build sys.executable is this JARVIS
     # EXE, not python.exe. Route that child invocation before bootstrap/UI imports
@@ -85,6 +134,8 @@ def main() -> int:
         return packaged_healthcheck()
     if '--first-run-healthcheck' in sys.argv:
         return first_run_healthcheck()
+    if '--tts-runtime-healthcheck' in sys.argv:
+        return packaged_tts_healthcheck()
 
     # Bootstrap must happen before importing modules that materialize global
     # Settings/JarvisOmega. A fresh packaged install therefore reaches a proper
