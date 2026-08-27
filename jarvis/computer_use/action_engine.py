@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 
+from .display_context import get_display_context
 from .targets import TargetMatch, choose_target
 from .visual_fallback import VisualTargetBackend
 from .windows_ui import WindowsUIBackend
@@ -31,6 +32,7 @@ class ComputerActionEngine:
             'confidence_threshold': self.confidence_threshold,
             'visual_fallback': visual.as_dict(),
             'visual_threshold': self.visual_threshold,
+            'display': get_display_context().as_dict(),
         }
 
     @staticmethod
@@ -79,6 +81,50 @@ class ComputerActionEngine:
             items = [target.safe_dict() for target in targets[: max(1, min(int(limit), 50))]]
         return {'backend': self.status(), 'count': len(items), 'targets': items}
 
+    def _prepare_uia_target(self, query: str, match: TargetMatch, *, window_hint: str) -> tuple[TargetMatch, dict]:
+        if not match.resolved or self._is_visual(match):
+            return match, {'supported': False, 'ready': bool(match.resolved), 'reason': 'UIA focus recovery not applicable.'}
+        ensure_ready = getattr(self.backend, 'ensure_ready', None)
+        if not callable(ensure_ready):
+            return match, {'supported': False, 'ready': True, 'reason': 'Backend does not expose focus recovery.'}
+
+        assert match.target is not None
+        evidence = dict(ensure_ready(match.target))
+        evidence['supported'] = True
+        if evidence.get('ready'):
+            return match, evidence
+
+        # UI trees can become stale between resolution and action. Refresh UIA once,
+        # but do not silently switch to visual clicking during recovery.
+        targets = self.backend.enumerate_targets(window_hint=window_hint)
+        refreshed = choose_target(
+            query,
+            targets,
+            window_hint=window_hint,
+            threshold=self.confidence_threshold,
+        )
+        evidence['refresh_attempted'] = True
+        if not refreshed.resolved:
+            evidence['refresh_reason'] = refreshed.reason
+            return TargetMatch(None, refreshed.confidence, f'Target became stale before action. {refreshed.reason}', refreshed.alternatives), evidence
+
+        assert refreshed.target is not None
+        refreshed_evidence = dict(ensure_ready(refreshed.target))
+        evidence['refresh'] = refreshed_evidence
+        if not refreshed_evidence.get('ready'):
+            return TargetMatch(None, refreshed.confidence, 'Target was re-resolved but its window could not be made ready safely.', refreshed.alternatives), evidence
+        return refreshed, evidence
+
+    def _observe_until(self, target, predicate, *, timeout: float = 0.8, interval: float = 0.08) -> dict:
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        observed = self.backend.observe(target)
+        while time.monotonic() < deadline and not predicate(observed):
+            if observed.get('exists') is False:
+                break
+            time.sleep(max(0.01, min(float(interval), 0.2)))
+            observed = self.backend.observe(target)
+        return observed
+
     def _visual_click(self, match: TargetMatch) -> dict:
         assert match.target is not None
         try:
@@ -123,11 +169,34 @@ class ComputerActionEngine:
         if self._is_visual(match):
             return self._visual_click(match)
 
+        match, readiness = self._prepare_uia_target(target, match, window_hint=window_hint)
+        if not match.resolved:
+            return {
+                'ok': False,
+                'error': 'The UI target changed or lost a safely recoverable window before the click.',
+                'confidence': round(match.confidence, 4),
+                'reason': match.reason,
+                'alternatives': list(match.alternatives),
+                'focus_recovery': readiness,
+            }
+
         assert match.target is not None
         before = self.backend.observe(match.target)
-        after = self.backend.click(match.target)
-        time.sleep(0.08)
-        observed = self.backend.observe(match.target)
+        try:
+            after = self.backend.click(match.target)
+        except Exception as exc:
+            return {
+                'ok': False,
+                'error': f'UI click failed: {type(exc).__name__}: {exc}',
+                'target': match.target.safe_dict(),
+                'confidence': round(match.confidence, 4),
+                'resolution_backend': 'windows-uia',
+                'focus_recovery': readiness,
+            }
+        observed = self._observe_until(
+            match.target,
+            lambda row: bool(row.get('focused') is True or row.get('selected') is True or row.get('exists') is False or row.get('value') != before.get('value')),
+        )
         verification = self._verify_click(before, after, observed)
         return {
             'ok': True,
@@ -135,6 +204,7 @@ class ComputerActionEngine:
             'confidence': round(match.confidence, 4),
             'resolution_backend': 'windows-uia',
             'action': 'click',
+            'focus_recovery': readiness,
             'verification': verification,
         }
 
@@ -150,6 +220,20 @@ class ComputerActionEngine:
             }
         assert match.target is not None
         visual = self._is_visual(match)
+        readiness = {'supported': False, 'ready': True, 'reason': 'Visual target uses click-to-focus.'}
+        if not visual:
+            match, readiness = self._prepare_uia_target(target, match, window_hint=window_hint)
+            if not match.resolved:
+                return {
+                    'ok': False,
+                    'error': 'The UI target changed or lost a safely recoverable window before typing.',
+                    'confidence': round(match.confidence, 4),
+                    'reason': match.reason,
+                    'alternatives': list(match.alternatives),
+                    'focus_recovery': readiness,
+                }
+            assert match.target is not None
+
         try:
             import pyautogui
             if visual:
@@ -165,6 +249,7 @@ class ComputerActionEngine:
                 'target': match.target.safe_dict(),
                 'confidence': round(match.confidence, 4),
                 'resolution_backend': 'local-ocr' if visual else 'windows-uia',
+                'focus_recovery': readiness,
             }
 
         if visual:
@@ -185,11 +270,12 @@ class ComputerActionEngine:
                 },
             }
 
-        time.sleep(0.08)
         observed = self.backend.observe(match.target)
         value = observed.get('value')
         if isinstance(value, str):
-            verified = value.endswith(str(text)) or str(text) in value
+            observed = self._observe_until(match.target, lambda row: isinstance(row.get('value'), str) and str(text) in row.get('value', ''))
+            value = observed.get('value')
+            verified = isinstance(value, str) and (value.endswith(str(text)) or str(text) in value)
             verification = {
                 'status': 'VERIFIED' if verified else 'FAILED',
                 'verified': verified,
@@ -207,6 +293,7 @@ class ComputerActionEngine:
             'confidence': round(match.confidence, 4),
             'resolution_backend': 'windows-uia',
             'action': 'type',
+            'focus_recovery': readiness,
             'verification': verification,
         }
 
@@ -222,6 +309,12 @@ class ComputerActionEngine:
                     'exists': observed.get('exists'),
                 },
             }
+        if before.get('value') != observed.get('value') and (before.get('value') is not None or observed.get('value') is not None):
+            return {
+                'status': 'VERIFIED',
+                'verified': True,
+                'evidence': {'value_changed': True, 'exists': observed.get('exists')},
+            }
         if observed.get('exists') is False:
             return {
                 'status': 'PARTIAL',
@@ -235,5 +328,6 @@ class ComputerActionEngine:
                 'focused': observed.get('focused'),
                 'selected': observed.get('selected'),
                 'exists': observed.get('exists'),
+                'after_action_observation': bool(observed.get('observed')),
             },
         }
