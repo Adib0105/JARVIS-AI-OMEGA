@@ -32,6 +32,19 @@ class FakeBackend:
         return self.observe(target)
 
 
+class FocusAwareBackend(FakeBackend):
+    def __init__(self, targets=None, *, stale_once=False):
+        super().__init__(targets=targets, focus_after=True)
+        self.stale_once = stale_once
+        self.ensure_calls = 0
+
+    def ensure_ready(self, target):
+        self.ensure_calls += 1
+        if self.stale_once and self.ensure_calls == 1:
+            return {'ready': False, 'exists': False, 'reason': 'stale wrapper'}
+        return {'ready': True, 'exists': True, 'visible': True, 'enabled': True, 'window_focused': True}
+
+
 class V7ComputerUseTests(unittest.TestCase):
     def setUp(self):
         self.downloads = UITarget(
@@ -67,6 +80,24 @@ class V7ComputerUseTests(unittest.TestCase):
         self.assertTrue(result['ok'])
         self.assertEqual(result['verification']['status'], 'VERIFIED')
         self.assertTrue(result['verification']['verified'])
+
+    def test_semantic_click_recovers_window_focus_before_action(self):
+        backend = FocusAwareBackend([self.downloads])
+        engine = ComputerActionEngine(backend, confidence_threshold=0.82)
+        result = engine.semantic_click('Downloads', window_hint='File Explorer')
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['focus_recovery']['supported'])
+        self.assertTrue(result['focus_recovery']['ready'])
+        self.assertEqual(backend.ensure_calls, 1)
+
+    def test_stale_uia_target_is_refreshed_once_before_action(self):
+        backend = FocusAwareBackend([self.downloads], stale_once=True)
+        engine = ComputerActionEngine(backend, confidence_threshold=0.82)
+        result = engine.semantic_click('Downloads', window_hint='File Explorer')
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['focus_recovery']['refresh_attempted'])
+        self.assertTrue(result['focus_recovery']['refresh']['ready'])
+        self.assertEqual(backend.ensure_calls, 2)
 
     def test_semantic_type_can_be_partial_when_value_readback_unavailable(self):
         engine = ComputerActionEngine(FakeBackend([self.downloads]), confidence_threshold=0.82)
