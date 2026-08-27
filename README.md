@@ -31,6 +31,7 @@ Runtime diagnostics use the more precise states `INSTALLED`, `CONFIGURED`, `LOCA
 | Compatibility mission entry point | TESTED | `jarvis.core_v7.JarvisOmega.run_mission()` is an orchestrator wrapper using the audited recording tool runtime; the duplicated legacy mission loop has been removed. |
 | Provider/model routing | TESTED | Contract, timeout, error classification and fallback behavior are automated. Real provider inference is NOT VERIFIED until tested with a real credential on the exact packaged build. |
 | Response-quality runtime | TESTED | Stable free-text routing, deterministic local identity handling, garbled-response repair and desktop cleanup are composed directly into `JarvisOmega`; startup no longer monkey-patches `chat()` or `_select_model()`. |
+| Runtime/UI composition | TESTED | Voice controls and RELEASE/SKILLS Command Center features are composed through subclasses. Historical installer functions remain no-op compatibility shims; packaged startup no longer mutates core or UI classes. |
 | Computer Use V2 logic | TESTED | UIA-first targeting, ambiguity rejection, OCR fallback and partial/unverified evidence behavior are automated. Real desktop/UI/device E2E is NOT VERIFIED. |
 | Voice/TTS worker/package path | TESTED | Frozen-worker routing and software state transitions are automated. Audible speaker output is NOT VERIFIED unless a person actually hears the exact packaged build. |
 | Microphone/speech input | LIMITED | Package/config presence can be diagnosed; physical microphone capture/recognition is NOT VERIFIED without a real device test. |
@@ -42,7 +43,6 @@ Runtime diagnostics use the more precise states `INSTALLED`, `CONFIGURED`, `LOCA
 | Skill lifecycle runtime | TESTED | Skill build/activation methods are declared directly on the public core; the historical installer function is now a no-op compatibility shim. |
 | Windows EXE + installer CI | TESTED | CI builds the frozen EXE and installer, runs package healthchecks and performs isolated install/uninstall validation. This is not a substitute for human GUI/device E2E. |
 | Real Windows GUI/device/live-provider E2E | NOT VERIFIED | Must be recorded separately for the exact candidate using the Windows E2E checklist. |
-| Remaining UI extension mutation | LIMITED | Voice and Command Center UI compatibility extensions still replace selected UI methods at startup. Core chat/model/skill runtime mutation has been removed; further UI composition migration remains technical debt. |
 
 ## Versioning
 
