@@ -1,9 +1,9 @@
 #define MyAppName "JARVIS AI OMEGA"
 #ifndef MyAppVersion
-  #define MyAppVersion "8.0.0-rc1"
+  #error MyAppVersion must be supplied by build_installer.ps1 from jarvis.version
 #endif
 #ifndef MyWindowsVersion
-  #define MyWindowsVersion "8.0.0.1"
+  #error MyWindowsVersion must be supplied by build_installer.ps1 from jarvis.version
 #endif
 #define MyAppPublisher "Adib Azam"
 #define MyAppExeName "JARVIS-OMEGA-V7.exe"
