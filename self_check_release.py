@@ -15,6 +15,9 @@ from jarvis.storage import BackupManager, SchemaMigrator
 from jarvis.version import APP_VERSION
 
 
+MINIMUM_PYTHON = (3, 11)
+
+
 def line(status: str, name: str, detail: str = '') -> None:
     suffix = f' - {detail}' if detail else ''
     print(f'[{status}] {name}{suffix}')
@@ -37,7 +40,11 @@ def main() -> int:
 
     print(f'JARVIS AI OMEGA {APP_VERSION} // ENGINEERING SELF CHECK')
     print('=' * 64)
-    report(sys.version_info >= (3, 10), 'Python', sys.version.split()[0])
+    report(
+        sys.version_info >= MINIMUM_PYTHON,
+        'Python',
+        f"{sys.version.split()[0]} (minimum {MINIMUM_PYTHON[0]}.{MINIMUM_PYTHON[1]})",
+    )
 
     try:
         health = JarvisHealthSystem(settings.db_path).run().as_dict()
@@ -90,10 +97,10 @@ def main() -> int:
         from jarvis.skills import SkillRegistry
         from jarvis.skills.activation import SkillActivationEngine
         _ = (ControlledReleaseEngine, SkillRegistry, SkillActivationEngine)
-        report(True, 'Controlled release + skill gates', 'release/rollback and deployed-only skill activation modules loaded')
+        report(True, 'Controlled release + skill modules', 'release/rollback and deployed-only skill activation modules import successfully')
     except Exception as exc:
         failures += 1
-        line('FAIL', 'Controlled release + skills', f'{type(exc).__name__}: {exc}')
+        line('FAIL', 'Controlled release + skill modules', f'{type(exc).__name__}: {exc}')
 
     try:
         policy = SelfDevelopmentPolicy()
@@ -122,25 +129,25 @@ def main() -> int:
     try:
         offline = OfflineDevelopmentRuntime().status().as_dict()
         if offline['configured'] and offline['enabled']:
-            line('PASS', 'Offline development', f"{offline['provider']} / {offline['model']}")
+            line('PASS', 'Offline development configuration', f"{offline['provider']} / {offline['model']}")
         else:
             warnings += 1
-            line('WARN', 'Offline development', offline['message'])
+            line('WARN', 'Offline development configuration', offline['message'])
     except Exception as exc:
         warnings += 1
-        line('WARN', 'Offline development', f'{type(exc).__name__}: {exc}')
+        line('WARN', 'Offline development configuration', f'{type(exc).__name__}: {exc}')
 
     package_script = ROOT / 'build_windows.ps1'
     installer_script = ROOT / 'build_installer.ps1'
-    report(package_script.is_file(), 'Windows build script', str(package_script))
-    report(installer_script.is_file(), 'Windows installer script', str(installer_script))
+    report(package_script.is_file(), 'Windows build script present', str(package_script))
+    report(installer_script.is_file(), 'Windows installer script present', str(installer_script))
 
     readiness_summary = None
     try:
         readiness_summary = ReleaseReadinessCertifier().certify().as_dict()
         report(
             readiness_summary['software_ready'],
-            'Automated release readiness',
+            'Automated software readiness',
             f"failures={readiness_summary['failures']}; warnings={readiness_summary['warnings']}",
         )
         pending_live = [
@@ -162,6 +169,7 @@ def main() -> int:
     print('=' * 64)
     print(json.dumps({
         'app_version': APP_VERSION,
+        'minimum_python': f'{MINIMUM_PYTHON[0]}.{MINIMUM_PYTHON[1]}',
         'failures': failures,
         'warnings': warnings,
         'production_self_modification': settings.production_self_modification,
