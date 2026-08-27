@@ -1,27 +1,26 @@
-# JARVIS OMEGA V7 — Computer Use
+# JARVIS AI OMEGA — Computer Use 3.0
 
 ## Objective
 
-V7 moves desktop control away from “guess an x/y coordinate” toward:
+The current computer-use path moves desktop control away from “guess an x/y coordinate” toward:
 
 ```text
 Semantic request
-  -> visible UI discovery
+  -> visible UI discovery (UIA first)
   -> target ranking
-  -> confidence check
+  -> confidence / ambiguity check
   -> capability approval
+  -> target/window readiness + focus recovery
   -> action
-  -> post-action observation
-  -> verification status
+  -> bounded post-action observation
+  -> VERIFIED / PARTIAL / FAILED evidence
 ```
 
-The old PyAutoGUI coordinate tools remain available as an explicit/manual fallback. They are not the preferred semantic path.
+The historical PyAutoGUI coordinate/focused-input tools remain available as explicit compatibility tools. They are not the preferred semantic path.
 
-## Semantic UI backend
+## Windows semantic UI backend
 
-On Windows, V7 can optionally use the UI Automation accessibility tree through `pywinauto` with the UIA backend.
-
-The backend extracts safe target metadata such as:
+Windows releases install and package the pinned `pywinauto` UIA runtime. The semantic backend reads safe accessibility metadata such as:
 
 - visible label/name
 - control type
@@ -29,98 +28,94 @@ The backend extracts safe target metadata such as:
 - automation ID
 - bounding rectangle
 - enabled/visible state
+- focus/selection/value observations when exposed
+- per-window DPI when Windows exposes it
 
-No OCR is required for normal accessibility-labeled controls.
+If UIA is unavailable, JARVIS reports that state. It does **not** fabricate a semantic target.
 
-If the optional backend is unavailable, V7 reports that semantic targeting is unavailable. It does **not** fabricate a target.
+## Display and DPI context
 
-## Confidence
+`computer_status` reports the current Windows virtual-desktop geometry, monitor count, primary dimensions, system DPI and derived scale percentage when available.
 
-Target ranking combines:
+OCR fallback uses virtual-desktop coordinates, including negative coordinates for monitors positioned left/above the primary display. This avoids assuming that screen origin is always `(0, 0)` on a multi-monitor workstation.
 
-- exact name match
-- substring match
-- fuzzy text similarity
-- token overlap
-- automation ID similarity
-- optional window-title hint
+Physical multi-monitor and 100/125/150% DPI behavior still requires real Windows E2E evidence for the exact packaged candidate.
 
-Default semantic confidence threshold: **0.82**.
+## Confidence and ambiguity
 
-A target is rejected when:
+Target ranking combines exact/substring/fuzzy text, token overlap, automation ID similarity and an optional window-title hint. Default semantic confidence threshold is **0.82**.
 
-- best confidence is below threshold
+A target is rejected rather than guessed when:
+
+- confidence is below threshold
 - top candidates are too close/ambiguous
 - no visible target matches
+- a previously resolved UIA target becomes stale and cannot be safely re-resolved
+- the target window cannot be restored/focused safely
 
-The returned error explicitly says JARVIS cannot confidently identify the target and will not guess.
+OCR fallback uses a stricter default threshold (**0.88**). An ambiguous UIA result is not silently bypassed by OCR.
 
-## Semantic actions
+## Runtime tools
 
-V7 adds model-callable tools:
+When desktop automation is enabled, the main ToolRegistry exposes:
 
-- `computer_ui_status`
+- `computer_status`
 - `list_ui_targets`
 - `semantic_click`
 - `semantic_type`
 
-`semantic_click` and `semantic_type` are high-risk capability-gated actions.
+The older `type_text`, `press_key`, `hotkey`, and `click_screen` tools remain compatibility paths.
 
-### Click verification
+`semantic_click` and `semantic_type` are explicitly classified as **HIGH** risk and capability-gated. They require screen-read plus the relevant screen/mouse/keyboard capabilities.
 
-After a semantic click, V7 re-observes the accessibility target. Focus/selection changes can provide verified evidence. If the UIA state does not prove the higher-level outcome, the action remains `PARTIAL` rather than falsely `VERIFIED`.
+## Focus recovery
 
-### Type verification
+Before a UIA semantic action, JARVIS re-checks that the resolved target exists, is visible and enabled. It then attempts to restore a minimized top-level window and focus that window.
 
-After focusing a semantic target, text is typed through the existing PyAutoGUI layer. When UI Automation exposes a readable value, V7 compares the resulting value. If value readback is unavailable, the result remains `PARTIAL`.
+If the wrapper became stale, the engine performs one bounded UIA refresh/re-resolution. It does not silently switch to an OCR click during stale-target recovery.
 
-## Browser abstraction
+## Post-action verification
 
-V7 adds:
+### Click
 
-- `browser_agent_open`
-- `browser_agent_search`
-- `browser_agent_read`
-- `browser_agent_extract`
+After a semantic click the engine performs bounded re-observation. Focus, selection or a readable value change can provide `VERIFIED` evidence. A disappearing target or an observed click without proof of the higher-level outcome remains `PARTIAL` rather than being promoted to success evidence.
 
-Opening/searching uses the user's default browser and returns process-level evidence. Browser process detection does not prove a page loaded, so browser open/search remains `PARTIAL` unless stronger evidence is available.
+### Type
 
-Reading/extraction uses a separate HTTP page reader and explicitly tags returned webpage data:
+After focus recovery, typing uses the existing local input layer. When UIA exposes a readable value, JARVIS polls briefly for the typed text and returns `VERIFIED` or `FAILED`. If value readback is unavailable, the action remains `PARTIAL`.
 
-```json
-{"untrusted_content": true}
-```
-
-Webpage text is data, not system instructions. JARVIS must not follow malicious instructions embedded in fetched pages.
+OCR-based click/type can establish target-location confidence, but without an independent semantic outcome observation it remains `PARTIAL`.
 
 ## Security
 
-Relevant capabilities:
+Relevant capabilities include:
 
 - `SCREEN_READ`
 - `SCREEN_CONTROL`
 - `MOUSE_CONTROL`
 - `KEYBOARD_CONTROL`
-- `BROWSER_READ`
-- `BROWSER_CONTROL`
+- `APP_CONTROL`
 
-Semantic click/type always passes through the V7 capability policy and Approval Center before execution.
+Semantic actions pass through the same canonical capability permission gate and audited tool runtime as the rest of JARVIS. A semantic engine result with `ok: false` is preserved as a tool failure; it is not wrapped in a fake outer success result.
 
-The mission audit trail persists sanitized argument summaries and verification evidence, not raw typed/file/email content.
-
-## Fallback philosophy
-
-Preferred order:
+## Preferred fallback order
 
 1. semantic UI Automation target
-2. ask user when target confidence is low
-3. exact coordinate action only when the user/tool context deliberately supplies coordinates
+2. local OCR fallback when UIA cannot resolve a target and OCR confidence is sufficiently high
+3. ask/stop when target identity is low-confidence or ambiguous
+4. explicit coordinate action only when a deliberate workflow supplies coordinates
 
-V7 does not silently invent coordinates.
+JARVIS does not invent coordinates.
+
+## Still requires real-machine evidence
+
+Repository tests and Windows CI can validate dependency packaging, policy behavior, scoring, stale-target recovery logic and evidence contracts. They cannot prove real physical interaction.
+
+Before final release, validate the exact packaged build on a real Windows workstation for Chrome/Notepad (or equivalent targets), focus loss, minimized/moved windows, wrong/missing targets, keyboard/mouse effects, OCR, multiple displays and common DPI scales. Use `docs/WINDOWS-E2E-CHECKLIST.md` and record the exact build SHA.
 
 ## Known limitations
 
-- UI Automation quality depends on the target Windows application exposing accessible control metadata.
-- Games, custom-rendered canvases and some Chromium/web content may expose incomplete accessibility trees.
-- Browser DOM automation is not silently installed or enabled. Visible browser controls may be driven through the same UIA semantic layer when confidently discoverable; public page reading uses HTTP extraction.
-- Screen-vision-assisted target detection is not automatically invoked by semantic click; image/screen upload remains an explicit user-permission path.
+- UI Automation quality depends on applications exposing useful accessibility metadata.
+- Games, custom-rendered canvases and some web surfaces may expose incomplete UIA trees.
+- OCR fallback remains optional and reports unavailable if its local OCR runtime is not installed.
+- This layer does not claim DOM-level browser control, browser-profile introspection or login-session extraction.
