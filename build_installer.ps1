@@ -1,11 +1,15 @@
-param(
-    [string]$Version = '8.0.0-rc1',
-    [string]$WindowsVersion = '8.0.0.1'
-)
-
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
+
+$Python = Join-Path $Root '.venv\Scripts\python.exe'
+if (-not (Test-Path $Python)) {
+    $Python = (Get-Command python -ErrorAction Stop).Source
+}
+$Version = (& $Python -c "from jarvis.version import APP_VERSION; print(APP_VERSION)").Trim()
+if ($LASTEXITCODE -ne 0 -or -not $Version) { throw 'Could not read canonical application version.' }
+$WindowsVersion = (& $Python -c "from jarvis.version import WINDOWS_FILE_VERSION; print(WINDOWS_FILE_VERSION)").Trim()
+if ($LASTEXITCODE -ne 0 -or -not $WindowsVersion) { throw 'Could not derive canonical Windows file version.' }
 
 $Iss = Join-Path $Root 'installer\JarvisOmega.iss'
 $BuiltExe = Join-Path $Root 'dist\JARVIS-OMEGA-V7\JARVIS-OMEGA-V7.exe'
@@ -35,4 +39,5 @@ if (-not (Test-Path $Installer)) { throw "Expected installer was not created: $I
 $Hash = Get-FileHash $Installer -Algorithm SHA256
 $Hash.Hash | Set-Content (Join-Path $Root 'dist\installer\SHA256.txt')
 Write-Host "Installer ready: $Installer" -ForegroundColor Green
+Write-Host "Version: $Version ($WindowsVersion)" -ForegroundColor Green
 Write-Host "SHA-256: $($Hash.Hash)" -ForegroundColor Green
