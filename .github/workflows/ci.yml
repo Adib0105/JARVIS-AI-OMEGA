@@ -30,8 +30,8 @@ jobs:
         with: {fetch-depth: 0}
       - uses: actions/setup-python@v6
         with: {python-version: '${{ matrix.python-version }}'}
-      - run: python -m pip install --upgrade pip
-      - run: pip install -r requirements.txt
+      - run: python -m pip install pip==26.2.1
+      - run: pip install -c constraints-release.txt -r requirements.txt
       - run: python -m compileall -f -q .
       - name: Full regression
         shell: bash
@@ -46,7 +46,7 @@ jobs:
           if-no-files-found: ignore
 
   windows-regression:
-    name: windows-regression (3.14)
+    name: windows-regression (3.14.7)
     runs-on: windows-latest
     env:
       PYTHONWARNINGS: error::ResourceWarning
@@ -60,10 +60,10 @@ jobs:
       - uses: actions/checkout@v5
         with: {fetch-depth: 0}
       - uses: actions/setup-python@v6
-        with: {python-version: '3.14'}
-      - run: python -m pip install --upgrade pip
-      - run: pip install -r requirements.txt
-      - run: pip install -r requirements-windows.txt
+        with: {python-version: '3.14.7'}
+      - run: python -m pip install pip==26.2.1
+      - run: pip install -c constraints-release.txt -r requirements.txt
+      - run: pip install -c constraints-release.txt -r requirements-windows.txt
       - run: python -m compileall -f -q .
       - name: Full Windows regression suite
         shell: pwsh
@@ -87,15 +87,15 @@ jobs:
       - uses: actions/checkout@v5
         with: {fetch-depth: 0}
       - uses: actions/setup-python@v6
-        with: {python-version: '3.14'}
+        with: {python-version: '3.14.7'}
       - name: Build EXE
         shell: pwsh
         run: |
           python -m venv .venv
-          .\.venv\Scripts\python.exe -m pip install --upgrade pip
-          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-          .\.venv\Scripts\python.exe -m pip install -r requirements-windows.txt
-          .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+          .\.venv\Scripts\python.exe -m pip install pip==26.2.1
+          .\.venv\Scripts\python.exe -m pip install -c constraints-release.txt -r requirements.txt
+          .\.venv\Scripts\python.exe -m pip install -c constraints-release.txt -r requirements-windows.txt
+          .\.venv\Scripts\python.exe -m pip install -c constraints-release.txt -r requirements-build.txt
           .\build_windows.ps1
           .\dist\JARVIS-OMEGA-V7\JARVIS-OMEGA-V7.exe --first-run-healthcheck | Tee-Object first-run-healthcheck.json
           if ($LASTEXITCODE -ne 0) { throw 'Packaged first-run bootstrap healthcheck failed.' }
@@ -112,7 +112,7 @@ jobs:
       - name: Build installer from canonical version
         shell: pwsh
         run: |
-          choco install innosetup --no-progress -y
+          choco install innosetup --version=6.7.1 --no-progress -y
           .\build_installer.ps1
           if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
           $setup = Get-ChildItem '.\dist\installer\JARVIS-AI-OMEGA-Setup-*.exe' | Select-Object -First 1
@@ -201,9 +201,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
-        with: {python-version: '3.14'}
-      - run: pip install -r requirements.txt
-      - run: pip install -r requirements-windows.txt
+        with: {python-version: '3.14.7'}
+      - run: python -m pip install pip==26.2.1
+      - run: pip install -c constraints-release.txt -r requirements.txt
+      - run: pip install -c constraints-release.txt -r requirements-windows.txt
       - name: Complete post-packaging regression
         shell: pwsh
         run: python -m unittest discover -s tests -v
