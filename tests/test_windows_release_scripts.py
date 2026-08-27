@@ -67,6 +67,23 @@ class WindowsReleaseScriptTests(unittest.TestCase):
             self.assertRegex(line, r'^[A-Za-z0-9_.-]+==[^=<>!~]+$')
             self.assertIsNone(re.search(r'(>=|<=|~=|!=|>|<)', line))
 
+    def test_installer_removes_known_historical_product_binaries(self):
+        installer = (ROOT / 'installer' / 'JarvisOmega.iss').read_text(encoding='utf-8')
+
+        self.assertIn('[InstallDelete]', installer)
+        self.assertIn('Type: files; Name: "{app}\\JARVIS-OMEGA-V7.exe"', installer)
+        self.assertIn('Type: files; Name: "{app}\\JARVIS-OMEGA-V6.exe"', installer)
+        self.assertNotIn('Type: filesandordirs; Name: "{localappdata}', installer.lower())
+
+    def test_ci_exercises_repair_upgrade_cleanup_and_user_data_preservation(self):
+        workflow = (ROOT / '.github' / 'workflows' / 'ci.yml').read_text(encoding='utf-8')
+
+        self.assertIn('repair-upgrade', workflow)
+        self.assertIn("'JARVIS-OMEGA-V7.exe'", workflow)
+        self.assertIn('Historical JARVIS-OMEGA-V7.exe remained after repair/upgrade install.', workflow)
+        self.assertIn('upgrade-preservation-test.txt', workflow)
+        self.assertIn('User data was unexpectedly deleted during repair/upgrade install.', workflow)
+
     def test_launchers_do_not_hardcode_legacy_product_versions(self):
         for name in ('run_desktop.bat', 'run_jarvis.bat'):
             launcher = (ROOT / name).read_text(encoding='utf-8')
