@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import queue
 import threading
-import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from jarvis.errors import ErrorCategory, classify_exception
 from jarvis.gui import JarvisDesktop
-from jarvis.providers.deadline import call_with_deadline, transport_timeout_seconds
+from jarvis.providers.deadline import call_with_deadline, request_deadline_seconds, transport_timeout_seconds
 from jarvis.providers.openrouter_provider import OpenRouterProvider
 
 
@@ -46,16 +46,24 @@ class InferenceLifecycleTests(unittest.TestCase):
         provider.client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
         return provider, completions
 
-    def test_hard_request_deadline_returns_control(self):
+    def test_request_deadline_contract_enforces_one_second_minimum(self):
+        self.assertEqual(request_deadline_seconds(0), 1.0)
+        self.assertEqual(request_deadline_seconds(0.05), 1.0)
+        self.assertEqual(request_deadline_seconds(1.0), 1.0)
+        self.assertEqual(request_deadline_seconds(2.5), 2.5)
+        self.assertEqual(request_deadline_seconds('invalid'), 60.0)
+
+    def test_hard_request_deadline_returns_control_at_production_floor(self):
         blocker = threading.Event()
-        started = time.perf_counter()
-        with self.assertRaisesRegex(TimeoutError, 'request deadline'):
-            call_with_deadline(lambda: blocker.wait(1.0), 0.05, operation='test request')
-        self.assertLess(time.perf_counter() - started, 0.5)
+        with patch('jarvis.providers.deadline.queue.Queue.get', side_effect=queue.Empty) as queue_get:
+            with self.assertRaisesRegex(TimeoutError, 'exceeded the 1s request deadline'):
+                call_with_deadline(lambda: blocker.wait(30.0), 0.05, operation='test request')
+        self.assertEqual(queue_get.call_args.kwargs['timeout'], 1.0)
 
     def test_transport_timeout_is_finite_and_shorter_than_long_request_budget(self):
         self.assertEqual(transport_timeout_seconds(60), 30.0)
         self.assertEqual(transport_timeout_seconds(10), 10.0)
+        self.assertEqual(transport_timeout_seconds(0.05), 1.0)
         self.assertEqual(transport_timeout_seconds(0), 1.0)
 
     def test_openrouter_success_uses_expected_endpoint_payload_model_and_non_streaming(self):
@@ -79,18 +87,20 @@ class InferenceLifecycleTests(unittest.TestCase):
         self.assertGreater(completions.last_kwargs['timeout'], 0)
         self.assertEqual(completions.last_kwargs['messages'][0]['role'], 'system')
 
-    def test_openrouter_request_timeout_is_finite(self):
+    def test_openrouter_request_timeout_is_finite_and_enforced(self):
         blocker = threading.Event()
-        provider, _completions = self._provider(lambda **_kwargs: blocker.wait(2.0))
-        started = time.perf_counter()
-        with self.assertRaises(TimeoutError):
-            provider.chat(
-                system='system',
-                messages=[{'role': 'user', 'content': 'Hello'}],
-                model='openrouter/free',
-                timeout=0.05,
-            )
-        self.assertLess(time.perf_counter() - started, 0.5)
+        provider, completions = self._provider(lambda **_kwargs: blocker.wait(30.0))
+        with patch('jarvis.providers.deadline.queue.Queue.get', side_effect=queue.Empty) as queue_get:
+            with self.assertRaisesRegex(TimeoutError, 'OpenRouter chat completion exceeded the 1s request deadline'):
+                provider.chat(
+                    system='system',
+                    messages=[{'role': 'user', 'content': 'Hello'}],
+                    model='openrouter/free',
+                    timeout=0.05,
+                )
+        self.assertEqual(queue_get.call_args.kwargs['timeout'], 1.0)
+        self.assertEqual(completions.last_kwargs['timeout'], 1.0)
+        self.assertIs(completions.last_kwargs['stream'], False)
 
     def test_openrouter_authentication_failure_propagates_status(self):
         provider, _ = self._provider(lambda **_kwargs: (_ for _ in ()).throw(_StatusError(401, 'Unauthorized')))
@@ -143,6 +153,7 @@ class InferenceLifecycleTests(unittest.TestCase):
         desktop._answer_done('', 'AI provider response timeout hua.', False)
         self.assertFalse(desktop.busy)
         self.assertTrue(any('ERROR:' in text for _speaker, text in appended))
+        self.assertTrue(any('timeout' in text.lower() for _speaker, text in appended))
 
     def test_worker_timeout_path_reaches_ui_cleanup(self):
         desktop = JarvisDesktop.__new__(JarvisDesktop)
@@ -154,6 +165,7 @@ class InferenceLifecycleTests(unittest.TestCase):
         desktop._append = lambda speaker, text: appended.append((speaker, text))
         desktop._answer_worker('Hello', [])
         self.assertFalse(desktop.busy)
+        self.assertTrue(any('ERROR:' in text for _speaker, text in appended))
         self.assertTrue(any('request deadline exceeded' in text for _speaker, text in appended))
 
 
