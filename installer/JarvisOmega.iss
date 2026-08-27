@@ -31,6 +31,13 @@ VersionInfoProductName={#MyAppName}
 VersionInfoProductVersion={#MyWindowsVersion}
 VersionInfoCompany={#MyAppPublisher}
 
+[InstallDelete]
+; Remove obsolete product binaries from historical installer layouts before copying
+; the canonical executable. This is intentionally scoped to known application files;
+; user data lives under LocalAppData and is not touched by upgrade cleanup.
+Type: files; Name: "{app}\JARVIS-OMEGA-V7.exe"
+Type: files; Name: "{app}\JARVIS-OMEGA-V6.exe"
+
 [Files]
 Source: "..\dist\JARVIS-OMEGA\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
