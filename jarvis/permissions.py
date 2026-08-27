@@ -1,54 +1,33 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Callable
 
 from .config import settings
+from .security.policy import CapabilityPermissionGate, PermissionOutcome
 
-
-@dataclass(frozen=True)
-class Decision:
-    allowed: bool
-    reason: str = ''
+# Backward-compatible public name. There is intentionally no second SAFE/APPROVAL
+# policy table here: all decisions are delegated to the canonical capability gate.
+Decision = PermissionOutcome
 
 
 class PermissionGate:
-    SAFE = {
-        'get_system_info', 'get_system_metrics', 'get_current_time',
-        'remember_fact', 'recall_memory', 'search_chat_history',
-        'search_knowledge', 'vector_search_knowledge', 'get_knowledge_stats',
-        'add_note', 'list_notes', 'search_notes', 'get_agenda',
-        'add_todo', 'list_todos', 'complete_todo',
-        'add_reminder', 'list_reminders',
-        'list_allowed_roots', 'search_web', 'search_news', 'read_web_page',
-    }
-    APPROVAL = {
-        'search_local_files', 'read_local_text_file', 'index_local_text_file',
-        'read_document', 'index_document',
-        'open_url', 'open_app', 'browser_search', 'open_local_path',
-        'type_text', 'press_key', 'hotkey', 'click_screen', 'capture_screen',
-        'list_code_tree', 'write_local_text_file', 'run_project_tests',
-        'git_status', 'git_diff', 'git_log',
-        # Google account data always remains approval-gated, including reads.
-        'google_status', 'gmail_search', 'gmail_send',
-        'calendar_upcoming', 'calendar_create',
-    }
+    """Legacy API adapter over the canonical V7 capability permission authority."""
 
-    def __init__(self, confirmer: Callable[[str, dict], bool] | None = None):
-        self.confirmer = confirmer
+    def __init__(self, confirmer: Callable[[str, dict], object] | None = None):
+        self._canonical = CapabilityPermissionGate(
+            confirmer,
+            require_approval=settings.require_local_approval,
+        )
 
-    def check(self, name: str, args: dict) -> Decision:
-        if name in self.SAFE:
-            return Decision(True)
-        if name in self.APPROVAL:
-            if not settings.require_local_approval:
-                # Cloud-account actions retain approval even if general local approval is disabled.
-                if name.startswith(('gmail_', 'calendar_', 'google_')):
-                    if self.confirmer and self.confirmer(name, args):
-                        return Decision(True)
-                    return Decision(False, 'Google account action was not approved by the user.')
-                return Decision(True)
-            if self.confirmer and self.confirmer(name, args):
-                return Decision(True)
-            return Decision(False, 'Action was not approved by the user.')
-        return Decision(False, f"Tool '{name}' is not permitted.")
+    @property
+    def confirmer(self):
+        return self._canonical.confirmer
+
+    def check(self, name: str, args: dict) -> PermissionOutcome:
+        return self._canonical.check(name, args)
+
+    def clear_session_grants(self) -> None:
+        self._canonical.clear_session_grants()
+
+    def consume_last_outcome(self) -> PermissionOutcome | None:
+        return self._canonical.consume_last_outcome()
