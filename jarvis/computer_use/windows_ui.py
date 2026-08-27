@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ctypes
 import os
 from dataclasses import dataclass
 
@@ -14,10 +15,11 @@ class BackendStatus:
 
 
 class WindowsUIBackend:
-    """Optional Windows UI Automation adapter.
+    """Windows UI Automation adapter backed by pywinauto/UIA.
 
-    V7 keeps PyAutoGUI as a coordinate fallback. Semantic targeting uses pywinauto/UIA
-    when installed. If unavailable, the agent reports that instead of guessing.
+    Semantic actions use UIA first and expose concrete pre/post observations. The
+    backend also attempts bounded focus recovery for a resolved target instead of
+    blindly sending input to whichever window currently owns focus.
     """
 
     def __init__(self) -> None:
@@ -62,6 +64,29 @@ class WindowsUIBackend:
         except Exception:
             return 0, 0, 0, 0
 
+    @staticmethod
+    def _safe_window_handle(wrapper) -> int | None:
+        try:
+            handle = int(getattr(wrapper, 'handle'))
+            return handle if handle > 0 else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _window_dpi(wrapper) -> int | None:
+        if os.name != 'nt':
+            return None
+        handle = WindowsUIBackend._safe_window_handle(wrapper)
+        if not handle:
+            return None
+        try:
+            get_dpi = ctypes.windll.user32.GetDpiForWindow
+            get_dpi.argtypes = [ctypes.c_void_p]
+            get_dpi.restype = ctypes.c_uint
+            return int(get_dpi(handle))
+        except Exception:
+            return None
+
     def enumerate_targets(self, *, window_hint: str = '', max_windows: int = 12, max_controls: int = 600) -> list[UITarget]:
         if self._desktop is None:
             return []
@@ -75,8 +100,6 @@ class WindowsUIBackend:
         for window in windows:
             title = self._safe_text(window)
             if hint and hint not in title.lower():
-                # Keep fuzzy title candidates but skip clearly unrelated windows only
-                # when an exact substring window hint was requested.
                 continue
             try:
                 descendants = [window] + list(window.descendants())
@@ -115,6 +138,57 @@ class WindowsUIBackend:
         return output
 
     @staticmethod
+    def ensure_ready(target: UITarget) -> dict:
+        """Re-check target state and recover its top-level window focus when possible."""
+        wrapper = target.backend_ref
+        if wrapper is None:
+            return {'ready': False, 'reason': 'Resolved target does not contain a UI Automation reference.'}
+
+        evidence: dict = {'ready': False, 'restored': False, 'window_focused': None}
+        try:
+            exists = bool(wrapper.exists(timeout=0.5))
+        except Exception:
+            exists = True
+        try:
+            visible = bool(wrapper.is_visible())
+        except Exception:
+            visible = target.visible
+        try:
+            enabled = bool(wrapper.is_enabled())
+        except Exception:
+            enabled = target.enabled
+        evidence.update({'exists': exists, 'visible': visible, 'enabled': enabled})
+        if not (exists and visible and enabled):
+            evidence['reason'] = 'Resolved target is no longer available, visible, and enabled.'
+            return evidence
+
+        try:
+            top = wrapper.top_level_parent()
+        except Exception:
+            top = wrapper
+        try:
+            if bool(top.is_minimized()):
+                top.restore()
+                evidence['restored'] = True
+        except Exception:
+            pass
+        try:
+            top.set_focus()
+            evidence['window_focused'] = True
+        except Exception as exc:
+            evidence['window_focused'] = False
+            evidence['focus_error'] = f'{type(exc).__name__}: {exc}'
+            return evidence
+
+        evidence['ready'] = True
+        evidence['window_title'] = WindowsUIBackend._safe_text(top) or target.window_title
+        dpi = WindowsUIBackend._window_dpi(top)
+        if dpi:
+            evidence['window_dpi'] = dpi
+            evidence['window_scale_percent'] = int(round(dpi * 100 / 96))
+        return evidence
+
+    @staticmethod
     def click(target: UITarget) -> dict:
         wrapper = target.backend_ref
         if wrapper is None:
@@ -147,6 +221,14 @@ class WindowsUIBackend:
         except Exception:
             evidence['exists'] = True
         try:
+            evidence['visible_now'] = bool(wrapper.is_visible())
+        except Exception:
+            evidence['visible_now'] = None
+        try:
+            evidence['enabled_now'] = bool(wrapper.is_enabled())
+        except Exception:
+            evidence['enabled_now'] = None
+        try:
             evidence['focused'] = bool(wrapper.has_keyboard_focus())
         except Exception:
             evidence['focused'] = None
@@ -158,5 +240,9 @@ class WindowsUIBackend:
             evidence['value'] = wrapper.get_value()
         except Exception:
             evidence['value'] = None
+        dpi = WindowsUIBackend._window_dpi(wrapper)
+        if dpi:
+            evidence['dpi'] = dpi
+            evidence['scale_percent'] = int(round(dpi * 100 / 96))
         evidence['observed'] = True
         return evidence
