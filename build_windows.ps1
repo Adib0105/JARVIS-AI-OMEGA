@@ -46,6 +46,12 @@ $Dist = Join-Path $Root 'dist\JARVIS-OMEGA-V7'
 $Exe = Join-Path $Dist 'JARVIS-OMEGA-V7.exe'
 if (-not (Test-Path $Exe)) { throw "Expected executable was not created: $Exe" }
 
+# Prove the frozen executable contains the TTS worker and can spawn that worker
+# without entering first-run/bootstrap or opening a duplicate desktop GUI. This is
+# deliberately non-audio: real speaker output remains a real-machine release gate.
+& $Exe --tts-runtime-healthcheck
+if ($LASTEXITCODE -ne 0) { throw 'Packaged TTS runtime healthcheck failed.' }
+
 # Public documentation/config template only. Never copy the operator's .env,
 # Google OAuth files, tokens, database, logs or other private runtime data.
 Copy-Item (Join-Path $Root '.env.example') (Join-Path $Dist '.env.example') -Force
