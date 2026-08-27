@@ -13,9 +13,11 @@ import edge_tts
 def _short_path(path: str) -> str:
     if os.name != 'nt':
         return path
+    from ctypes import wintypes
+
     get_short_path = ctypes.windll.kernel32.GetShortPathNameW
-    get_short_path.argtypes = [ctypes.wintypes.LPCWSTR, ctypes.wintypes.LPWSTR, ctypes.wintypes.DWORD]
-    get_short_path.restype = ctypes.wintypes.DWORD
+    get_short_path.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+    get_short_path.restype = wintypes.DWORD
     size = 0
     while True:
         buffer = ctypes.create_unicode_buffer(size)
