@@ -2,17 +2,23 @@
 
 ## Unreleased
 
-- Enforced one end-to-end wall-clock budget across AI provider turns, tool calls,
-  compatibility retries, quality repair, and local fallback; added operator cancellation.
+- Consolidated application versioning around `jarvis.version.APP_VERSION`, with derived Windows numeric metadata used by runtime/configuration, packaging and installer flows.
+- Added canonical PyInstaller PE version-resource generation and build-time verification of the actual frozen EXE file/product versions.
+- Aligned `setup_windows.ps1` with the constrained release environment: pip 26.2.1, `constraints-release.txt`, pinned runtime/Windows/build requirement sets, canonical self-check and optional packaging tools.
+- Removed stale V6 branding from desktop/terminal launchers and refreshed release/setup/testing/status/roadmap/contribution documentation for the 8.0.0-rc1 evidence model.
+- Added regression coverage guarding Windows release scripts, PE metadata generation, constrained setup, launcher branding and stable packaged executable paths.
+- Hardened file access against traversal, symlink/junction escape, sensitive extensions/paths and renamed secret-content access.
+- Consolidated legacy permission and mission entry points behind the canonical capability gate and persisted orchestrator.
+- Replaced import-equals-PASS diagnostics with explicit installed/configured/local/device/E2E/degraded/failed/not-tested states.
+- Enforced exact direct dependency pins plus transitive release constraints for reproducible CI/package resolution.
+- Enforced one end-to-end wall-clock budget across AI provider turns, tool calls, compatibility retries, quality repair, and local fallback; added operator cancellation.
 - Bounded approval waits and fixed deferred Tk error callbacks so failures always restore UI state.
-- Switched English/Hinglish speech to `en-IN-NeerjaNeural`, added an Edge voice fallback,
-  isolated the offline TTS backend in a terminable worker, and added safe lifecycle timing logs.
-- Added SOCKS proxy support, stronger credential redaction, atomic settings writes, packaged
-  Windows dependency checks, binary secret scanning, and one canonical installer definition.
+- Switched English/Hinglish speech to `en-IN-NeerjaNeural`, added an Edge voice fallback, isolated the offline TTS backend in a terminable worker, and added safe lifecycle timing logs.
+- Added SOCKS proxy support, stronger credential redaction, atomic settings writes, packaged Windows dependency checks, binary secret scanning, and one canonical installer definition.
 
 All notable engineering changes to JARVIS AI OMEGA are documented here.
 
-## V7 / V7.5 engineering track — unreleased
+## V7 / V7.5 engineering track — historical unreleased work
 
 ### Reliability and architecture
 - Added provider-neutral contracts and typed error/configuration foundations.
@@ -86,22 +92,17 @@ All notable engineering changes to JARVIS AI OMEGA are documented here.
 ### CI / packaging
 - Expanded CI to Linux Python 3.11/3.12/3.13/3.14 plus Windows Python 3.14.
 - CI forces compilation, runs full unittest/security/evaluation discovery and treats `ResourceWarning` as an error.
-- Added Windows PyInstaller package smoke job after Windows regression.
-- Package smoke explicitly installs build dependencies and rejects bundled `.env`, live DB/SQLite files and Google OAuth tokens/credentials.
-- Updated Windows build and Inno Setup installer definitions to V7 naming and secret-safe packaging.
+- Added Windows PyInstaller package smoke after Windows regression.
+- Package smoke installs constrained build dependencies and rejects bundled `.env`, live DB/SQLite files and Google OAuth tokens/credentials.
+- Consolidated the Windows executable identity to `JARVIS-OMEGA.exe` and the installer definition to `installer/JarvisOmega.iss`.
 
 ### Documentation / GitHub experience
 - Rebuilt the main README into a structured project landing page with architecture, status, setup, feature, safety, testing and release navigation.
 - Added `docs/README.md` as the documentation hub.
-- Added a complete Windows V7.5 setup guide.
-- Added a dedicated troubleshooting guide for provider, voice, computer-use, SQLite, self-development, packaging and installer issues.
-- Added a release/readiness/rollback guide.
-- Added a transparent top-level `ROADMAP.md` separating verified, experimental and release-candidate work.
-- Refreshed architecture, mission/agent and testing documentation to current V7.5 behavior.
-- Expanded `CONTRIBUTING.md` with quality, verification, security, computer-use and self-development contribution requirements.
-- Added structured GitHub bug-report and feature-request forms.
-- Added a pull-request template with testing, security, evidence and rollback checklists.
-- README and Capability Registry distinguish verified foundations from optional/experimental operator-gated systems.
+- Added Windows setup, testing, troubleshooting and release/readiness guides.
+- Added a transparent top-level `ROADMAP.md` separating automated foundations, experimental systems and external release evidence.
+- Expanded `CONTRIBUTING.md` with quality, verification, security, computer-use and self-development requirements.
+- Added structured GitHub bug-report and feature-request forms plus a pull-request template with testing/security/evidence/rollback checklists.
 
 ## V7 foundation
 - Provider abstraction, mission orchestration, verification/recovery, capability security, layered memory/context and semantic computer-use foundations.
