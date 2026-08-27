@@ -17,14 +17,35 @@ class V7SecurityTests(unittest.TestCase):
             'search_chat_history', 'search_knowledge', 'vector_search_knowledge', 'get_knowledge_stats',
             'add_note', 'list_notes', 'search_notes', 'get_agenda', 'add_todo', 'list_todos',
             'complete_todo', 'add_reminder', 'list_reminders', 'search_web', 'search_news', 'read_web_page',
+            'browser_trust', 'browser_read_safe', 'browser_extract_safe',
             'google_status', 'gmail_search', 'gmail_send', 'calendar_upcoming', 'calendar_create',
             'list_allowed_roots', 'search_local_files', 'read_local_text_file', 'index_local_text_file',
             'read_document', 'index_document', 'open_url', 'open_app', 'open_local_path', 'browser_search',
+            'computer_status', 'list_ui_targets', 'semantic_click', 'semantic_type',
             'type_text', 'press_key', 'hotkey', 'click_screen', 'list_code_tree', 'write_local_text_file',
             'run_project_tests', 'git_status', 'git_diff', 'git_log',
         }
         self.assertTrue(expected.issubset(set(TOOL_SECURITY)))
         self.assertTrue(all(profile_for(name).capabilities for name in expected))
+
+    def test_semantic_actions_are_high_risk_and_capability_gated(self):
+        click = profile_for('semantic_click')
+        typed = profile_for('semantic_type')
+        self.assertEqual(click.risk.value, 'HIGH')
+        self.assertTrue(click.side_effecting)
+        self.assertIn(Capability.SCREEN_READ, click.capabilities)
+        self.assertIn(Capability.MOUSE_CONTROL, click.capabilities)
+        self.assertEqual(typed.risk.value, 'HIGH')
+        self.assertTrue(typed.side_effecting)
+        self.assertIn(Capability.SCREEN_READ, typed.capabilities)
+        self.assertIn(Capability.KEYBOARD_CONTROL, typed.capabilities)
+
+    def test_safe_browser_reads_have_no_control_capability(self):
+        for name in ('browser_trust', 'browser_read_safe', 'browser_extract_safe'):
+            caps = profile_for(name).capabilities
+            self.assertNotIn(Capability.BROWSER_CONTROL, caps)
+            self.assertNotIn(Capability.KEYBOARD_CONTROL, caps)
+            self.assertNotIn(Capability.MOUSE_CONTROL, caps)
 
     def test_unknown_tool_is_denied_by_default(self):
         gate = CapabilityPermissionGate(lambda *_: ApprovalDecision.ALLOW_ONCE.value)
@@ -61,6 +82,19 @@ class V7SecurityTests(unittest.TestCase):
         gate = CapabilityPermissionGate(lambda *_: calls.append(1) or ApprovalDecision.ALLOW_ONCE.value)
         with patch.dict(os.environ, {'TRUSTED_LOCAL_MODE': 'true', 'PERMISSION_KEYBOARD_CONTROL': 'ask'}):
             outcome = gate.check('type_text', {'text': 'hello', 'interval': 0.02})
+        self.assertTrue(outcome.allowed)
+        self.assertEqual(len(calls), 1)
+
+    def test_trusted_local_mode_does_not_bypass_semantic_keyboard_control(self):
+        calls = []
+        gate = CapabilityPermissionGate(lambda *_: calls.append(1) or ApprovalDecision.ALLOW_ONCE.value)
+        with patch.dict(os.environ, {
+            'TRUSTED_LOCAL_MODE': 'true',
+            'PERMISSION_KEYBOARD_CONTROL': 'ask',
+            'PERMISSION_SCREEN_READ': 'allow',
+            'PERMISSION_SCREEN_CONTROL': 'ask',
+        }):
+            outcome = gate.check('semantic_type', {'target': 'Search', 'text': 'hello', 'window_hint': 'Chrome', 'interval': 0.02})
         self.assertTrue(outcome.allowed)
         self.assertEqual(len(calls), 1)
 
