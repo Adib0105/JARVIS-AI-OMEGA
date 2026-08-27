@@ -165,17 +165,14 @@ def main() -> int:
         return 0
 
     from jarvis.logging_utils import install_exception_hook
-    from jarvis.runtime_guard import install_runtime_guards, run_adaptive_gui
-    from jarvis.skill_runtime_extension import install_skill_runtime
+    from jarvis.runtime_guard import run_adaptive_gui
     from jarvis.ui_release_extension import install_release_ui
     from jarvis.ui_skill_extension import install_skill_ui
-    from jarvis.voice_ui import install_voice_ui
 
     install_exception_hook()
-    install_runtime_guards()
-    install_voice_ui()
+    # Command Center release/skill tabs still use compatibility installers; core
+    # chat/model/skill behavior and voice desktop controls are composed directly.
     install_release_ui()
-    install_skill_runtime()
     install_skill_ui()
     run_adaptive_gui()
     return 0
