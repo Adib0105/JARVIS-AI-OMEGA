@@ -16,7 +16,7 @@ class V75CapabilityRegistryTests(unittest.TestCase):
         }
         self.assertTrue(required.issubset(snapshot))
 
-    def test_records_expose_master_plan_metadata(self):
+    def test_records_expose_master_plan_metadata_without_fake_verification(self):
         item = CapabilityRegistry().get('Memory')
         self.assertIsNotNone(item)
         self.assertTrue(item.version)
@@ -25,9 +25,29 @@ class V75CapabilityRegistryTests(unittest.TestCase):
         self.assertIsInstance(item.dependencies, tuple)
         self.assertIsInstance(item.permissions, tuple)
         self.assertTrue(item.risk)
+        self.assertEqual(item.risk_level, item.risk)
         self.assertIsInstance(item.tests, tuple)
-        self.assertTrue(item.last_verified)
+        self.assertIsNone(item.last_verified)
+        self.assertIsNone(item.last_verified_at)
+        self.assertTrue(item.test_status)
+        self.assertIsNone(item.success_rate)
+        self.assertIsNone(item.failure_rate)
         self.assertTrue(item.implementation_path)
+
+    def test_registry_refresh_never_invents_verification_timestamp(self):
+        registry = CapabilityRegistry()
+        first = {item['name']: item for item in registry.snapshot(refresh=False)}
+        second = {item['name']: item for item in registry.snapshot(refresh=True)}
+        for name in first:
+            self.assertIsNone(first[name]['last_verified_at'], name)
+            self.assertIsNone(second[name]['last_verified_at'], name)
+
+    def test_external_or_physical_capabilities_are_not_verified_by_presence(self):
+        snapshot = {item['name']: item for item in CapabilityRegistry().snapshot(refresh=False)}
+        for name in ('Chat', 'Vision', 'Browser', 'Voice', 'Microphone'):
+            item = snapshot[name]
+            if item['status'] not in {'DISABLED', 'MISSING', 'DEGRADED', 'BROKEN'}:
+                self.assertEqual(item['status'], 'NOT_VERIFIED', name)
 
     def test_registry_does_not_fake_self_development(self):
         registry = CapabilityRegistry()
@@ -39,9 +59,9 @@ class V75CapabilityRegistryTests(unittest.TestCase):
         else:
             self.assertEqual(item.status, CapabilityStatus.MISSING)
 
-    def test_prompt_summary_marks_missing_or_disabled_truthfully(self):
+    def test_prompt_summary_marks_unverified_or_unavailable_truthfully(self):
         summary = CapabilityRegistry().summary_for_prompt()
-        self.assertIn('Do not claim MISSING or DISABLED capabilities as working', summary)
+        self.assertIn('Do not claim NOT_VERIFIED, MISSING, DISABLED, DEGRADED, or BROKEN capabilities as verified working', summary)
         self.assertIn('Capability Registry: AVAILABLE', summary)
 
     def test_public_core_exposes_capability_status_api(self):
