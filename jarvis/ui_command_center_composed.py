@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from tkinter import messagebox
 
 from . import ui_command_center as ui
@@ -14,10 +15,159 @@ class AgentCommandCenter(ui.AgentCommandCenter):
         super().__init__(parent, jarvis)
         self.title(f'JARVIS {settings.app_version} // AGENT COMMAND CENTER')
 
+    def _canonicalize_widget_text(self, widget) -> None:
+        try:
+            text = widget.cget('text')
+            if isinstance(text, str):
+                updated = text.replace('V7.5', settings.app_version).replace('V6', settings.app_version)
+                if updated != text:
+                    widget.configure(text=updated)
+        except Exception:
+            pass
+        try:
+            for child in widget.winfo_children():
+                self._canonicalize_widget_text(child)
+        except Exception:
+            pass
+
     def _build(self) -> None:
         super()._build()
+        self._canonicalize_widget_text(self)
         self._build_release_tab()
         self._build_skills_tab()
+
+    def _background(self, fn, done=None):
+        """Canonical-version background runner; no historical dialog branding."""
+        def worker():
+            try:
+                result = fn()
+                error = None
+            except Exception as exc:
+                result = None
+                error = exc
+
+            def finish():
+                if error is not None:
+                    messagebox.showerror(
+                        f'JARVIS {settings.app_version}',
+                        f'{type(error).__name__}: {error}',
+                        parent=self,
+                    )
+                elif done:
+                    done(result)
+
+            try:
+                self.after(0, finish)
+            except ui.tk.TclError:
+                pass
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _mission_action(self, action: str):
+        mission_id = getattr(self.jarvis, 'last_mission_id', None)
+        if not mission_id:
+            messagebox.showinfo(
+                f'JARVIS {settings.app_version}',
+                'No active/recent mission ID is available.',
+                parent=self,
+            )
+            return
+        fn = {
+            'pause': self.jarvis.pause_mission,
+            'resume': self.jarvis.resume_mission,
+            'cancel': self.jarvis.cancel_mission,
+        }[action]
+        try:
+            ok = fn(mission_id)
+            self.overall.configure(
+                text=f'● MISSION {action.upper()}={ok}',
+                fg=ui.GOLD if ok else ui.RED,
+            )
+        finally:
+            self.refresh_missions()
+
+    def _create_selected_proposal(self):
+        gap = self._selected_gap()
+        if not gap:
+            messagebox.showinfo(
+                f'JARVIS {settings.app_version}',
+                'Select a detected gap first.',
+                parent=self,
+            )
+            return
+        self._background(
+            lambda: self.jarvis.propose_improvement(gap),
+            lambda data: (
+                self._refresh_proposals(),
+                self._set_text(self.selfdev_detail, ui._pretty(data)),
+            ),
+        )
+
+    def _prepare_selected_sandbox(self):
+        proposal = self._selected_proposal()
+        if not proposal:
+            messagebox.showinfo(
+                f'JARVIS {settings.app_version}',
+                'Select a proposal first.',
+                parent=self,
+            )
+            return
+        self._background(
+            lambda: self.jarvis.prepare_improvement_sandbox(proposal['id']),
+            lambda data: (
+                self._refresh_proposals(),
+                self._set_text(self.selfdev_detail, ui._pretty(data)),
+            ),
+        )
+
+    def _run_selected_build(self):
+        proposal = self._selected_proposal()
+        if not proposal:
+            messagebox.showinfo(
+                f'JARVIS {settings.app_version}',
+                'Select a prepared proposal first.',
+                parent=self,
+            )
+            return
+        if not messagebox.askyesno(
+            f'JARVIS {settings.app_version} // SANDBOX BUILD',
+            'Run bounded AI coding + full tests in the isolated sandbox?\n\n'
+            'Production code will NOT be merged.',
+            parent=self,
+        ):
+            return
+        self._background(
+            lambda: self.jarvis.run_self_coding(proposal['id']),
+            lambda data: (
+                self._refresh_proposals(),
+                self._set_text(self.selfdev_detail, ui._pretty(data)),
+            ),
+        )
+
+    def _approve_selected(self):
+        proposal = self._selected_proposal()
+        if not proposal:
+            return
+        if not messagebox.askyesno(
+            f'JARVIS {settings.app_version} // RELEASE APPROVAL',
+            'Approve this tested proposal for the later controlled release stage?\n\n'
+            'This button does NOT deploy or merge production code.',
+            parent=self,
+        ):
+            return
+        try:
+            data = self.jarvis.approve_improvement_for_release(
+                proposal['id'],
+                explicit_user_approval=True,
+            )
+            self._refresh_proposals()
+            self._set_text(self.selfdev_detail, ui._pretty(data))
+        except Exception as exc:
+            messagebox.showerror(
+                f'JARVIS {settings.app_version}',
+                f'{type(exc).__name__}: {exc}',
+                parent=self,
+            )
 
     def refresh_all(self):
         super().refresh_all()
