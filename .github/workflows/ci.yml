@@ -99,6 +99,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Packaged first-run bootstrap healthcheck failed.' }
           .\dist\JARVIS-OMEGA-V7\JARVIS-OMEGA-V7.exe --package-healthcheck | Tee-Object exe-healthcheck.json
           if ($LASTEXITCODE -ne 0) { throw 'Packaged EXE healthcheck failed.' }
+          .\dist\JARVIS-OMEGA-V7\JARVIS-OMEGA-V7.exe --tts-runtime-healthcheck | Tee-Object tts-runtime-healthcheck.json
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged TTS worker/runtime healthcheck failed.' }
       - name: Verify secret exclusion
         shell: pwsh
         run: |
@@ -123,6 +125,7 @@ jobs:
             dist/installer/*
             exe-healthcheck.json
             first-run-healthcheck.json
+            tts-runtime-healthcheck.json
           retention-days: 7
 
   installed-app-validation:
@@ -147,6 +150,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installed first-run bootstrap healthcheck failed.' }
           & $exe --package-healthcheck | Tee-Object installed-healthcheck.json
           if ($LASTEXITCODE -ne 0) { throw 'Installed application healthcheck failed.' }
+          & $exe --tts-runtime-healthcheck | Tee-Object installed-tts-runtime-healthcheck.json
+          if ($LASTEXITCODE -ne 0) { throw 'Installed TTS worker/runtime healthcheck failed.' }
           $uninstall = Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object DisplayName -like 'JARVIS AI OMEGA*' | Select-Object -First 1
           if (-not $uninstall) { throw 'Registered uninstaller not found.' }
           $startMenu = Join-Path ([Environment]::GetFolderPath('CommonPrograms')) 'JARVIS AI OMEGA\JARVIS AI OMEGA.lnk'
@@ -178,6 +183,7 @@ jobs:
           path: |
             installed-healthcheck.json
             installed-first-run-healthcheck.json
+            installed-tts-runtime-healthcheck.json
           if-no-files-found: ignore
 
   post-packaging-regression:
