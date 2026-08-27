@@ -84,10 +84,13 @@ def classify_exception(
     elif status == 429 or 'rate limit' in lower or 'too many requests' in lower:
         category = ErrorCategory.RATE_LIMIT
         retryable = True
-    elif status in {408, 504} or 'timeout' in lower or 'timed out' in lower:
+    elif status in {408, 504} or 'timeout' in lower or 'timed out' in lower or 'request deadline' in lower:
         category = ErrorCategory.TIMEOUT
         retryable = True
-    elif status in {502, 503} or any(token in lower for token in (
+    elif status is not None and 500 <= status <= 599:
+        category = ErrorCategory.NETWORK_ERROR
+        retryable = True
+    elif any(token in lower for token in (
         'connection error', 'network error', 'connection reset', 'circuit open',
     )):
         category = ErrorCategory.NETWORK_ERROR
@@ -101,7 +104,7 @@ def classify_exception(
     elif isinstance(exc, FileNotFoundError) or (status == 404 and 'model' not in lower) or 'resource not found' in lower:
         category = ErrorCategory.RESOURCE_NOT_FOUND
         retryable = False
-    elif isinstance(exc, (ValueError, TypeError, KeyError)) or status in {400, 422}:
+    elif isinstance(exc, (ValueError, TypeError, KeyError, IndexError)) or status in {400, 422}:
         category = ErrorCategory.INVALID_INPUT
         retryable = False
     else:
