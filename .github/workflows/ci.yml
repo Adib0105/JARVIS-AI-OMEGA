@@ -138,14 +138,35 @@ jobs:
         with:
           name: jarvis-windows-release-candidate
           path: rc
-      - name: Install generated installer only
+      - name: Install, repair-upgrade, and validate generated installer only
         shell: pwsh
         run: |
           $setup = Get-ChildItem '.\rc\JARVIS-AI-OMEGA-Setup-*.exe' -Recurse | Select-Object -First 1
           if (-not $setup) { throw 'Installer missing.' }
-          Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS="desktopicon"' -Wait
-          $exe = Join-Path $env:ProgramFiles 'JARVIS AI OMEGA\JARVIS-OMEGA.exe'
-          if (-not (Test-Path $exe)) { throw 'Installed executable missing.' }
+          $silentArgs = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS="desktopicon"')
+
+          # Fresh install.
+          Start-Process $setup.FullName -ArgumentList $silentArgs -Wait
+          $appDir = Join-Path $env:ProgramFiles 'JARVIS AI OMEGA'
+          $exe = Join-Path $appDir 'JARVIS-OMEGA.exe'
+          if (-not (Test-Path $exe)) { throw 'Installed executable missing after fresh install.' }
+
+          # Seed historical-layout residue and persistent user data, then run the same
+          # installer again as a repair/upgrade simulation. The installer must remove
+          # known obsolete product binaries without touching LocalAppData.
+          $legacyExe = Join-Path $appDir 'JARVIS-OMEGA-V7.exe'
+          'legacy-binary-placeholder' | Set-Content $legacyExe
+          if (-not (Test-Path $legacyExe)) { throw 'Could not seed legacy upgrade residue.' }
+          $upgradeData = Join-Path $env:LOCALAPPDATA 'JARVIS AI OMEGA'
+          New-Item -ItemType Directory -Force $upgradeData | Out-Null
+          $upgradeMarker = Join-Path $upgradeData 'upgrade-preservation-test.txt'
+          'preserve-across-upgrade' | Set-Content $upgradeMarker
+
+          Start-Process $setup.FullName -ArgumentList $silentArgs -Wait
+          if (Test-Path $legacyExe) { throw 'Historical JARVIS-OMEGA-V7.exe remained after repair/upgrade install.' }
+          if (-not (Test-Path $exe)) { throw 'Canonical executable missing after repair/upgrade install.' }
+          if (-not (Test-Path $upgradeMarker)) { throw 'User data was unexpectedly deleted during repair/upgrade install.' }
+
           & $exe --first-run-healthcheck | Tee-Object installed-first-run-healthcheck.json
           if ($LASTEXITCODE -ne 0) { throw 'Installed first-run bootstrap healthcheck failed.' }
           & $exe --package-healthcheck | Tee-Object installed-healthcheck.json
