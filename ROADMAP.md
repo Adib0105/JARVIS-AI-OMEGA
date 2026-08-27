@@ -1,93 +1,86 @@
 # JARVIS AI OMEGA — Roadmap
 
-This roadmap tracks engineering reality, not marketing promises.
+This roadmap tracks engineering reality rather than marketing claims. The current application version is defined only by `jarvis.version.APP_VERSION`.
 
-## Branches
+## Current release-candidate line
 
-- `main` — stable V6 baseline until final V7 release
-- `v7-development` — V7/V7.5 engineering and release-candidate work
+- `v7-development` — active engineering/release-candidate branch for JARVIS AI OMEGA 8.0.0-rc1.
+- `main` — separate stable line; this roadmap does not infer its application version.
 
-## Completed / verified foundations
+## Automated foundations in place
 
-- provider-neutral AI abstraction
-- typed error/configuration foundations
-- persisted mission state machine
-- retry, recovery, replanning and verification
-- capability-based security and audit
-- Trusted Local Mode for allowlisted ordinary local actions
-- deterministic SQLite cleanup and Windows regression coverage
-- layered working/episodic/semantic/procedural memory
-- hybrid retrieval and document provenance/deduplication
-- semantic Computer Use with confidence/no-guess behavior
-- UIA-first OCR fallback integration
-- Browser V2 trust and prompt-injection isolation
-- Capability Registry
-- evidence-based Self Evaluation
-- Capability Gap Detection
-- deterministic evaluation benchmarks
-- observability, health and truthful provider-reported cost handling
-- backup/restore with integrity and pre-restore protection
-- voice playback stop/pause/speed controls
-- Agent Command Center
-- expanded Linux/Windows CI gates
-- Windows PyInstaller package smoke and secret-exclusion checks
+- provider-neutral AI contracts, routing, timeouts, fallback and error classification;
+- persisted mission orchestration with verification, retry, recovery, replanning, pause/resume/cancel;
+- canonical capability permission authority and audit evidence;
+- Trusted Local Mode boundaries that do not remove high-risk approval controls;
+- deterministic SQLite cleanup and multi-version Linux/Windows regression coverage;
+- layered memory, hybrid retrieval and document provenance/deduplication;
+- semantic Computer Use with confidence/no-guess behavior, UIA-first targeting and OCR fallback controls;
+- browser trust/private-target policy and prompt-injection isolation;
+- evidence-based self-evaluation and deterministic benchmarks;
+- observability, health and truthful provider-reported usage/cost handling;
+- backup/restore with integrity and pre-restore protection;
+- response-quality and provider resilience composed into the core runtime rather than startup monkey-patching;
+- voice/Command Center/skill runtime composed through explicit classes with compatibility shims;
+- file-root/traversal/symlink/junction/secret-content hardening;
+- truthful diagnostic states that separate installation from local/device/E2E verification;
+- exact-pinned direct dependencies plus release constraints;
+- Windows frozen EXE and installer CI;
+- canonical PE/installer version metadata derived from one application version source;
+- isolated installer install/uninstall validation and post-packaging regression.
 
 ## Experimental / operator-gated systems
 
-These have implementation and deterministic tests but remain intentionally controlled:
+These remain intentionally controlled even where deterministic tests exist:
 
-- sandboxed Self Development
-- Self Coding
-- bounded Self Debugging
-- optional offline/local development model
-- Skill Build Pipeline
-- Skill Activation
-- Controlled Release
-- history-preserving Rollback
+- sandboxed Self Development;
+- Self Coding and bounded Self Debugging;
+- optional local/offline development provider;
+- skill proposal/build/activation lifecycle;
+- Controlled Release;
+- history-preserving Rollback.
 
-Target lifecycle:
+No unrestricted autonomous production rewriting is a release goal.
 
-```text
-Discover → Propose → Sandbox → Build → Test → Security/Evaluation
-→ Diff → Approval → Controlled Release → Post-test → Rollback if needed
-```
+## Release-candidate work still requiring external evidence
 
-No unrestricted autonomous production rewriting is planned.
+Automated CI cannot complete these on behalf of a real operator workstation. Before a stable production claim, record exact-candidate evidence using `docs/WINDOWS-E2E-CHECKLIST.md` for:
 
-## Release-candidate work remaining
+1. normal Windows GUI startup/shutdown/relaunch;
+2. real keyboard/mouse/UIA interactions with post-action verification;
+3. Chrome and Notepad target/focus behavior;
+4. screenshot/OCR behavior on the real display;
+5. 100/125/150% DPI and alternate resolution/window placement checks;
+6. audible speaker TTS;
+7. physical microphone capture and speech recognition;
+8. real configured provider inference plus practical failure/recovery checks;
+9. network disconnect/reconnect behavior;
+10. clean installed first run and uninstall on a real workstation.
 
-Before V7 becomes the stable `main` line:
+Optional Gmail/Calendar/local-model behavior should be validated only if included in the release claim.
 
-1. run full workstation smoke tests on the operator Windows machine;
-2. validate real microphone/voice behavior;
-3. validate real provider chat/vision/tool paths;
-4. validate browser/app control against installed applications;
-5. validate optional OCR on real screens if configured;
-6. validate optional Gmail/Calendar only if included in the release claim;
-7. compile and test the Inno Setup installer locally;
-8. perform install/launch/uninstall smoke testing;
-9. sync status/changelog/release notes;
-10. make the final merge/tag/release decision.
+## Repository policy work
 
-## Post-V7 ideas
+Before treating a release branch as protected, enable GitHub branch protection/rulesets with required CI checks. A green workflow alone does not enforce repository policy.
 
-Possible future work, subject to evidence and evaluation:
+## Future ideas
 
-- richer mission visualization and replay
-- broader semantic accessibility adapters
-- stronger local benchmark datasets
-- more provider adapters without core coupling
-- signed update/release metadata
-- improved installer upgrade/migration experience
-- opt-in local model profiles and performance benchmarking
-- richer skill marketplace/import format with strict permission manifests
+Subject to evidence and evaluation:
 
-## Engineering rules
+- richer mission visualization/replay;
+- broader semantic accessibility adapters;
+- stronger local benchmark datasets;
+- additional provider adapters without core coupling;
+- signed update/release metadata;
+- stronger installer upgrade/migration testing;
+- archival vetted wheelhouse/artifact retention for offline reproducibility;
+- opt-in local model profiles and performance benchmarking;
+- richer skill import/marketplace formats with strict permission manifests.
 
-A feature is not complete merely because code exists.
+## Engineering rule
 
 ```text
 IMPLEMENTED + INTEGRATED + TESTED + VERIFIED
 ```
 
-Security boundaries, secret protection, audit integrity, sandbox isolation and rollback controls must not be weakened to make a feature appear more autonomous.
+Security boundaries, secret protection, audit integrity, sandbox isolation and rollback controls must not be weakened merely to make the system appear more autonomous or release-ready.
