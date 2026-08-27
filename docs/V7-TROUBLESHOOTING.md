@@ -157,10 +157,29 @@ Run:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-windows.txt
 .\build_windows.ps1
 ```
 
 The CI package smoke build is the reference gate. A local warning is not automatically fatal; a missing executable or bundled private runtime data is fatal.
+
+## Chat remains in THINKING
+
+`AI_TIMEOUT_SECONDS` is the complete wall-clock budget for one normal chat request,
+including retries, provider/tool continuations, quality repair, and local fallback.
+Use the visible CANCEL control to interrupt the current request. A timeout or cancellation
+must restore the UI to ERROR/IDLE; it must not leave THINKING active.
+
+For explicit multi-step missions, use `MISSION_TIMEOUT_SECONDS`. Vision uses
+`VISION_TIMEOUT_SECONDS`.
+
+## Text appears but voice is silent
+
+The default English/Hinglish voice is `en-IN-NeerjaNeural`. Edge playback first tries the
+configured language voice, then `VOICE_FALLBACK`, then the bounded offline backend.
+Check `TTS_TIMEOUT_SECONDS`, `OFFLINE_TTS_TIMEOUT_SECONDS`, Windows audio output, and the
+redacted `tts_*` events in `jarvis.jsonl`. Packaged TTS workers must never open a second
+JARVIS window.
 
 ## Inno Setup installer cannot build
 

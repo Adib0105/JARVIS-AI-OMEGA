@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Enforced one end-to-end wall-clock budget across AI provider turns, tool calls,
+  compatibility retries, quality repair, and local fallback; added operator cancellation.
+- Bounded approval waits and fixed deferred Tk error callbacks so failures always restore UI state.
+- Switched English/Hinglish speech to `en-IN-NeerjaNeural`, added an Edge voice fallback,
+  isolated the offline TTS backend in a terminable worker, and added safe lifecycle timing logs.
+- Added SOCKS proxy support, stronger credential redaction, atomic settings writes, packaged
+  Windows dependency checks, binary secret scanning, and one canonical installer definition.
+
 All notable engineering changes to JARVIS AI OMEGA are documented here.
 
 ## V7 / V7.5 engineering track — unreleased

@@ -51,6 +51,7 @@ git pull origin v7-development
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+.\.venv\Scripts\python.exe -m pip install -r requirements-windows.txt
 .\build_windows.ps1
 ```
 
@@ -85,6 +86,10 @@ Validate:
 5. upgrade behavior if supported;
 6. uninstall without deleting unrelated user files;
 7. secrets/runtime databases are not embedded in installer payload.
+8. `SHA256.txt` matches the installer file itself, not the workflow artifact ZIP.
+
+The active installer definition is `installer/JarvisOmega.iss`. The retired V7 legacy
+definition must not be used for release builds.
 
 ## Controlled self-development release path
 

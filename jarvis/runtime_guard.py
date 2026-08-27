@@ -8,6 +8,7 @@ import unicodedata
 from typing import Callable
 
 from .config import settings
+from .providers.deadline import RequestCancelledError
 
 
 STABLE_FREE_TEXT_MODEL = os.getenv(
@@ -118,6 +119,8 @@ def _repair_answer(self, user_text: str, bad_answer: str) -> str:
         self.last_model_used = turn.model or STABLE_FREE_TEXT_MODEL
         self.last_provider_used = 'openrouter-quality-retry'
         return turn.text.strip() or bad_answer
+    except RequestCancelledError:
+        raise
     except Exception:
         return bad_answer
 
@@ -132,7 +135,7 @@ def install_runtime_guards() -> None:
     def guarded_select(self, text: str, kind: str = 'chat') -> str:
         return preferred_text_model(original_select(self, text, kind), kind)
 
-    def guarded_chat(self, text: str) -> str:
+    def guarded_chat(self, text: str, *, request_id: str | None = None) -> str:
         text = text.strip()
         if not text:
             return ''
@@ -140,27 +143,30 @@ def install_runtime_guards() -> None:
         self._active_model = self._select_model(text, 'chat')
         self.last_provider_used = settings.provider
         started = time.perf_counter()
-        self.memory.add_message(self.session_id, 'user', text)
-        try:
-            identity = local_identity_answer(text)
-            if identity is not None:
-                answer = identity
-                self.last_provider_used = 'local-identity-guard'
-                self.last_model_used = 'deterministic-local'
-                self.last_tool_mode = 'identity-guard'
-            else:
-                try:
-                    answer = self._chat_provider()
-                except Exception as exc:
-                    answer = self._chat_local_fallback(exc)
-                if looks_garbled(answer, text):
-                    answer = _repair_answer(self, text, answer)
-                answer = clean_display_text(answer)
-            self.memory.add_message(self.session_id, 'assistant', answer)
-            self._maybe_auto_summary()
-            return answer
-        finally:
-            self.last_latency = time.perf_counter() - started
+        with self._request_scope(settings.ai_timeout_seconds, 'AI request', request_id):
+            self.memory.add_message(self.session_id, 'user', text)
+            try:
+                identity = local_identity_answer(text)
+                if identity is not None:
+                    answer = identity
+                    self.last_provider_used = 'local-identity-guard'
+                    self.last_model_used = 'deterministic-local'
+                    self.last_tool_mode = 'identity-guard'
+                else:
+                    try:
+                        answer = self._chat_provider()
+                    except RequestCancelledError:
+                        raise
+                    except Exception as exc:
+                        answer = self._chat_local_fallback(exc)
+                    if looks_garbled(answer, text):
+                        answer = _repair_answer(self, text, answer)
+                    answer = clean_display_text(answer)
+                self.memory.add_message(self.session_id, 'assistant', answer)
+                self._maybe_auto_summary()
+                return answer
+            finally:
+                self.last_latency = time.perf_counter() - started
 
     JarvisOmega._select_model = guarded_select
     JarvisOmega.chat = guarded_chat
@@ -231,7 +237,10 @@ def _install_security_gui_hooks(gui_module) -> None:
                 event.set()
 
         self.root.after(0, ask)
-        event.wait()
+        active = getattr(self.jarvis, '_active_request', None)
+        timeout = active.remaining() if active is not None else settings.ai_timeout_seconds
+        if not event.wait(timeout=timeout):
+            return ApprovalDecision.DENY.value
         return result['decision']
 
     gui_module.JarvisDesktop._confirm_tool = v7_confirm_tool

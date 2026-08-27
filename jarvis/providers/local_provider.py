@@ -5,6 +5,7 @@ from typing import Any
 from openai import OpenAI
 
 from .base import AIProvider, ProviderTurn, ToolCall, ToolResult
+from .deadline import call_with_deadline, transport_timeout_seconds
 
 
 class LocalProvider(AIProvider):
@@ -69,11 +70,19 @@ class LocalProvider(AIProvider):
         )
 
     def _create(self, *, messages: list[dict], model: str, tools: list[dict] | None, timeout: float) -> ProviderTurn:
-        kwargs: dict[str, Any] = {'model': model, 'messages': messages, 'timeout': timeout}
+        kwargs: dict[str, Any] = {
+            'model': model,
+            'messages': messages,
+            'timeout': transport_timeout_seconds(timeout),
+        }
         converted = self._tools(tools or [])
         if converted:
             kwargs['tools'] = converted
-        response = self.client.chat.completions.create(**kwargs)
+        response = call_with_deadline(
+            lambda: self.client.chat.completions.create(**kwargs),
+            timeout,
+            operation='Local AI chat completion',
+        )
         return self._turn(response, messages)
 
     def chat(self, *, system: str, messages: list[dict], model: str, timeout: float) -> ProviderTurn:

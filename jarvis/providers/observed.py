@@ -55,6 +55,7 @@ class ObservedProvider(AIProvider):
                 fallback=self.fallback,
                 route=context.get('route'),
                 error_category='CIRCUIT_OPEN',
+                request_id=context.get('request_id'),
             )
             raise
 
@@ -72,6 +73,7 @@ class ObservedProvider(AIProvider):
             usage=turn.usage,
             fallback=self.fallback,
             route=context.get('route'),
+            request_id=context.get('request_id'),
         )
         return turn
 
@@ -91,6 +93,7 @@ class ObservedProvider(AIProvider):
             fallback=self.fallback,
             route=context.get('route'),
             error_category=failure.category.value,
+            request_id=context.get('request_id'),
         )
 
     def chat(self, *, system: str, messages: list[dict], model: str, timeout: float) -> ProviderTurn:

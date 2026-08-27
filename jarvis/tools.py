@@ -14,6 +14,7 @@ from .google_workspace import GoogleWorkspace
 from .local_files import LocalFiles
 from .memory import MemoryStore
 from .permissions import PermissionGate
+from .providers.deadline import current_request_budget
 from .system_tools import current_time, open_app, open_url, system_info, system_metrics
 from .web_tools import read_web_page, search_news, search_web
 
@@ -187,6 +188,28 @@ class ToolRegistry:
         return open_local_path(str(target))
 
     def call(self, name: str, args: dict) -> str:
+        args = dict(args)
+        active_request = current_request_budget()
+        if active_request is not None:
+            remaining = active_request.remaining()
+            if name == 'run_project_tests':
+                if remaining < 10:
+                    return json.dumps({
+                        'ok': False,
+                        'error': 'Not enough request time remains to start project tests safely.',
+                    })
+                args['timeout'] = min(int(args.get('timeout', 120)), max(10, int(remaining)))
+            elif name == 'type_text':
+                interval = max(0.0, min(float(args.get('interval', 0.02)), 0.2))
+                estimated_seconds = len(str(args.get('text', ''))) * (interval + 0.08) + 1.0
+                if estimated_seconds > remaining:
+                    return json.dumps({
+                        'ok': False,
+                        'error': (
+                            f'Typing would need about {estimated_seconds:.1f}s but only '
+                            f'{remaining:.1f}s remains in this request.'
+                        ),
+                    })
         decision = self.permissions.check(name, args)
         if not decision.allowed:
             return json.dumps({'ok': False, 'error': decision.reason}, ensure_ascii=False)

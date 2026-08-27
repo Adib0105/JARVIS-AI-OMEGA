@@ -276,6 +276,7 @@ class JarvisOmega(_ProviderCore):
             'session_id': getattr(self, 'session_id', None),
             'mission_id': getattr(orchestrator, 'current_mission_id', None),
             'route': getattr(self, 'last_route', ''),
+            'request_id': getattr(self, 'last_request_id', None),
         }
 
     def _tool_audit_context(self) -> dict:
@@ -303,54 +304,55 @@ class JarvisOmega(_ProviderCore):
         return _ProviderCore._extract_plan(raw, max_steps)
 
     def run_mission(self, goal: str, progress: Callable[[str], None] | None = None) -> str:
-        started = time.perf_counter()
-        self.observability.record(
-            category='MISSION', event_type='mission.started', status='RUNNING',
-            session_id=self.session_id, metadata={'goal_chars': len(str(goal))},
-        )
-        try:
-            mission = self.orchestrator.run(goal, progress)
-            self.last_mission_id = mission.id
-            self.memory.add_message(
-                self.session_id,
-                'assistant',
-                f'[V7 MISSION {mission.id}]\n{mission.final_report}',
+        with self._request_scope(settings.mission_timeout_seconds, 'AI mission'):
+            started = time.perf_counter()
+            self.observability.record(
+                category='MISSION', event_type='mission.started', status='RUNNING',
+                session_id=self.session_id, metadata={'goal_chars': len(str(goal))},
             )
             try:
-                self.memory.remember_v7(
-                    mission.final_report,
-                    kind=MemoryKind.EPISODIC,
-                    importance=0.8,
-                    confidence=0.95 if mission.final_verification and mission.final_verification.verified else 0.65,
-                    source=f'mission:{mission.id}',
+                mission = self.orchestrator.run(goal, progress)
+                self.last_mission_id = mission.id
+                self.memory.add_message(
+                    self.session_id,
+                    'assistant',
+                    f'[V7 MISSION {mission.id}]\n{mission.final_report}',
+                )
+                try:
+                    self.memory.remember_v7(
+                        mission.final_report,
+                        kind=MemoryKind.EPISODIC,
+                        importance=0.8,
+                        confidence=0.95 if mission.final_verification and mission.final_verification.verified else 0.65,
+                        source=f'mission:{mission.id}',
+                        metadata={
+                            'mission_id': mission.id,
+                            'status': mission.status.value,
+                            'verification': mission.final_verification.status if mission.final_verification else 'UNKNOWN',
+                        },
+                        verified=bool(mission.final_verification and mission.final_verification.verified),
+                    )
+                except Exception:
+                    pass
+                self.observability.record(
+                    category='MISSION', event_type='mission.finished', status=mission.status.value,
+                    session_id=self.session_id, mission_id=mission.id,
+                    latency_ms=round((time.perf_counter() - started) * 1000, 3),
                     metadata={
-                        'mission_id': mission.id,
-                        'status': mission.status.value,
+                        'retry_count': mission.retry_count,
+                        'recovery_count': mission.recovery_count,
                         'verification': mission.final_verification.status if mission.final_verification else 'UNKNOWN',
                     },
-                    verified=bool(mission.final_verification and mission.final_verification.verified),
                 )
-            except Exception:
-                pass
-            self.observability.record(
-                category='MISSION', event_type='mission.finished', status=mission.status.value,
-                session_id=self.session_id, mission_id=mission.id,
-                latency_ms=round((time.perf_counter() - started) * 1000, 3),
-                metadata={
-                    'retry_count': mission.retry_count,
-                    'recovery_count': mission.recovery_count,
-                    'verification': mission.final_verification.status if mission.final_verification else 'UNKNOWN',
-                },
-            )
-            return mission.final_report
-        except Exception as exc:
-            self.observability.record(
-                category='MISSION', event_type='mission.failed', status='FAILED',
-                session_id=self.session_id,
-                latency_ms=round((time.perf_counter() - started) * 1000, 3),
-                metadata={'error_type': type(exc).__name__},
-            )
-            raise
+                return mission.final_report
+            except Exception as exc:
+                self.observability.record(
+                    category='MISSION', event_type='mission.failed', status='FAILED',
+                    session_id=self.session_id,
+                    latency_ms=round((time.perf_counter() - started) * 1000, 3),
+                    metadata={'error_type': type(exc).__name__},
+                )
+                raise
 
     def cancel_mission(self, mission_id: str | None = None) -> bool:
         return self.orchestrator.cancel(mission_id)

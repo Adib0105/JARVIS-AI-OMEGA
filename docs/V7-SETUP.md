@@ -194,7 +194,7 @@ After installing Inno Setup 6:
 Installer definition:
 
 ```text
-installer/JARVIS-OMEGA-V7.iss
+installer/JarvisOmega.iss
 ```
 
 ## Update workflow

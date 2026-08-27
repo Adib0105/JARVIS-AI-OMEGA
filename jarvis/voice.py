@@ -8,11 +8,11 @@ import sys
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 from typing import Callable
 
-import pyttsx3
-
 from .config import settings
+from .logging_utils import log_event
 
 
 _MARKDOWN_RE = re.compile(r"[`*_>#~\[\]{}|]+")
@@ -32,6 +32,12 @@ _HINGLISH_HINTS = {
     'se', 'me', 'mein', 'ko', 'ka', 'ki', 'ke', 'aur', 'lekin', 'agar', 'agr',
 }
 _SENTINEL = object()
+
+
+@dataclass(frozen=True)
+class _SpeechItem:
+    text: str
+    request_id: str | None = None
 
 
 def clean_for_speech(text: str) -> str:
@@ -57,6 +63,12 @@ def choose_voice(text: str) -> str:
     if mode == 'hinglish':
         return settings.voice_hinglish
     return settings.voice_english
+
+
+def edge_voice_candidates(text: str) -> list[str]:
+    """Return the configured voice followed by one distinct reliable fallback."""
+    voices = [choose_voice(text), settings.voice_fallback]
+    return [voice for index, voice in enumerate(voices) if voice and voice not in voices[:index]]
 
 
 def _parse_rate_percent(value: str) -> int:
@@ -93,7 +105,7 @@ class VoiceOutput:
         self.enabled = settings.enable_voice_output
         self.muted = False
         self.on_state_change = on_state_change or (lambda _state: None)
-        self._queue: queue.Queue[str | object] = queue.Queue()
+        self._queue: queue.Queue[_SpeechItem | object] = queue.Queue()
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
         self._condition = threading.Condition(self._lock)
@@ -138,7 +150,7 @@ class VoiceOutput:
         except Exception:
             pass
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str, *, request_id: str | None = None) -> None:
         if not self.enabled or self.muted:
             return
         spoken = clean_for_speech(text)
@@ -148,7 +160,7 @@ class VoiceOutput:
             if self._shutdown:
                 return
             self._last_text = spoken
-        self._queue.put(spoken)
+        self._queue.put(_SpeechItem(spoken, request_id))
 
     def play(self) -> bool:
         """Resume paused speech, or replay the last utterance after STOP."""
@@ -164,7 +176,7 @@ class VoiceOutput:
                 return True
             last = self._last_text
         if last:
-            self._queue.put(last)
+            self._queue.put(_SpeechItem(last))
             return True
         return False
 
@@ -319,8 +331,18 @@ class VoiceOutput:
         except Exception:
             pass
 
-    def _speak_edge(self, text: str) -> str:
-        voice = choose_voice(text)
+    @staticmethod
+    def _log_worker_failure(process: subprocess.Popen | None, event: str, **fields) -> None:
+        error = ''
+        stream = getattr(process, 'stderr', None)
+        if stream is not None:
+            try:
+                error = str(stream.read() or '')[-2000:]
+            except Exception:
+                error = ''
+        log_event('ERROR', event, failed=True, error=error or 'worker exited non-zero', **fields)
+
+    def _speak_edge_voice(self, text: str, voice: str, timeout: float) -> str:
         path = None
         process = None
         try:
@@ -343,60 +365,129 @@ class VoiceOutput:
             process = subprocess.Popen(
                 command,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
                 creationflags=creationflags,
             )
             with self._lock:
                 self._process = process
             try:
-                return_code = process.wait(timeout=180)
+                return_code = process.wait(timeout=max(0.1, float(timeout)))
             except subprocess.TimeoutExpired:
                 self._terminate_process(process)
+                log_event('ERROR', 'edge_tts_worker_timeout', failed=True, voice=voice, timeout_seconds=timeout)
                 return 'failed'
             with self._lock:
                 interrupted = self._interrupt_reason in {'pause', 'stop', 'shutdown', 'restart'}
             if interrupted:
                 return 'interrupted'
-            return 'completed' if return_code == 0 else 'failed'
+            if return_code == 0:
+                return 'completed'
+            self._log_worker_failure(process, 'edge_tts_worker_failed', voice=voice, exit_code=return_code)
+            return 'failed'
         finally:
             with self._lock:
                 if self._process is process:
                     self._process = None
+            stream = getattr(process, 'stderr', None)
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
             if path:
                 try:
                     os.unlink(path)
                 except OSError:
                     pass
 
-    def _build_offline_engine(self):
-        engine = pyttsx3.init()
-        engine.setProperty('rate', int(max(80, min(360, settings.voice_rate * self.speed))))
-        engine.setProperty('volume', settings.voice_volume)
-        return engine
+    def _speak_edge(self, text: str) -> str:
+        deadline = time.monotonic() + max(0.1, settings.tts_timeout_seconds)
+        for voice in edge_voice_candidates(text):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return 'failed'
+            result = self._speak_edge_voice(text, voice, remaining)
+            if result != 'failed':
+                return result
+        return 'failed'
 
     def _speak_offline(self, text: str) -> str:
-        engine = None
+        path = None
+        process = None
         try:
-            engine = self._build_offline_engine()
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.txt', delete=False) as handle:
+                handle.write(text)
+                path = handle.name
+            if bool(getattr(sys, 'frozen', False)):
+                command = [sys.executable, '--offline-tts-playback']
+            else:
+                command = [sys.executable, '-m', 'jarvis.offline_tts_worker']
+            command += [
+                '--file', path,
+                '--rate', str(int(max(80, min(360, settings.voice_rate * self.speed)))),
+                '--volume', str(settings.voice_volume),
+            ]
+            creationflags = 0
+            if os.name == 'nt' and hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP'):
+                creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=creationflags,
+            )
             with self._lock:
-                self._offline_engine = engine
-            engine.say(text)
-            engine.runAndWait()
+                self._process = process
+            try:
+                return_code = process.wait(timeout=max(0.1, settings.offline_tts_timeout_seconds))
+            except subprocess.TimeoutExpired:
+                self._terminate_process(process)
+                log_event(
+                    'ERROR', 'offline_tts_worker_timeout', failed=True,
+                    timeout_seconds=settings.offline_tts_timeout_seconds,
+                )
+                return 'failed'
             with self._lock:
                 interrupted = self._interrupt_reason in {'pause', 'stop', 'shutdown', 'restart'}
-            return 'interrupted' if interrupted else 'completed'
-        except Exception:
+            if interrupted:
+                return 'interrupted'
+            if return_code == 0:
+                return 'completed'
+            self._log_worker_failure(process, 'offline_tts_worker_failed', exit_code=return_code)
+            return 'failed'
+        except Exception as exc:
+            log_event(
+                'ERROR', 'offline_tts_controller_failed', failed=True,
+                error_type=type(exc).__name__, error=str(exc),
+            )
             return 'failed'
         finally:
             with self._lock:
-                if self._offline_engine is engine:
-                    self._offline_engine = None
+                if self._process is process:
+                    self._process = None
+            stream = getattr(process, 'stderr', None)
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+            if path:
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
 
     def _play_text(self, text: str) -> str:
         if settings.voice_engine == 'edge':
             try:
                 result = self._speak_edge(text)
-            except Exception:
+            except Exception as exc:
+                log_event(
+                    'ERROR', 'edge_tts_controller_failed', failed=True,
+                    error_type=type(exc).__name__, error=str(exc),
+                )
                 result = 'failed'
             if result != 'failed':
                 return result
@@ -407,7 +498,9 @@ class VoiceOutput:
             item = self._queue.get()
             if item is _SENTINEL:
                 break
-            text = str(item)
+            speech = item if isinstance(item, _SpeechItem) else _SpeechItem(str(item))
+            text = speech.text
+            request_id = speech.request_id
             with self._condition:
                 if self._shutdown:
                     break
@@ -424,7 +517,13 @@ class VoiceOutput:
                     self._interrupt_reason = None
 
                 self._emit('speaking')
+                speech_started = time.perf_counter()
+                log_event('INFO', 'tts_started', request_id=request_id or '', input_characters=len(text))
                 result = self._play_text(text)
+                log_event(
+                    'INFO', 'tts_finished', request_id=request_id or '', result=result,
+                    elapsed_ms=round((time.perf_counter() - speech_started) * 1000, 3),
+                )
 
                 with self._condition:
                     reason = self._interrupt_reason

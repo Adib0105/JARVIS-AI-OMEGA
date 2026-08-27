@@ -88,12 +88,19 @@ def synthesize_and_play(
 
 
 def runtime_healthcheck() -> dict[str, object]:
+    from .config import settings
+
     windows_native = os.name == 'nt' and hasattr(ctypes, 'windll') and hasattr(ctypes.windll, 'winmm')
+    voices_configured = all((settings.voice_hindi, settings.voice_hinglish, settings.voice_english))
     return {
-        'status': 'PASS' if windows_native else 'FAIL',
+        'status': 'PASS' if windows_native and voices_configured else 'FAIL',
         'platform': sys.platform,
         'windows_native_audio': windows_native,
         'edge_tts_version': getattr(edge_tts, '__version__', 'unknown'),
+        'configured_voice': settings.voice_english,
+        'fallback_voice': settings.voice_fallback,
+        'voices_configured': voices_configured,
+        'audible_playback_verified': False,
     }
 
 

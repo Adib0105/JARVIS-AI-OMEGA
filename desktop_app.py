@@ -16,6 +16,12 @@ def packaged_healthcheck() -> int:
         probe = PATHS.data_dir / 'package-healthcheck.tmp'
         probe.write_text('ok', encoding='utf-8')
         probe.unlink()
+        import importlib.util
+
+        dependency_status = {
+            name: importlib.util.find_spec(name) is not None
+            for name in ('edge_tts', 'pyttsx3', 'pyautogui', 'sounddevice', 'speech_recognition')
+        }
         payload = {
             'status': 'PASS',
             'frozen': bool(getattr(sys, 'frozen', False)),
@@ -27,9 +33,13 @@ def packaged_healthcheck() -> int:
             'database': str(PATHS.data_dir / 'jarvis.db'),
             'exports': str(PATHS.export_dir),
             'cwd': os.getcwd(),
+            'runtime_dependencies': dependency_status,
         }
+        if os.name == 'nt' and not all(dependency_status.values()):
+            payload['status'] = 'FAIL'
+            payload['error'] = 'One or more packaged Windows runtime dependencies are missing.'
         print(json.dumps(payload, ensure_ascii=False))
-        return 0 if payload['frozen'] else 2
+        return 0 if payload['status'] == 'PASS' and payload['frozen'] else 2
     except Exception as exc:
         print(json.dumps({'status': 'FAIL', 'error': str(exc)}, ensure_ascii=False))
         return 1
@@ -117,6 +127,10 @@ def _is_edge_playback_worker_invocation() -> bool:
     return len(sys.argv) >= 3 and sys.argv[1] == '-m' and sys.argv[2] == 'edge_playback'
 
 
+def _is_offline_playback_worker_invocation() -> bool:
+    return len(sys.argv) >= 2 and sys.argv[1] == '--offline-tts-playback'
+
+
 def main() -> int:
     if '--tts-worker-healthcheck' in sys.argv:
         return tts_worker_healthcheck()
@@ -129,6 +143,11 @@ def main() -> int:
         from jarvis.tts_worker import run_edge_playback_worker
 
         return run_edge_playback_worker(sys.argv[3:])
+
+    if _is_offline_playback_worker_invocation():
+        from jarvis.offline_tts_worker import run_offline_playback_worker
+
+        return run_offline_playback_worker(sys.argv[2:])
 
     if '--package-healthcheck' in sys.argv:
         return packaged_healthcheck()

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import threading
+import time
 import tkinter as tk
+from uuid import uuid4
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, simpledialog
@@ -13,6 +15,7 @@ from .config import settings
 from .core import JarvisOmega
 from .hud import ArcReactorHUD
 from .microphone import WakeWordListener, record_and_transcribe
+from .logging_utils import log_event
 from .settings_ui import show_settings_dialog, show_update_dialog
 from .system_tools import system_metrics
 from .vision import capture_screen
@@ -135,6 +138,9 @@ class JarvisDesktop:
 
         self.mic_button = self._button(bottom, 'MIC / CTRL+M', self._push_to_talk, MAGENTA)
         self.mic_button.pack(side='right', padx=(4, 0))
+        self.cancel_button = self._button(bottom, 'CANCEL', self._cancel_request, RED)
+        self.cancel_button.configure(state='disabled')
+        self.cancel_button.pack(side='right', padx=(4, 0))
         self.send_button = self._button(bottom, 'SEND', self._send, CYAN)
         self.send_button.pack(side='right', padx=(4, 0))
         self.entry.focus_set()
@@ -289,6 +295,8 @@ class JarvisDesktop:
             self.status.configure(text=f'● {label}', fg=color)
         if hasattr(self, 'send_button'):
             self.send_button.configure(state='disabled' if busy else 'normal')
+        if hasattr(self, 'cancel_button'):
+            self.cancel_button.configure(state='normal' if busy else 'disabled')
         if hud_state:
             self._set_hud(hud_state)
         elif not busy:
@@ -307,8 +315,24 @@ class JarvisDesktop:
             event.set()
 
         self.root.after(0, ask)
-        event.wait()
+        active = getattr(self.jarvis, '_active_request', None)
+        timeout = active.remaining() if active is not None else settings.ai_timeout_seconds
+        if not event.wait(timeout=timeout):
+            return False
         return bool(result['allowed'])
+
+    def _cancel_request(self) -> None:
+        cancelled = False
+        try:
+            cancelled = bool(self.jarvis.cancel_current_request())
+        except Exception:
+            pass
+        try:
+            cancelled = bool(self.jarvis.cancel_mission()) or cancelled
+        except Exception:
+            pass
+        if cancelled and hasattr(self, 'status'):
+            self.status.configure(text='● CANCELLING', fg=RED)
 
     def _refresh_metrics(self) -> None:
         try:
@@ -476,16 +500,56 @@ class JarvisDesktop:
         else:
             self._append('YOU', f'[VOICE] {prompt}' if from_voice else prompt)
             self._set_busy(True, 'THINKING', GOLD, 'thinking')
-        threading.Thread(target=self._answer_worker, args=(prompt, images), daemon=True).start()
+        request_id = f'REQ-{uuid4().hex[:12].upper()}'
+        started = time.perf_counter()
+        log_event(
+            'INFO', 'request_started', request_id=request_id,
+            request_kind='vision' if images else 'chat',
+            input_characters=len(prompt), attachment_count=len(images),
+        )
+        threading.Thread(
+            target=self._answer_worker,
+            args=(prompt, images, request_id, started),
+            daemon=True,
+        ).start()
 
-    def _answer_worker(self, text: str, images: list[Path]) -> None:
+    def _answer_worker(
+        self,
+        text: str,
+        images: list[Path],
+        request_id: str | None = None,
+        started: float | None = None,
+    ) -> None:
+        started = started or time.perf_counter()
         try:
-            answer = self.jarvis.analyze_images(images, text) if images else self.jarvis.chat(text)
-            self.root.after(0, lambda: self._answer_done(answer, None, bool(images)))
+            log_event('INFO', 'provider_request_started', request_id=request_id or '', request_kind='vision' if images else 'chat')
+            if images:
+                answer = self.jarvis.analyze_images(images, text, request_id=request_id) if request_id else self.jarvis.analyze_images(images, text)
+            else:
+                answer = self.jarvis.chat(text, request_id=request_id) if request_id else self.jarvis.chat(text)
+            log_event(
+                'INFO', 'provider_response_received', request_id=request_id or '',
+                elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
+                output_characters=len(answer),
+            )
+            self.root.after(0, lambda: self._answer_done(answer, None, bool(images), request_id, started))
         except Exception as exc:
-            self.root.after(0, lambda: self._answer_done('', str(exc), False))
+            log_event(
+                'ERROR', 'request_failed', request_id=request_id or '', failed=True,
+                elapsed_ms=round((time.perf_counter() - started) * 1000, 3),
+                error_type=type(exc).__name__, error=str(exc),
+            )
+            error = str(exc)
+            self.root.after(0, lambda e=error: self._answer_done('', e, False, request_id, started))
 
-    def _answer_done(self, answer: str, error: str | None, clear_images: bool) -> None:
+    def _answer_done(
+        self,
+        answer: str,
+        error: str | None,
+        clear_images: bool,
+        request_id: str | None = None,
+        started: float | None = None,
+    ) -> None:
         self._set_busy(False)
         if error:
             self._set_hud('error')
@@ -493,9 +557,12 @@ class JarvisDesktop:
             self.root.after(1800, lambda: self._set_hud('idle'))
             return
         self._append('JARVIS', answer)
+        elapsed_ms = round((time.perf_counter() - started) * 1000, 3) if started else None
+        log_event('INFO', 'response_rendered', request_id=request_id or '', elapsed_ms=elapsed_ms)
         if clear_images:
             self._clear_images()
-        self.voice.speak(answer)
+        self.voice.speak(answer, request_id=request_id)
+        log_event('INFO', 'request_completed', request_id=request_id or '', elapsed_ms=elapsed_ms)
         self._refresh_tasks()
 
     def _mission(self) -> None:
@@ -518,7 +585,8 @@ class JarvisDesktop:
             result = self.jarvis.run_mission(goal, progress)
             self.root.after(0, lambda: self._mission_done(result, None))
         except Exception as exc:
-            self.root.after(0, lambda: self._mission_done('', str(exc)))
+            error = str(exc)
+            self.root.after(0, lambda e=error: self._mission_done('', e))
 
     def _mission_done(self, result: str, error: str | None) -> None:
         self._set_busy(False)
@@ -544,7 +612,8 @@ class JarvisDesktop:
             text = record_and_transcribe(settings.mic_record_seconds, settings.speech_language)
             self.root.after(0, lambda: self._mic_done(text, None))
         except Exception as exc:
-            self.root.after(0, lambda: self._mic_done('', str(exc)))
+            error = str(exc)
+            self.root.after(0, lambda e=error: self._mic_done('', e))
 
     def _mic_done(self, text: str, error: str | None) -> None:
         self._set_busy(False)
@@ -608,7 +677,8 @@ class JarvisDesktop:
             answer = self.jarvis.analyze_image(screenshot, prompt)
             self.root.after(0, lambda: self._vision_done(answer, screenshot.name, None))
         except Exception as exc:
-            self.root.after(0, lambda: self._vision_done('', '', str(exc)))
+            error = str(exc)
+            self.root.after(0, lambda e=error: self._vision_done('', '', e))
 
     def _vision_done(self, answer: str, name: str, error: str | None) -> None:
         self._set_busy(False)

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterator
 
 from .attachments import image_data_url, normalize_image_paths
 from .config import settings
@@ -13,6 +15,13 @@ from .errors import ErrorCategory, classify_exception
 from .memory import MemoryStore
 from .prompt import system_prompt
 from .providers import ToolResult, create_local_provider, create_primary_provider
+from .providers.deadline import (
+    RequestBudget,
+    RequestCancelledError,
+    call_with_deadline,
+    current_request_budget,
+    request_lifecycle,
+)
 from .tools import ToolRegistry
 
 
@@ -49,6 +58,40 @@ class JarvisOmega:
         self.last_request_kind = 'chat'
         self.last_plan: list[str] = []
         self._active_model = settings.model
+        self._request_lock = threading.RLock()
+        self._active_request: RequestBudget | None = None
+        self.last_request_id: str | None = None
+
+    @contextmanager
+    def _request_scope(
+        self,
+        timeout: float,
+        operation: str,
+        request_id: str | None = None,
+    ) -> Iterator[RequestBudget]:
+        parent = current_request_budget()
+        if parent is not None:
+            yield parent
+            return
+        with request_lifecycle(timeout, operation=operation, request_id=request_id) as budget:
+            with self._request_lock:
+                self._active_request = budget
+                self.last_request_id = budget.request_id
+            try:
+                yield budget
+            finally:
+                with self._request_lock:
+                    if self._active_request is budget:
+                        self._active_request = None
+
+    def cancel_current_request(self) -> bool:
+        """Return control to the UI promptly; blocking provider work is daemonized."""
+        with self._request_lock:
+            request = self._active_request
+        if request is None:
+            return False
+        request.cancel()
+        return True
 
     def new_session(self) -> str:
         self.session_id = self.memory.new_session('JARVIS OMEGA V7 session')
@@ -132,7 +175,7 @@ class JarvisOmega:
             friendly = self._friendly_error(primary_error)
             raise RuntimeError(f'{friendly}\nLocal fallback also failed: {local_exc}') from local_exc
 
-    def chat(self, text: str) -> str:
+    def chat(self, text: str, *, request_id: str | None = None) -> str:
         text = text.strip()
         if not text:
             return ''
@@ -141,22 +184,31 @@ class JarvisOmega:
         self._active_model = self._select_model(text, 'chat')
         self.last_provider_used = settings.provider
         started = time.perf_counter()
-        self.memory.add_message(self.session_id, 'user', text)
-        try:
+        with self._request_scope(settings.ai_timeout_seconds, 'AI request', request_id):
+            self.memory.add_message(self.session_id, 'user', text)
             try:
-                answer = self._chat_provider()
-            except Exception as exc:
-                answer = self._chat_local_fallback(exc)
-            self.memory.add_message(self.session_id, 'assistant', answer)
-            self._maybe_auto_summary()
-            return answer
-        finally:
-            self.last_latency = time.perf_counter() - started
+                try:
+                    answer = self._chat_provider()
+                except RequestCancelledError:
+                    raise
+                except Exception as exc:
+                    answer = self._chat_local_fallback(exc)
+                self.memory.add_message(self.session_id, 'assistant', answer)
+                self._maybe_auto_summary()
+                return answer
+            finally:
+                self.last_latency = time.perf_counter() - started
 
     def analyze_image(self, image_path: str | Path, prompt: str) -> str:
         return self.analyze_images([image_path], prompt)
 
-    def analyze_images(self, image_paths: list[str | Path], prompt: str) -> str:
+    def analyze_images(
+        self,
+        image_paths: list[str | Path],
+        prompt: str,
+        *,
+        request_id: str | None = None,
+    ) -> str:
         paths = normalize_image_paths(image_paths)
         user_prompt = prompt.strip() or (
             'Analyze the attached image(s). Explain what is visible, identify important details or errors, '
@@ -167,26 +219,28 @@ class JarvisOmega:
         self.last_provider_used = settings.provider
         started = time.perf_counter()
         names = ', '.join(path.name for path in paths)
-        self.memory.add_message(self.session_id, 'user', f'[IMAGE ATTACHMENT: {names}] {user_prompt}')
-
-        try:
-            turn = self.provider.vision(
-                system=self._system_instructions(),
-                prompt=user_prompt,
-                image_urls=[image_data_url(path) for path in paths],
-                model=self._active_model,
-                timeout=settings.vision_timeout_seconds,
-            )
-            self.last_model_used = turn.model or self._active_model
-            self.last_provider_used = turn.provider or settings.provider
-            self.last_tool_mode = f'vision-{len(paths)}-image'
-            answer = turn.text.strip() or 'Image analysis completed but no text answer was returned.'
-            self.memory.add_message(self.session_id, 'assistant', answer)
-            return answer
-        except Exception as exc:
-            raise self._friendly_error(exc) from exc
-        finally:
-            self.last_latency = time.perf_counter() - started
+        with self._request_scope(settings.vision_timeout_seconds, 'AI vision request', request_id):
+            self.memory.add_message(self.session_id, 'user', f'[IMAGE ATTACHMENT: {names}] {user_prompt}')
+            try:
+                turn = self.provider.vision(
+                    system=self._system_instructions(),
+                    prompt=user_prompt,
+                    image_urls=[image_data_url(path) for path in paths],
+                    model=self._active_model,
+                    timeout=settings.vision_timeout_seconds,
+                )
+                self.last_model_used = turn.model or self._active_model
+                self.last_provider_used = turn.provider or settings.provider
+                self.last_tool_mode = f'vision-{len(paths)}-image'
+                answer = turn.text.strip() or 'Image analysis completed but no text answer was returned.'
+                self.memory.add_message(self.session_id, 'assistant', answer)
+                return answer
+            except RequestCancelledError:
+                raise
+            except Exception as exc:
+                raise self._friendly_error(exc) from exc
+            finally:
+                self.last_latency = time.perf_counter() - started
 
     def _one_shot_text(self, instruction: str, prompt: str, kind: str = 'smart') -> str:
         model = self._select_model(prompt, kind if kind in {'mission', 'summary', 'review'} else 'mission')
@@ -373,7 +427,11 @@ class JarvisOmega:
                         args = {}
                 except json.JSONDecodeError:
                     args = {}
-                output = self.tools.call(call.name, args)
+                output = call_with_deadline(
+                    lambda name=call.name, arguments=args: self.tools.call(name, arguments),
+                    settings.ai_timeout_seconds,
+                    operation=f'Tool {call.name}',
+                )
                 results.append(ToolResult(call_id=call.id, output=output))
 
             turn = self.provider.continue_with_tools(

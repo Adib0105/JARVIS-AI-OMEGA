@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import sys
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ from unittest.mock import patch
 from jarvis.first_run import inspect_bootstrap_state, save_ai_configuration, test_provider_connection
 from jarvis.logging_utils import redact_text
 from jarvis.product_paths import ProductPaths, config_env_path
+from jarvis.settings_ui import update_env_values
 
 
 class _Response:
@@ -91,6 +93,28 @@ class FirstRunBootstrapTests(unittest.TestCase):
         redacted = redact_text(f'OPENROUTER_API_KEY={secret} Authorization: Bearer {secret}')
         self.assertNotIn(secret, redacted)
         self.assertIn('[REDACTED]', redacted)
+
+    def test_settings_update_is_atomic_allowlisted_and_preserves_credentials(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / '.env'
+            secret = 'sk-or-v1-super-secret-test-value'
+            path.write_text(
+                f'AI_PROVIDER=openrouter\nOPENROUTER_API_KEY={secret}\nAI_TIMEOUT_SECONDS=60\n',
+                encoding='utf-8',
+            )
+            with patch('jarvis.settings_ui._env_path', return_value=path):
+                update_env_values({
+                    'AI_TIMEOUT_SECONDS': '45',
+                    'VOICE_ENGLISH': 'en-IN-NeerjaNeural',
+                    'OPENROUTER_API_KEY': 'must-not-overwrite',
+                })
+            text = path.read_text(encoding='utf-8')
+            self.assertIn(f'OPENROUTER_API_KEY={secret}', text)
+            self.assertIn('AI_TIMEOUT_SECONDS=45', text)
+            self.assertIn('VOICE_ENGLISH=en-IN-NeerjaNeural', text)
+            self.assertNotIn('must-not-overwrite', text)
+            if os.name != 'nt':
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
     def test_packaged_config_path_is_per_user_not_program_files(self):
         with tempfile.TemporaryDirectory() as tmp:

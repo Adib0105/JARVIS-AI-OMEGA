@@ -209,6 +209,7 @@ class ObservabilityManager:
         fallback: bool = False,
         route: str | None = None,
         error_category: str | None = None,
+        request_id: str | None = None,
     ) -> ObservabilityEvent:
         return self.record(
             category='MODEL',
@@ -224,6 +225,7 @@ class ObservabilityManager:
                 'fallback': bool(fallback),
                 'route': route or '',
                 'error_category': error_category or '',
+                'request_id': request_id or '',
             },
         )
 

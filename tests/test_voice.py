@@ -1,6 +1,7 @@
 import unittest
 
-from jarvis.voice import clean_for_speech, detect_speech_mode, edge_rate_for_speed
+from jarvis.config import settings
+from jarvis.voice import clean_for_speech, detect_speech_mode, edge_rate_for_speed, edge_voice_candidates
 
 
 class VoiceCleaningTests(unittest.TestCase):
@@ -36,6 +37,16 @@ class VoiceCleaningTests(unittest.TestCase):
     def test_edge_speed_is_clamped_to_provider_safe_range(self):
         self.assertEqual(edge_rate_for_speed('+0%', 0.1), '-50%')
         self.assertEqual(edge_rate_for_speed('+0%', 3.0), '+100%')
+
+    def test_primary_english_voice_is_indian_female_neerja(self):
+        self.assertEqual(settings.voice_english, 'en-IN-NeerjaNeural')
+        self.assertEqual(edge_voice_candidates('Explain this clearly')[0], 'en-IN-NeerjaNeural')
+
+    def test_edge_voice_candidates_keep_distinct_configured_fallback(self):
+        candidates = edge_voice_candidates('Hello JARVIS')
+        self.assertEqual(candidates[0], settings.voice_english)
+        self.assertEqual(len(candidates), len(set(candidates)))
+        self.assertIn(settings.voice_fallback, candidates)
 
 
 if __name__ == '__main__':

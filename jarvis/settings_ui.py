@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import os
-import re
 import tkinter as tk
 import webbrowser
 from pathlib import Path
 from tkinter import messagebox
 
-from .config import ROOT, settings
+from .config import settings
 from .logging_utils import CRASH_DIR, LOG_DIR
 from .product_paths import config_env_path
 from .updater import check_latest_release
@@ -15,12 +14,15 @@ from .updater import check_latest_release
 
 EDITABLE_KEYS = {
     'ENABLE_VOICE_OUTPUT', 'EDGE_VOICE_RATE', 'EDGE_VOICE_VOLUME', 'EDGE_VOICE_PITCH',
+    'VOICE_HINDI', 'VOICE_HINGLISH', 'VOICE_ENGLISH', 'VOICE_FALLBACK',
+    'TTS_TIMEOUT_SECONDS', 'OFFLINE_TTS_TIMEOUT_SECONDS',
     'ENABLE_MIC_INPUT', 'ENABLE_WAKE_WORD', 'WAKE_WORD', 'SPEECH_LANGUAGE', 'MIC_RECORD_SECONDS',
     'REQUIRE_LOCAL_APPROVAL', 'ENABLE_DESKTOP_AUTOMATION', 'ENABLE_DOCUMENT_INTELLIGENCE',
     'ENABLE_CODING_TOOLS', 'ENABLE_GOOGLE_WORKSPACE',
     'MODEL_ROUTING', 'FAST_MODEL', 'SMART_MODEL', 'VISION_MODEL',
     'ENABLE_LOCAL_FALLBACK', 'LOCAL_AI_BASE_URL', 'LOCAL_AI_MODEL',
     'AUTO_SUMMARIZE', 'SUMMARIZE_AFTER_MESSAGES',
+    'AI_TIMEOUT_SECONDS', 'VISION_TIMEOUT_SECONDS', 'MISSION_TIMEOUT_SECONDS',
     'MISSION_MAX_STEPS', 'SYSTEM_REFRESH_MS', 'REMINDER_POLL_SECONDS',
 }
 
@@ -29,44 +31,14 @@ def _env_path() -> Path:
     return config_env_path()
 
 
-def _read_env_lines() -> list[str]:
-    path = _env_path()
-    if not path.exists():
-        path.parent.mkdir(parents=True, exist_ok=True)
-        example = ROOT / '.env.example'
-        if example.exists():
-            text = example.read_text(encoding='utf-8')
-            text = re.sub(r'(?m)^OPENROUTER_API_KEY=.*$', 'OPENROUTER_API_KEY=', text)
-            text = re.sub(r'(?m)^OPENAI_API_KEY=.*$', 'OPENAI_API_KEY=', text)
-            path.write_text(text, encoding='utf-8')
-        else:
-            path.write_text('', encoding='utf-8')
-    return path.read_text(encoding='utf-8', errors='replace').splitlines()
-
-
 def update_env_values(values: dict[str, str]) -> None:
     """Update only allowlisted non-secret UI settings without exposing API/OAuth secrets."""
     cleaned = {k: str(v).strip() for k, v in values.items() if k in EDITABLE_KEYS}
     if not cleaned:
         return
-    lines = _read_env_lines()
-    seen: set[str] = set()
-    out: list[str] = []
-    pattern = re.compile(r'^\s*([A-Z0-9_]+)\s*=')
-    for line in lines:
-        match = pattern.match(line)
-        key = match.group(1) if match else None
-        if key in cleaned:
-            out.append(f'{key}={cleaned[key]}')
-            seen.add(key)
-        else:
-            out.append(line)
-    if out and out[-1].strip():
-        out.append('')
-    for key, value in cleaned.items():
-        if key not in seen:
-            out.append(f'{key}={value}')
-    _env_path().write_text('\n'.join(out).rstrip() + '\n', encoding='utf-8')
+    from .first_run import _replace_env_values
+
+    _replace_env_values(_env_path(), cleaned)
 
 
 def _open_folder(path: Path) -> None:
@@ -144,6 +116,12 @@ def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
     text_row('Voice rate', 'EDGE_VOICE_RATE', settings.edge_voice_rate)
     text_row('Voice volume', 'EDGE_VOICE_VOLUME', settings.edge_voice_volume)
     text_row('Voice pitch', 'EDGE_VOICE_PITCH', settings.edge_voice_pitch)
+    text_row('English voice', 'VOICE_ENGLISH', settings.voice_english)
+    text_row('Hinglish voice', 'VOICE_HINGLISH', settings.voice_hinglish)
+    text_row('Hindi voice', 'VOICE_HINDI', settings.voice_hindi)
+    text_row('Fallback voice', 'VOICE_FALLBACK', settings.voice_fallback)
+    text_row('Edge TTS timeout', 'TTS_TIMEOUT_SECONDS', settings.tts_timeout_seconds)
+    text_row('Offline TTS timeout', 'OFFLINE_TTS_TIMEOUT_SECONDS', settings.offline_tts_timeout_seconds)
 
     section('AGENT + COMPUTER CONTROL')
     bool_row('Require local action approvals', 'REQUIRE_LOCAL_APPROVAL', settings.require_local_approval)
@@ -152,6 +130,9 @@ def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
     bool_row('Coding/Git workspace tools', 'ENABLE_CODING_TOOLS', settings.enable_coding_tools)
     bool_row('Google Workspace tools', 'ENABLE_GOOGLE_WORKSPACE', settings.enable_google_workspace)
     text_row('Mission max steps', 'MISSION_MAX_STEPS', settings.mission_max_steps)
+    text_row('AI request timeout', 'AI_TIMEOUT_SECONDS', settings.ai_timeout_seconds)
+    text_row('Vision timeout', 'VISION_TIMEOUT_SECONDS', settings.vision_timeout_seconds)
+    text_row('Mission timeout', 'MISSION_TIMEOUT_SECONDS', settings.mission_timeout_seconds)
 
     section('MODEL ROUTING + FALLBACK')
     text_row('Model routing', 'MODEL_ROUTING', settings.model_routing)

@@ -459,6 +459,7 @@ Database backup uses SQLite-safe backup operations with integrity verification a
 Build dependencies:
 
 ```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-windows.txt
 .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
 ```
 
@@ -479,6 +480,19 @@ Build the installer after installing Inno Setup 6:
 ```powershell
 .\build_installer.ps1
 ```
+
+Expected installer and digest:
+
+```text
+dist/installer/JARVIS-AI-OMEGA-Setup-8.0.0-rc1.exe
+dist/installer/SHA256.txt
+```
+
+AI chat, vision, explicit missions, Edge TTS, and offline TTS use separate configurable
+wall-clock limits. A normal chat request has one shared budget across provider retries,
+tool continuations, quality repair, and local fallback; each stage does not receive a
+fresh full timeout. The default English/Hinglish voice is the Indian female
+`en-IN-NeerjaNeural`, with a configured Edge voice fallback and bounded offline backend.
 
 Actual installer installation/uninstallation remains a workstation validation gate.
 
