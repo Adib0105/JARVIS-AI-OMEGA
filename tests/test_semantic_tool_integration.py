@@ -61,6 +61,22 @@ class FakeBrowser:
     def extract(self, url: str, keyword: str = '', max_chars: int = 18000):
         return {'ok': True, 'url': url, 'keyword': keyword, 'content': 'safe excerpt', 'max_chars': max_chars, 'verification': {'status': 'VERIFIED', 'verified': True}}
 
+    def snapshot(self, url: str, max_chars: int = 18000):
+        return {'ok': True, 'url': url, 'sha256': 'a' * 64, 'characters': 10, 'max_chars': max_chars, 'verification': {'status': 'VERIFIED', 'verified': True}}
+
+    def changed(self, url: str, previous_sha256: str, max_chars: int = 18000):
+        return {'ok': True, 'url': url, 'previous_sha256': previous_sha256, 'current_sha256': 'b' * 64, 'changed': True, 'max_chars': max_chars, 'verification': {'status': 'VERIFIED', 'verified': True}}
+
+    def research(self, query: str, *, max_results: int = 6, max_pages: int = 3, max_chars_per_page: int = 6000):
+        return {
+            'ok': True,
+            'query': query,
+            'search_results': [{'title': 'A', 'url': 'https://example.test/a'}],
+            'sources_read': [{'title': 'A', 'url': 'https://example.test/a', 'content': 'evidence'}],
+            'limits': [max_results, max_pages, max_chars_per_page],
+            'verification': {'status': 'PARTIAL', 'verified': False},
+        }
+
 
 class SemanticToolIntegrationTests(unittest.TestCase):
     def _registry(self, tmp: str) -> ToolRegistry:
@@ -79,11 +95,14 @@ class SemanticToolIntegrationTests(unittest.TestCase):
         for name in ('type_text', 'click_screen', 'press_key', 'hotkey'):
             self.assertIn(name, names)
 
-    def test_public_web_schemas_expose_safe_browser_read_tools(self):
+    def test_public_web_schemas_expose_safe_browser_tools(self):
         with tempfile.TemporaryDirectory() as tmp, patch.object(settings, 'enable_public_web_tools', True):
             registry = self._registry(tmp)
             names = {row['name'] for row in registry.schemas(include_local=False)}
-        for name in ('browser_trust', 'browser_read_safe', 'browser_extract_safe'):
+        for name in (
+            'browser_trust', 'browser_read_safe', 'browser_extract_safe',
+            'browser_snapshot', 'browser_changed', 'browser_research',
+        ):
             self.assertIn(name, names)
 
     def test_semantic_click_failure_is_not_wrapped_as_tool_success(self):
@@ -111,6 +130,20 @@ class SemanticToolIntegrationTests(unittest.TestCase):
         self.assertFalse(payload['ok'])
         self.assertEqual(payload['verification']['status'], 'FAILED')
         self.assertNotIn('result', payload)
+
+    def test_browser_monitoring_and_research_preserve_explicit_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = self._registry(tmp)
+            snapshot = json.loads(registry.call('browser_snapshot', {'url': 'https://example.test', 'max_chars': 2000}))
+            changed = json.loads(registry.call('browser_changed', {'url': 'https://example.test', 'previous_sha256': 'a' * 64, 'max_chars': 2000}))
+            research = json.loads(registry.call('browser_research', {'query': 'topic', 'max_results': 4, 'max_pages': 2, 'max_chars_per_page': 3000}))
+        self.assertTrue(snapshot['ok'])
+        self.assertEqual(snapshot['verification']['status'], 'VERIFIED')
+        self.assertTrue(changed['changed'])
+        self.assertEqual(changed['verification']['status'], 'VERIFIED')
+        self.assertEqual(research['verification']['status'], 'PARTIAL')
+        self.assertFalse(research['verification']['verified'])
+        self.assertEqual(research['limits'], [4, 2, 3000])
 
     def test_open_url_uses_safe_browser_contract(self):
         with tempfile.TemporaryDirectory() as tmp:
