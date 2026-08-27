@@ -14,6 +14,9 @@ from ..storage.sqlite_utils import connect_sqlite
 from enum import Enum
 
 
+MINIMUM_PYTHON = (3, 11)
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -234,7 +237,11 @@ class JarvisHealthSystem:
 
     def run(self) -> HealthReport:
         checks: list[HealthCheck] = [
-            self._check('Python', sys.version_info >= (3, 10), f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}'),
+            self._check(
+                'Python',
+                sys.version_info >= MINIMUM_PYTHON,
+                f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} (minimum {MINIMUM_PYTHON[0]}.{MINIMUM_PYTHON[1]})',
+            ),
             self._provider(),
             self._local_ai(),
             self._database(),
