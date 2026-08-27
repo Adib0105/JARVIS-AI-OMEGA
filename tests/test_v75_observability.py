@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jarvis.observability.health import HealthStatus, JarvisHealthSystem
+from jarvis.observability.health import HealthStatus, JarvisHealthSystem, MINIMUM_PYTHON
 from jarvis.observability.manager import ObservabilityManager
 from jarvis.providers.base import AIProvider, ProviderTurn
 from jarvis.providers.observed import ObservedProvider
@@ -37,6 +37,9 @@ class FakeProvider(AIProvider):
 
 
 class V75ObservabilityTests(unittest.TestCase):
+    def test_health_runtime_support_floor_matches_project_contract(self):
+        self.assertEqual(MINIMUM_PYTHON, (3, 11))
+
     def test_cost_is_only_reported_when_provider_explicitly_supplies_it(self):
         with tempfile.TemporaryDirectory() as tmp:
             obs = ObservabilityManager(Path(tmp) / 'jarvis.db')
