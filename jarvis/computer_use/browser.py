@@ -32,8 +32,8 @@ class BrowserAgent:
     """Browser abstraction with explicit domain trust and prompt-injection isolation.
 
     Browser opening/navigation uses the user's default browser. Public read/extract
-    paths reject local/private addresses. Webpage text is always returned as untrusted
-    data with an injection scan; it never becomes agent/system instructions.
+    paths use a DNS/redirect-safe address-pinned reader. Webpage text is always returned
+    as untrusted data with an injection scan; it never becomes agent/system instructions.
     """
 
     SEARCH_ENGINES = {
@@ -45,10 +45,12 @@ class BrowserAgent:
 
     @staticmethod
     def trust(url: str) -> dict:
-        return assess_public_url(url).as_dict()
+        return assess_public_url(url, resolve_dns=True).as_dict()
 
     def open(self, url: str) -> dict:
-        trust = assess_public_url(url)
+        # Opening a URL in the user's browser still performs a network/navigation side
+        # effect, so resolve DNS up front and refuse private/mixed answers.
+        trust = assess_public_url(url, resolve_dns=True)
         if not trust.allowed:
             return {'ok': False, 'error': '; '.join(trust.reasons), 'trust': trust.as_dict()}
         before = _browser_processes()
@@ -86,7 +88,18 @@ class BrowserAgent:
         trust = assess_public_url(url)
         if not trust.allowed:
             return {'ok': False, 'error': '; '.join(trust.reasons), 'trust': trust.as_dict(), 'untrusted_content': True}
-        result = read_web_page(url, max_chars=max_chars)
+        try:
+            result = read_web_page(url, max_chars=max_chars)
+        except (ValueError, OSError, TimeoutError) as exc:
+            return {
+                'ok': False,
+                'action': 'read',
+                'url': url,
+                'trust': trust.as_dict(),
+                'untrusted_content': True,
+                'error': f'Public page read blocked/failed: {type(exc).__name__}: {exc}',
+                'verification': {'status': 'FAILED', 'verified': False, 'evidence': 'No trusted fetch result was returned.'},
+            }
         text = str(result)
         scan = scan_prompt_injection(text)
         return {
@@ -100,7 +113,7 @@ class BrowserAgent:
             'verification': {
                 'status': 'VERIFIED',
                 'verified': True,
-                'evidence': 'Public HTTP reader returned page content; content remains untrusted data.',
+                'evidence': 'Address-pinned public HTTP reader returned page content; content remains untrusted data.',
             },
         }
 
@@ -133,9 +146,21 @@ class BrowserAgent:
         trust = assess_public_url(url)
         if not trust.allowed:
             return {'ok': False, 'error': '; '.join(trust.reasons), 'trust': trust.as_dict(), 'untrusted_content': True}
-        page = read_web_page(url, max_chars=max_chars)
-        # read_web_page returns plain text. Older BrowserAgent code expected a dict,
-        # causing valid extraction calls to fail; normalize both forms for compatibility.
+        try:
+            page = read_web_page(url, max_chars=max_chars)
+        except (ValueError, OSError, TimeoutError) as exc:
+            return {
+                'ok': False,
+                'action': 'extract',
+                'url': url,
+                'keyword': keyword,
+                'trust': trust.as_dict(),
+                'untrusted_content': True,
+                'error': f'Public page extraction blocked/failed: {type(exc).__name__}: {exc}',
+                'verification': {'status': 'FAILED', 'verified': False, 'evidence': 'No trusted fetch result was returned.'},
+            }
+        # read_web_page returns plain text. Normalize the old dict shape as a
+        # compatibility courtesy for injected/test readers.
         if isinstance(page, dict):
             content = str(page.get('content') or page.get('text') or '')
         else:
@@ -160,6 +185,6 @@ class BrowserAgent:
                 'status': 'VERIFIED',
                 'verified': True,
                 'characters': len(extracted),
-                'evidence': 'Extracted text came from the requested public page and remains untrusted data.',
+                'evidence': 'Extracted text came from the address-pinned public page and remains untrusted data.',
             },
         }
