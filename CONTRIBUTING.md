@@ -1,26 +1,22 @@
 # Contributing to JARVIS AI OMEGA
 
-Thanks for helping improve JARVIS AI OMEGA.
-
-The project values **reliability, verification, safety, clear evidence and focused changes** over feature count.
+JARVIS AI OMEGA prioritizes reliability, verification, security, clear evidence and focused changes over feature count.
 
 ## Branch strategy
 
-- `main` — stable V6 baseline until the final V7 release decision
-- `v7-development` — active V7/V7.5 engineering
+- `v7-development` — active engineering/release-candidate branch.
+- `main` — separate stable line; do not infer its version from historical branch names.
 
-New V7/V7.5 work should target `v7-development` unless a maintainer explicitly asks for something else.
+The application version is defined only by `jarvis.version.APP_VERSION`. Do not add hard-coded release versions to runtime, setup, diagnostics, packaging, installer or CI files.
 
 ## Before you start
 
 1. Search existing issues and documentation.
-2. Read [README.md](README.md), [SECURITY.md](SECURITY.md) and [docs/README.md](docs/README.md).
-3. For architecture-sensitive work, also read the relevant V7 document.
-4. Keep the change narrow enough to test and review.
+2. Read `README.md`, `SECURITY.md` and the relevant subsystem docs.
+3. Keep changes narrow enough to review and verify.
+4. Do not overwrite local work without checking `git status`.
 
-## Development setup
-
-Windows setup:
+## Windows development setup
 
 ```powershell
 git fetch origin
@@ -30,141 +26,92 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\setup_windows.ps1
 ```
 
-See [docs/V7-SETUP.md](docs/V7-SETUP.md) for the full setup guide.
+For packaging work:
+
+```powershell
+.\setup_windows.ps1 -IncludeBuildTools
+```
+
+The setup script uses the checked-in release constraints and exact direct pins. See `docs/DEPENDENCIES.md` and `docs/V7-SETUP.md`.
 
 ## Quality gate
 
 Before opening a pull request:
 
 ```powershell
+.\.venv\Scripts\python.exe self_check.py
 .\.venv\Scripts\python.exe -m compileall -f -q .
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-When useful, also run:
+`self_check_v75.py` exists only as a backward-compatible wrapper.
 
-```powershell
-.\.venv\Scripts\python.exe self_check.py
-.\.venv\Scripts\python.exe self_check_v75.py
-```
+Do not delete, skip, weaken or falsify a regression test to make CI green. Fix the root cause or document a genuine unsupported limitation.
 
-Do not delete, skip or weaken a regression test only to make CI green. Fix the root cause or explain the limitation.
-
-## Engineering rules
-
-A feature is not complete simply because code exists.
+## Engineering rule
 
 ```text
 IMPLEMENTED + INTEGRATED + TESTED + VERIFIED
 ```
 
-For real-world actions, a successful tool return is not automatically proof that the requested effect happened. Add observable verification whenever practical.
+A successful import, API call or OS input event is not automatically proof that the requested real-world effect happened. Add observable verification whenever practical and preserve `NOT_TESTED` / `NOT VERIFIED` when evidence does not exist.
 
 ## Security rules
 
-Never commit:
+Never commit `.env`, API keys, passwords, OAuth secrets/tokens, recovery codes, SSH/private keys, live private databases or credential exports.
 
-- `.env`
-- API keys
-- passwords
-- OAuth secrets/tokens
-- recovery codes
-- SSH/private keys
-- private databases or credential exports
+New tools must be narrow, capability-profiled, auditable and permission-aware. Unknown/unprofiled tools must fail closed.
 
-New tools must be narrow, capability-profiled, auditable and permission-aware.
+Do not add unrestricted arbitrary shell execution, credential scraping, hidden persistence, permission/audit bypasses, or self-development paths that rewrite protected security/secret/sandbox/rollback controls.
 
-Do not add:
-
-- unrestricted arbitrary shell execution
-- credential scraping
-- hidden persistence or stealth behavior
-- permission/audit bypasses
-- self-development paths that can rewrite protected security/rollback/secret controls
-
-Web/search/page content must remain untrusted data.
+Web/search/page content remains untrusted data.
 
 ## Computer-use changes
 
-Computer-use changes should preserve the V7 reliability model:
+Preserve the reliability model:
 
 ```text
 semantic target → confidence/ambiguity gate → action → observation → verification
 ```
 
-Low-confidence targets should stop safely rather than guess. Do not use coordinate clicking as the default targeting strategy.
+Low-confidence or ambiguous targets should stop safely rather than guess. Coordinate clicking must not become the default targeting strategy.
 
 ## Self-development changes
 
-Controlled self-development must remain sandbox-first:
+Controlled self-development remains sandbox-first:
 
 ```text
 Gap → Proposal → Isolated Worktree → Build → Tests → Security/Evaluation
 → Diff → Approval → Controlled Release
 ```
 
-`APPROVED` must not silently become `DEPLOYED`.
-
-Protected security, secret, sandbox and rollback boundaries are not normal self-modification targets.
+`APPROVED` must not silently become `DEPLOYED`, and production self-modification remains disabled by default.
 
 ## Tests
 
-Add or update deterministic tests when behavior changes. Prefer tests that prove externally observable contracts rather than implementation trivia.
+Add or update deterministic tests when behavior changes. Prefer externally observable contracts over implementation trivia.
 
-Important test areas include:
+Important areas include mission verification/recovery, permissions, secret redaction, memory migration/lifecycle, provider routing/timeouts, browser prompt-injection isolation, file/path security, computer-use confidence, diagnostics truthfulness, backup/restore integrity, self-development boundaries, release/rollback gates and packaging/version metadata.
 
-- mission verification/recovery
-- permission/security behavior
-- secret redaction
-- memory migration/lifecycle
-- browser prompt-injection isolation
-- computer-use confidence behavior
-- backup/restore integrity
-- self-development sandbox boundaries
-- release/rollback gates
+## Packaging changes
+
+When packaging/build/installer code changes, the exact resulting commit must pass Windows regression, frozen EXE build, PE metadata verification, package secret exclusion, installer build, isolated install/uninstall and post-packaging regression. Do not reuse artifacts/evidence from an older commit.
 
 ## Documentation
 
-Update documentation when behavior, configuration, security boundaries or release steps change.
-
-Common files:
-
-- `README.md`
-- `CHANGELOG.md`
-- `docs/V7.5-STATUS.md`
-- `ROADMAP.md`
-- subsystem-specific docs under `docs/`
+Update documentation when behavior, configuration, security boundaries or release steps change. Historical V7/V7.5 filenames may remain for link compatibility, but their content must not become an independent product-version authority.
 
 ## Pull requests
 
-Use the repository PR template. A good PR should explain:
-
-- what changed
-- why it changed
-- how it was tested
-- security/permission impact
-- how success is verified
-- rollback/revert path for non-trivial changes
-
-Keep unrelated refactors out of focused fixes when possible.
+A good PR states what changed, why, how it was tested, security/permission impact, how success is verified, known limitations and the rollback/revert path for non-trivial changes.
 
 ## Bug reports
 
-Use the GitHub bug template and include:
-
-- branch/commit
-- Windows/Python version
-- exact reproduction steps
-- expected behavior
-- actual behavior
-- safe/redacted logs or screenshots
-- relevant self-check output
-
-Never include secrets in issues.
+Include branch/commit, Windows/Python version, reproduction steps, expected vs actual behavior, safe/redacted logs/screenshots and relevant self-check output. Never include secrets.
 
 ## Style
 
-Prefer straightforward Python, explicit error handling, bounded retries and clear data contracts. Avoid hidden global behavior when dependency injection or explicit configuration is practical.
+Prefer straightforward Python, explicit error handling, bounded retries, explicit composition/dependency injection and clear data contracts over hidden global mutation.
 
 ## License
 
