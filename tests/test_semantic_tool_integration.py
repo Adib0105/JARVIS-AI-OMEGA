@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -87,7 +88,8 @@ class SemanticToolIntegrationTests(unittest.TestCase):
         return registry
 
     def test_desktop_schemas_expose_semantic_tools_and_keep_compatibility_tools(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(settings, 'enable_desktop_automation', True):
+        enabled = replace(settings, enable_desktop_automation=True)
+        with tempfile.TemporaryDirectory() as tmp, patch('jarvis.tools.settings', enabled):
             registry = self._registry(tmp)
             names = {row['name'] for row in registry.schemas(include_local=True)}
         for name in ('computer_status', 'list_ui_targets', 'semantic_click', 'semantic_type'):
@@ -96,7 +98,8 @@ class SemanticToolIntegrationTests(unittest.TestCase):
             self.assertIn(name, names)
 
     def test_public_web_schemas_expose_safe_browser_tools(self):
-        with tempfile.TemporaryDirectory() as tmp, patch.object(settings, 'enable_public_web_tools', True):
+        enabled = replace(settings, enable_public_web_tools=True)
+        with tempfile.TemporaryDirectory() as tmp, patch('jarvis.tools.settings', enabled):
             registry = self._registry(tmp)
             names = {row['name'] for row in registry.schemas(include_local=False)}
         for name in (
