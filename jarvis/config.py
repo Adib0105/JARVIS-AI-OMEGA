@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import os
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
-from .product_paths import PATHS
+from .product_paths import PATHS, config_env_path
 
 ROOT = PATHS.install_dir
-load_dotenv((PATHS.config_dir / '.env') if getattr(sys, 'frozen', False) else (ROOT / '.env'))
+load_dotenv(config_env_path())
 
 
 def _bool(name: str, default: bool) -> bool:
