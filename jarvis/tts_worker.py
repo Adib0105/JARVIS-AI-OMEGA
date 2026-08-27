@@ -39,7 +39,10 @@ def _mci_send(command: str) -> None:
 
 def play_mp3_windows(path: str | Path) -> None:
     target = _short_path(str(Path(path).resolve()))
-    _mci_send('Close JARVISTTS')
+    try:
+        _mci_send('Close JARVISTTS')
+    except Exception:
+        pass
     _mci_send(f'Open "{target}" Type MPEGVideo Alias JARVISTTS')
     try:
         _mci_send('Play JARVISTTS Wait')
