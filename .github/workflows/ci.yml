@@ -26,9 +26,9 @@ jobs:
       SELF_DEVELOPMENT_ENABLED: 'true'
       PRODUCTION_SELF_MODIFICATION: 'false'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: {fetch-depth: 0}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with: {python-version: '${{ matrix.python-version }}'}
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.txt
@@ -38,7 +38,7 @@ jobs:
         run: |
           set -o pipefail
           python -m unittest discover -s tests -v 2>&1 | tee test-output.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: linux-test-output-${{ matrix.python-version }}
@@ -57,9 +57,9 @@ jobs:
       SELF_DEVELOPMENT_ENABLED: 'true'
       PRODUCTION_SELF_MODIFICATION: 'false'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: {fetch-depth: 0}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with: {python-version: '3.14'}
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.txt
@@ -72,7 +72,7 @@ jobs:
           $code = $LASTEXITCODE
           Get-Content windows-test-output.txt
           if ($code -ne 0) { exit $code }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: windows-test-output-3.14
@@ -84,9 +84,9 @@ jobs:
     needs: windows-regression
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: {fetch-depth: 0}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with: {python-version: '3.14'}
       - name: Build EXE
         shell: pwsh
@@ -120,7 +120,7 @@ jobs:
           $setup = Get-ChildItem '.\dist\installer\JARVIS-AI-OMEGA-Setup-*.exe' | Select-Object -First 1
           if (-not $setup) { throw 'Installer artifact missing.' }
           (Get-FileHash $setup.FullName -Algorithm SHA256).Hash | Set-Content '.\dist\installer\SHA256.txt'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: jarvis-windows-release-candidate
           path: |
@@ -136,7 +136,7 @@ jobs:
     runs-on: windows-latest
     steps:
       # Deliberately NO repository checkout and NO Python setup in this job.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: jarvis-windows-release-candidate
           path: rc
@@ -178,7 +178,7 @@ jobs:
           Start-Process $cmd -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
           if (Test-Path (Join-Path $env:ProgramFiles 'JARVIS AI OMEGA\JARVIS-OMEGA-V7.exe')) { throw 'Application remained after uninstall.' }
           if (-not (Test-Path (Join-Path $data 'uninstall-preservation-test.txt'))) { throw 'User data was unexpectedly deleted.' }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: installed-app-validation-evidence
@@ -201,8 +201,8 @@ jobs:
       SELF_DEVELOPMENT_ENABLED: 'true'
       PRODUCTION_SELF_MODIFICATION: 'false'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with: {python-version: '3.14'}
       - run: pip install -r requirements.txt
       - run: pip install -r requirements-windows.txt
