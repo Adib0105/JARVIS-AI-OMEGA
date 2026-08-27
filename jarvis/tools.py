@@ -41,6 +41,9 @@ _DIRECT_RESULT_TOOLS = {
     'browser_search',
     'browser_read_safe',
     'browser_extract_safe',
+    'browser_snapshot',
+    'browser_changed',
+    'browser_research',
     'semantic_click',
     'semantic_type',
 }
@@ -99,6 +102,9 @@ class ToolRegistry:
                 _fn('browser_trust', 'Validate whether a URL and its current DNS answers are safe for public-browser access.', {'url': s}, ['url']),
                 _fn('browser_read_safe', 'Read a public webpage with DNS/redirect protection and prompt-injection scanning.', {'url': s, 'max_chars': {'type': 'integer', 'minimum': 1000, 'maximum': 20000}}, ['url', 'max_chars']),
                 _fn('browser_extract_safe', 'Extract matching text from a public webpage with DNS/redirect protection and prompt-injection scanning.', {'url': s, 'keyword': s, 'max_chars': {'type': 'integer', 'minimum': 1000, 'maximum': 20000}}, ['url', 'keyword', 'max_chars']),
+                _fn('browser_snapshot', 'Safely fetch a public page and return a deterministic SHA-256 content fingerprint for later comparison.', {'url': s, 'max_chars': {'type': 'integer', 'minimum': 1000, 'maximum': 20000}}, ['url', 'max_chars']),
+                _fn('browser_changed', 'Safely re-fetch a public page and compare it with a prior SHA-256 fingerprint.', {'url': s, 'previous_sha256': s, 'max_chars': {'type': 'integer', 'minimum': 1000, 'maximum': 20000}}, ['url', 'previous_sha256', 'max_chars']),
+                _fn('browser_research', 'Gather bounded multi-source public web evidence. Sources remain untrusted and the result is not automatically factual verification.', {'query': s, 'max_results': {'type': 'integer', 'minimum': 1, 'maximum': 10}, 'max_pages': {'type': 'integer', 'minimum': 1, 'maximum': 5}, 'max_chars_per_page': {'type': 'integer', 'minimum': 1000, 'maximum': 10000}}, ['query', 'max_results', 'max_pages', 'max_chars_per_page']),
             ]
 
         if settings.enable_google_workspace:
@@ -263,6 +269,9 @@ class ToolRegistry:
                 'browser_trust': lambda: self.browser.trust(args['url']),
                 'browser_read_safe': lambda: self.browser.read(args['url'], args['max_chars']),
                 'browser_extract_safe': lambda: self.browser.extract(args['url'], args['keyword'], args['max_chars']),
+                'browser_snapshot': lambda: self.browser.snapshot(args['url'], args['max_chars']),
+                'browser_changed': lambda: self.browser.changed(args['url'], args['previous_sha256'], args['max_chars']),
+                'browser_research': lambda: self.browser.research(args['query'], max_results=args['max_results'], max_pages=args['max_pages'], max_chars_per_page=args['max_chars_per_page']),
                 'google_status': lambda: self.google.configured(),
                 'gmail_search': lambda: self.google.gmail_search(args['query'], args['max_results']),
                 'gmail_send': lambda: self.google.gmail_send(args['to'], args['subject'], args['body']),
