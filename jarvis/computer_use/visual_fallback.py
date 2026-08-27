@@ -4,6 +4,7 @@ import importlib.util
 import shutil
 from dataclasses import asdict, dataclass
 
+from .display_context import get_display_context
 from .targets import TargetMatch, UITarget, choose_target
 
 
@@ -30,11 +31,15 @@ class VisualTargetBackend:
         pytesseract_pkg = importlib.util.find_spec('pytesseract') is not None
         tesseract = shutil.which('tesseract')
         available = bool(pillow and pytesseract_pkg and tesseract)
-        detail = f'Pillow.ImageGrab={pillow}; pytesseract={pytesseract_pkg}; tesseract={bool(tesseract)}'
+        display = get_display_context()
+        detail = (
+            f'Pillow.ImageGrab={pillow}; pytesseract={pytesseract_pkg}; '
+            f'tesseract={bool(tesseract)}; monitors={display.monitor_count if display.available else "unknown"}'
+        )
         return VisualFallbackStatus(available, 'pytesseract', detail)
 
     @staticmethod
-    def targets_from_rows(rows: list[dict]) -> list[UITarget]:
+    def targets_from_rows(rows: list[dict], *, offset_x: int = 0, offset_y: int = 0) -> list[UITarget]:
         targets: list[UITarget] = []
         for row in rows:
             text = str(row.get('text') or '').strip()
@@ -45,7 +50,8 @@ class VisualTargetBackend:
             if not text or confidence < 40:
                 continue
             try:
-                left = int(row.get('left', 0)); top = int(row.get('top', 0))
+                left = int(row.get('left', 0)) + int(offset_x)
+                top = int(row.get('top', 0)) + int(offset_y)
                 width = int(row.get('width', 0)); height = int(row.get('height', 0))
             except (TypeError, ValueError):
                 continue
@@ -69,13 +75,26 @@ class VisualTargetBackend:
         import pytesseract
         from pytesseract import Output
 
-        image = ImageGrab.grab()
+        display = get_display_context()
+        grab_kwargs = {'all_screens': True} if display.available else {}
+        try:
+            image = ImageGrab.grab(**grab_kwargs)
+        except TypeError:
+            # Older/non-Windows Pillow backends may not expose all_screens.
+            image = ImageGrab.grab()
+            display = get_display_context()
+
         data = pytesseract.image_to_data(image, output_type=Output.DICT)
         rows = []
         count = len(data.get('text', []))
         for index in range(count):
             rows.append({key: values[index] for key, values in data.items() if isinstance(values, list) and index < len(values)})
-        targets = self.targets_from_rows(rows)
+
+        # all_screens=True returns an image whose origin is the virtual desktop's
+        # top-left. That origin may be negative when a monitor sits left/above primary.
+        offset_x = display.virtual_left if display.available else 0
+        offset_y = display.virtual_top if display.available else 0
+        targets = self.targets_from_rows(rows, offset_x=offset_x, offset_y=offset_y)
         match = choose_target(label, targets, threshold=threshold, ambiguity_margin=0.10)
         if match.target is None:
             return TargetMatch(None, match.confidence, f'OCR fallback: {match.reason}', match.alternatives)
