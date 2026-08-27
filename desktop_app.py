@@ -34,9 +34,44 @@ def packaged_healthcheck() -> int:
         return 1
 
 
+def first_run_healthcheck() -> int:
+    """Verify a fresh packaged install reaches bootstrap state without importing the AI core."""
+    try:
+        from jarvis.first_run import inspect_bootstrap_state
+        from jarvis.product_paths import config_env_path
+
+        state = inspect_bootstrap_state()
+        config_path = config_env_path().resolve()
+        install_dir = PATHS.install_dir.resolve()
+        payload = {
+            'status': 'PASS',
+            'frozen': bool(getattr(sys, 'frozen', False)),
+            'bootstrap_ready': state.ready,
+            'provider': state.provider,
+            'key_present': state.key_present,
+            'local_fallback_configured': state.local_fallback_configured,
+            'config_path': str(config_path),
+            'config_under_user_data': PATHS.config_dir.resolve() in config_path.parents,
+            'config_outside_install_dir': install_dir not in config_path.parents,
+        }
+        if payload['bootstrap_ready']:
+            payload['status'] = 'FAIL'
+            payload['error'] = 'Fresh-install bootstrap unexpectedly found a configured online credential.'
+        if not payload['config_under_user_data'] or not payload['config_outside_install_dir']:
+            payload['status'] = 'FAIL'
+            payload['error'] = 'Packaged configuration path is not isolated to writable per-user data.'
+        print(json.dumps(payload, ensure_ascii=False))
+        return 0 if payload['status'] == 'PASS' and payload['frozen'] else 1
+    except Exception as exc:
+        print(json.dumps({'status': 'FAIL', 'error': str(exc)}, ensure_ascii=False))
+        return 1
+
+
 def main() -> int:
     if '--package-healthcheck' in sys.argv:
         return packaged_healthcheck()
+    if '--first-run-healthcheck' in sys.argv:
+        return first_run_healthcheck()
 
     # Bootstrap must happen before importing modules that materialize global
     # Settings/JarvisOmega. A fresh packaged install therefore reaches a proper
