@@ -1,1 +1,3 @@
-__version__ = '7.0.0'
+from .version import APP_VERSION as __version__
+
+__all__ = ['__version__']
