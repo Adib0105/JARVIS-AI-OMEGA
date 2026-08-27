@@ -95,6 +95,8 @@ jobs:
           .\.venv\Scripts\python.exe -m pip install -r requirements.txt
           .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
           .\build_windows.ps1
+          .\dist\JARVIS-OMEGA-V7\JARVIS-OMEGA-V7.exe --first-run-healthcheck | Tee-Object first-run-healthcheck.json
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged first-run bootstrap healthcheck failed.' }
           .\dist\JARVIS-OMEGA-V7\JARVIS-OMEGA-V7.exe --package-healthcheck | Tee-Object exe-healthcheck.json
           if ($LASTEXITCODE -ne 0) { throw 'Packaged EXE healthcheck failed.' }
       - name: Verify secret exclusion
@@ -120,6 +122,7 @@ jobs:
           path: |
             dist/installer/*
             exe-healthcheck.json
+            first-run-healthcheck.json
           retention-days: 7
 
   installed-app-validation:
@@ -140,6 +143,8 @@ jobs:
           Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS="desktopicon"' -Wait
           $exe = Join-Path $env:ProgramFiles 'JARVIS AI OMEGA\JARVIS-OMEGA-V7.exe'
           if (-not (Test-Path $exe)) { throw 'Installed executable missing.' }
+          & $exe --first-run-healthcheck | Tee-Object installed-first-run-healthcheck.json
+          if ($LASTEXITCODE -ne 0) { throw 'Installed first-run bootstrap healthcheck failed.' }
           & $exe --package-healthcheck | Tee-Object installed-healthcheck.json
           if ($LASTEXITCODE -ne 0) { throw 'Installed application healthcheck failed.' }
           $uninstall = Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object DisplayName -like 'JARVIS AI OMEGA*' | Select-Object -First 1
@@ -170,7 +175,9 @@ jobs:
         if: always()
         with:
           name: installed-app-validation-evidence
-          path: installed-healthcheck.json
+          path: |
+            installed-healthcheck.json
+            installed-first-run-healthcheck.json
           if-no-files-found: ignore
 
   post-packaging-regression:
