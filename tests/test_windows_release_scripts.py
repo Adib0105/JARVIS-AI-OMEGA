@@ -47,6 +47,21 @@ class WindowsReleaseScriptTests(unittest.TestCase):
         self.assertIn('self_check.py', setup)
         self.assertNotIn('pip install --upgrade pip', setup)
 
+    def test_launchers_do_not_hardcode_legacy_product_versions(self):
+        for name in ('run_desktop.bat', 'run_jarvis.bat'):
+            launcher = (ROOT / name).read_text(encoding='utf-8')
+            self.assertNotIn('V6', launcher, name)
+            self.assertNotIn('V7', launcher, name)
+            self.assertNotIn(APP_VERSION, launcher, name)
+            self.assertIn('JARVIS AI OMEGA', launcher, name)
+
+    def test_release_docs_use_current_stable_binary_path(self):
+        for relative in ('docs/V7-SETUP.md', 'docs/V7-TESTING.md', 'docs/V7-RELEASE.md'):
+            document = (ROOT / relative).read_text(encoding='utf-8')
+            self.assertNotIn('JARVIS-OMEGA-V7.exe', document, relative)
+            self.assertNotIn('dist/JARVIS-OMEGA-V7', document, relative)
+            self.assertIn('dist/JARVIS-OMEGA/JARVIS-OMEGA.exe', document, relative)
+
 
 if __name__ == '__main__':
     unittest.main()
