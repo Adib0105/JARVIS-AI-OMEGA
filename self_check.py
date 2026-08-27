@@ -8,6 +8,7 @@ from jarvis.diagnostics import DiagnosticResult, DiagnosticState
 
 
 RESULTS: list[DiagnosticResult] = []
+MINIMUM_PYTHON = (3, 11)
 
 
 def report(name: str, state: DiagnosticState, detail: str = '', *, required: bool = False) -> None:
@@ -33,11 +34,11 @@ def module_state(label: str, module_name: str, *, required: bool = False) -> boo
 
 def main() -> int:
     RESULTS.clear()
-    python_ok = sys.version_info >= (3, 10)
+    python_ok = sys.version_info >= MINIMUM_PYTHON
     report(
         'Python runtime',
         DiagnosticState.LOCAL_FUNCTIONAL if python_ok else DiagnosticState.FAILED,
-        platform.python_version(),
+        f'{platform.python_version()} (minimum {MINIMUM_PYTHON[0]}.{MINIMUM_PYTHON[1]})',
         required=True,
     )
 
