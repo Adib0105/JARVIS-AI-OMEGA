@@ -3,18 +3,14 @@ import os
 import sys
 from pathlib import Path
 
-from jarvis.logging_utils import configure_logging, install_exception_hook
 from jarvis.product_paths import PATHS
-from jarvis.runtime_guard import install_runtime_guards, run_adaptive_gui
-from jarvis.skill_runtime_extension import install_skill_runtime
-from jarvis.ui_release_extension import install_release_ui
-from jarvis.ui_skill_extension import install_skill_ui
-from jarvis.voice_ui import install_voice_ui
 
 
 def packaged_healthcheck() -> int:
     """Non-interactive packaged-app validation used by installer CI and support diagnostics."""
     try:
+        from jarvis.logging_utils import configure_logging
+
         configure_logging()
         probe = PATHS.data_dir / 'package-healthcheck.tmp'
         probe.write_text('ok', encoding='utf-8')
@@ -38,9 +34,25 @@ def packaged_healthcheck() -> int:
         return 1
 
 
-if __name__ == '__main__':
+def main() -> int:
     if '--package-healthcheck' in sys.argv:
-        raise SystemExit(packaged_healthcheck())
+        return packaged_healthcheck()
+
+    # Bootstrap must happen before importing modules that materialize global
+    # Settings/JarvisOmega. A fresh packaged install therefore reaches a proper
+    # setup UI instead of failing strict AI configuration validation at import/startup.
+    from jarvis.first_run import run_first_run_setup
+
+    if not run_first_run_setup():
+        return 0
+
+    from jarvis.logging_utils import install_exception_hook
+    from jarvis.runtime_guard import install_runtime_guards, run_adaptive_gui
+    from jarvis.skill_runtime_extension import install_skill_runtime
+    from jarvis.ui_release_extension import install_release_ui
+    from jarvis.ui_skill_extension import install_skill_ui
+    from jarvis.voice_ui import install_voice_ui
+
     install_exception_hook()
     install_runtime_guards()
     install_voice_ui()
@@ -48,3 +60,8 @@ if __name__ == '__main__':
     install_skill_runtime()
     install_skill_ui()
     run_adaptive_gui()
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
