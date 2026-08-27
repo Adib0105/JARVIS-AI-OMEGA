@@ -5,6 +5,7 @@ from typing import Any
 from openai import OpenAI
 
 from .base import AIProvider, ProviderTurn, ToolCall, ToolResult
+from .deadline import call_with_deadline, transport_timeout_seconds
 
 
 class OpenRouterProvider(AIProvider):
@@ -24,7 +25,7 @@ class OpenRouterProvider(AIProvider):
             base_url=base_url,
             default_headers={
                 'HTTP-Referer': app_url,
-                'X-OpenRouter-Title': app_title,
+                'X-Title': app_title,
             },
             max_retries=max(0, int(max_retries)),
         )
@@ -57,31 +58,42 @@ class OpenRouterProvider(AIProvider):
     @staticmethod
     def _assistant_payload(message) -> dict:
         calls = []
-        for call in list(message.tool_calls or []):
+        for call in list(getattr(message, 'tool_calls', None) or []):
+            function = getattr(call, 'function', None)
+            if function is None or not getattr(function, 'name', None):
+                continue
             calls.append({
-                'id': call.id,
+                'id': getattr(call, 'id', '') or '',
                 'type': 'function',
                 'function': {
-                    'name': call.function.name,
-                    'arguments': call.function.arguments or '{}',
+                    'name': function.name,
+                    'arguments': getattr(function, 'arguments', None) or '{}',
                 },
             })
-        payload = {'role': 'assistant', 'content': message.content or ''}
+        payload = {'role': 'assistant', 'content': getattr(message, 'content', None) or ''}
         if calls:
             payload['tool_calls'] = calls
         return payload
 
     def _turn(self, response, messages: list[dict]) -> ProviderTurn:
-        message = response.choices[0].message
-        calls = [
-            ToolCall(
-                id=call.id,
-                name=call.function.name,
-                arguments=call.function.arguments or '{}',
-            )
-            for call in list(message.tool_calls or [])
-        ]
-        text = message.content.strip() if isinstance(message.content, str) else str(message.content or '').strip()
+        choices = getattr(response, 'choices', None)
+        if not choices:
+            raise ValueError('OpenRouter returned a malformed response: missing choices.')
+        message = getattr(choices[0], 'message', None)
+        if message is None:
+            raise ValueError('OpenRouter returned a malformed response: missing assistant message.')
+        calls = []
+        for call in list(getattr(message, 'tool_calls', None) or []):
+            function = getattr(call, 'function', None)
+            if function is None or not getattr(function, 'name', None):
+                raise ValueError('OpenRouter returned a malformed tool call.')
+            calls.append(ToolCall(
+                id=getattr(call, 'id', '') or '',
+                name=function.name,
+                arguments=getattr(function, 'arguments', None) or '{}',
+            ))
+        content = getattr(message, 'content', None)
+        text = content.strip() if isinstance(content, str) else str(content or '').strip()
         return ProviderTurn(
             text=text,
             tool_calls=calls,
@@ -92,11 +104,24 @@ class OpenRouterProvider(AIProvider):
         )
 
     def _create(self, *, messages: list[dict], model: str, tools: list[dict] | None, timeout: float) -> ProviderTurn:
-        kwargs: dict[str, Any] = {'model': model, 'messages': messages, 'timeout': timeout}
+        kwargs: dict[str, Any] = {
+            'model': model,
+            'messages': messages,
+            # The desktop path is intentionally non-streaming. Make that explicit
+            # so there is no SSE iterator that can be left partially consumed.
+            'stream': False,
+            # Finite SDK connect/read/write inactivity timeout. The outer deadline
+            # below is the strict end-to-end wall-clock limit.
+            'timeout': transport_timeout_seconds(timeout),
+        }
         converted = self._tools(tools or [])
         if converted:
             kwargs['tools'] = converted
-        response = self.client.chat.completions.create(**kwargs)
+        response = call_with_deadline(
+            lambda: self.client.chat.completions.create(**kwargs),
+            timeout,
+            operation='OpenRouter chat completion',
+        )
         return self._turn(response, messages)
 
     def chat(self, *, system: str, messages: list[dict], model: str, timeout: float) -> ProviderTurn:
@@ -146,12 +171,18 @@ class OpenRouterProvider(AIProvider):
         content: list[dict] = [{'type': 'text', 'text': prompt}]
         for url in image_urls:
             content.append({'type': 'image_url', 'image_url': {'url': url}})
-        response = self.client.chat.completions.create(
-            model=model,
-            messages=[
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': content},
-            ],
-            timeout=timeout,
+        working = [
+            {'role': 'system', 'content': system},
+            {'role': 'user', 'content': content},
+        ]
+        response = call_with_deadline(
+            lambda: self.client.chat.completions.create(
+                model=model,
+                messages=working,
+                stream=False,
+                timeout=transport_timeout_seconds(timeout),
+            ),
+            timeout,
+            operation='OpenRouter vision completion',
         )
-        return self._turn(response, [{'role': 'system', 'content': system}, {'role': 'user', 'content': content}])
+        return self._turn(response, working)
