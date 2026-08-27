@@ -1,51 +1,103 @@
-# JARVIS AI OMEGA V7 / V7.5 — Browser Agent
+# JARVIS AI OMEGA — Browser Agent 3.0
 
-## Status
+## Current status
 
-Core browser abstraction is **IMPLEMENTED**. Browser V2 security hardening is **IMPLEMENTED in code and awaiting the final repository-wide quality gate**.
+Browser Agent 3.0 is implemented at the repository/runtime level for safe public navigation, reading, extraction, page fingerprints/change checks and bounded multi-source research. Final readiness still depends on the exact-head CI gate and real Windows/browser E2E where applicable.
 
-## Current architecture
+It is **not** described as unrestricted DOM automation or as a browser-profile/session extractor.
+
+## Architecture
 
 ```text
 USER REQUEST
-→ URL / SEARCH INTENT
-→ DOMAIN / URL TRUST CHECK
-→ NAVIGATE OR READ
-→ TREAT PAGE AS UNTRUSTED DATA
+→ URL / SEARCH / RESEARCH INTENT
+→ URL SYNTAX + CREDENTIAL CHECK
+→ DNS RESOLUTION (FAIL CLOSED)
+→ REQUIRE EVERY DNS ANSWER TO BE PUBLIC
+→ PIN CONNECTION TO A VALIDATED NUMERIC ADDRESS
+→ HTTPS HOSTNAME/SNI CERTIFICATE VERIFICATION
+→ MANUAL BOUNDED REDIRECT HANDLING
+→ REVALIDATE + REPIN EVERY REDIRECT HOP
+→ READ AS UNTRUSTED DATA
 → PROMPT-INJECTION SCAN
-→ EXTRACT / OBSERVE
-→ VERIFY RESULT
+→ EXTRACT / FINGERPRINT / GATHER EVIDENCE
+→ EXPLICIT VERIFICATION STATUS
 ```
 
-## Public browser-read trust
+## DNS and redirect boundary
 
-Public read/extract paths reject:
+Public browser-read/navigation policy rejects:
 
 - malformed non-HTTP(S) URLs
 - embedded URL credentials
-- localhost / `.local` hosts
-- literal private, loopback, link-local, multicast, reserved or unspecified IP addresses
+- localhost and `.local` hosts
+- literal private, loopback, link-local, multicast, reserved or unspecified addresses
+- hostnames that fail DNS resolution
+- hostnames with any private/non-public DNS answer, including mixed public/private answers
+- redirects to private/non-public targets
+- HTTPS-to-HTTP redirect downgrades in the controlled reader
+- redirect chains beyond the bounded limit
 
-This reduces accidental access to local/private network targets through public page-reading tools.
+The controlled page reader connects to an address that was already validated instead of performing a second hostname lookup at connection time. HTTPS still validates the original hostname using TLS SNI/certificate verification.
 
-## Prompt injection
+This closes the public-reader DNS-rebinding/redirect class that literal-IP checks alone cannot close.
 
-Webpage text is data, never system/developer instructions.
+## Prompt-injection isolation
 
-The Browser V2 scanner flags common patterns such as:
+Returned webpage/search text is always treated as untrusted data. The scanner flags common instruction-override, secret-extraction, shell-command, security-bypass and fake-role patterns.
 
-- “ignore previous instructions”
-- secret/password/API-key extraction requests
-- commands asking the agent to run a shell
-- requests to disable permissions/security/audit
-- fake role/system-message injections
+A prompt-injection flag is evidence about page content; it does not become an instruction to JARVIS and it does not weaken the permission policy.
 
-A flagged page is not automatically trusted just because its HTML/text says it is trusted.
+## Main runtime tools
+
+Public web mode exposes:
+
+- `search_web`
+- `search_news`
+- `read_web_page`
+- `browser_trust`
+- `browser_read_safe`
+- `browser_extract_safe`
+- `browser_snapshot`
+- `browser_changed`
+- `browser_research`
+
+Desktop/browser-control mode keeps `open_url` and `browser_search`, but those routes now use `BrowserAgent` DNS validation before asking the default browser to navigate.
+
+## Page fingerprints and change detection
+
+`browser_snapshot` safely reads bounded public page text and returns a SHA-256 fingerprint. `browser_changed` accepts a prior valid SHA-256 digest, performs a fresh safe read and reports whether the content fingerprint changed.
+
+A verified fingerprint comparison means the fresh fetched text differs or matches; it does **not** mean the webpage's factual claims are true.
+
+## Bounded research
+
+`browser_research` performs a bounded public search and safely reads a limited number of unique result pages. Per-page content remains untrusted and prompt-injection-scanned.
+
+The overall research evidence deliberately remains `PARTIAL`: successfully gathering multiple sources is not the same as independently proving their factual claims. Source failures are retained as failures instead of being hidden.
 
 ## Navigation verification
 
-Opening a browser process/window is only partial evidence. It does not prove the requested page completely loaded. Read/extract operations can be verified when the public reader actually returns content from the requested URL, but that returned content remains untrusted.
+Opening/searching through the user's default browser returns process-level evidence only. Browser process detection cannot prove the requested page fully loaded, so navigation remains `PARTIAL` unless stronger observable evidence exists.
 
-## Important limitation
+Controlled public `read`/`extract`/`snapshot` operations can be `VERIFIED` for the transport/read/fingerprint operation because the safe reader actually returned content. The page's content is still untrusted.
 
-Browser V2 is not a general unrestricted browser automation engine. High-risk typing/click/submission behavior remains capability-gated and must respect the desktop/computer-use verification policy.
+## Tool-result truthfulness
+
+Browser methods that return `ok: false` are passed through the main ToolRegistry as failures. They are not nested inside a misleading outer `ok: true` envelope.
+
+## Security capabilities
+
+Read-only browser/research tools use `WEB_READ` / `BROWSER_READ`. Navigation uses `BROWSER_CONTROL`. Browser-related keyboard/mouse/form actions remain governed by the separate high-risk Computer Use capability gates.
+
+## What Browser Agent 3.0 does not currently claim
+
+- arbitrary DOM execution
+- silent JavaScript injection
+- extracting cookies/passwords/login tokens from browser profiles
+- guaranteed multi-tab DOM awareness
+- automatic CAPTCHA bypass
+- verified form submission without observable post-action evidence
+- unrestricted file downloads
+
+Visible browser controls can still be targeted through Computer Use 3.0 when UIA/OCR can identify them confidently. DOM/session-level functionality should only be added later through an explicit, security-reviewed browser integration rather than by weakening the current public-network boundary.
