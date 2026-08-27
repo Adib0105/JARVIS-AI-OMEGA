@@ -109,17 +109,15 @@ jobs:
           $dist = '.\dist\JARVIS-OMEGA-V7'
           .\.venv\Scripts\python.exe .\scripts\validate_release_bundle.py $dist
           if ($LASTEXITCODE -ne 0) { throw 'Secrets/private runtime data found in bundle.' }
-      - name: Build installer
+      - name: Build installer from canonical version
         shell: pwsh
         run: |
           choco install innosetup --no-progress -y
-          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
-          if (-not (Test-Path $iscc)) { throw 'Inno Setup compiler unavailable.' }
-          & $iscc '/DMyAppVersion=8.0.0-rc1' '.\installer\JarvisOmega.iss'
+          .\build_installer.ps1
           if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
           $setup = Get-ChildItem '.\dist\installer\JARVIS-AI-OMEGA-Setup-*.exe' | Select-Object -First 1
           if (-not $setup) { throw 'Installer artifact missing.' }
-          (Get-FileHash $setup.FullName -Algorithm SHA256).Hash | Tee-Object -FilePath '.\dist\installer\SHA256.txt'
+          if (-not (Test-Path '.\dist\installer\SHA256.txt')) { throw 'Installer checksum evidence missing.' }
       - uses: actions/upload-artifact@v6
         with:
           name: jarvis-windows-release-candidate
