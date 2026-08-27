@@ -27,9 +27,11 @@ def check_latest_release(current_version: str, timeout: float = 8.0) -> dict:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             payload = json.loads(response.read().decode('utf-8'))
     except urllib.error.HTTPError as exc:
-        if exc.code == 404:
+        status = exc.code
+        exc.close()
+        if status == 404:
             return {'available': False, 'published': False, 'message': 'No GitHub Release has been published yet.'}
-        raise RuntimeError(f'GitHub update check failed: HTTP {exc.code}') from exc
+        raise RuntimeError(f'GitHub update check failed: HTTP {status}') from exc
     except Exception as exc:
         raise RuntimeError(f'GitHub update check failed: {exc}') from exc
 

@@ -153,9 +153,11 @@ def test_provider_connection(provider: str, api_key: str, opener=urllib.request.
             return True, f'{provider} connection succeeded.'
         return False, f'{provider} returned HTTP {status}.'
     except urllib.error.HTTPError as exc:
-        if exc.code in {401, 403}:
+        status = exc.code
+        exc.close()
+        if status in {401, 403}:
             return False, f'{provider} rejected the credential. Check or recreate the key.'
-        return False, f'{provider} connection returned HTTP {exc.code}.'
+        return False, f'{provider} connection returned HTTP {status}.'
     except (urllib.error.URLError, TimeoutError, OSError):
         return False, 'Could not reach the provider. Check internet/network access and retry.'
 
