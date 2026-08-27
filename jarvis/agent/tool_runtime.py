@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timezone
 from typing import Callable
 
+from ..common.results import OperationResult
 from ..config import settings
 from ..errors import classify_exception
 from ..memory import MemoryStore
@@ -31,7 +32,11 @@ _PERSISTENT_TEXT_TOOLS = {
 
 
 class RecordingToolRegistry(ToolRegistry):
-    """V7 runtime around existing handlers: capability gate + audit + evidence.
+    """Audited runtime around existing handlers: gate + audit + evidence.
+
+    `call()` intentionally preserves the historical JSON-string contract. New code
+    can consume `call_result()` and receive the canonical `OperationResult` without
+    forcing an unsafe all-at-once migration of provider/tool compatibility paths.
 
     Raw tool input/output exists only during the synchronous handler call. Events
     exposed to missions are privacy-minimized before they are queued, so persisted
@@ -51,8 +56,6 @@ class RecordingToolRegistry(ToolRegistry):
             confirmer,
             require_approval=settings.require_local_approval,
         )
-        # Inject the V7 gate at construction time. ToolRegistry no longer creates a
-        # hidden legacy gate only for this subclass to overwrite it afterwards.
         super().__init__(memory, confirmer, permission_checker=gate)
         self.permissions = gate
         self.audit = audit_store or AuditStore()
@@ -84,9 +87,19 @@ class RecordingToolRegistry(ToolRegistry):
         return 'FAILED', failure.category.value
 
     @staticmethod
+    def _canonical_result(name: str, output: str, elapsed_ms: float) -> OperationResult:
+        try:
+            value = json.loads(output)
+        except Exception:
+            value = output
+        return OperationResult.from_legacy(
+            value,
+            capability=name,
+            duration_ms=elapsed_ms,
+        )
+
+    @staticmethod
     def _verification_hints(name: str, args: dict) -> dict:
-        # File-write verification can compare hashes instead of storing the written
-        # source text in mission history.
         if name == 'write_local_text_file':
             content = str(args.get('content', ''))
             return {
@@ -115,6 +128,7 @@ class RecordingToolRegistry(ToolRegistry):
         elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
         outcome = self.permissions.consume_last_outcome()
         execution_status, error_type = self._execution_result(output)
+        canonical = self._canonical_result(name, output, elapsed_ms)
 
         if blocked_secret:
             approval_status = 'BLOCKED_SECRET'
@@ -149,6 +163,8 @@ class RecordingToolRegistry(ToolRegistry):
             'name': name,
             'args': dict(args),
             'output': output,
+            'result_status': canonical.status.value,
+            'result_success': canonical.success,
             'risk_level': profile.risk.value,
             'capabilities': [item.value for item in sorted(profile.capabilities, key=lambda item: item.value)],
             'approval_status': approval_status,
@@ -162,6 +178,14 @@ class RecordingToolRegistry(ToolRegistry):
         with self._events_lock:
             self._events.append(event)
         return output
+
+    def call_result(self, name: str, args: dict) -> OperationResult:
+        """Call through the canonical audited path and normalize its evidence status."""
+        output = self.call(name, args)
+        with self._events_lock:
+            event = self._events[-1] if self._events else {}
+        elapsed = float(event.get('latency_ms') or 0.0)
+        return self._canonical_result(name, output, elapsed)
 
     def clear_events(self) -> None:
         with self._events_lock:
