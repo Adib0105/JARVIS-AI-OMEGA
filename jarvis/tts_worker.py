@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import os
 import sys
 import tempfile
-from ctypes import create_unicode_buffer, windll, wintypes
 from pathlib import Path
 
 import edge_tts
@@ -13,12 +13,12 @@ import edge_tts
 def _short_path(path: str) -> str:
     if os.name != 'nt':
         return path
-    get_short_path = windll.kernel32.GetShortPathNameW
-    get_short_path.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
-    get_short_path.restype = wintypes.DWORD
+    get_short_path = ctypes.windll.kernel32.GetShortPathNameW
+    get_short_path.argtypes = [ctypes.wintypes.LPCWSTR, ctypes.wintypes.LPWSTR, ctypes.wintypes.DWORD]
+    get_short_path.restype = ctypes.wintypes.DWORD
     size = 0
     while True:
-        buffer = create_unicode_buffer(size)
+        buffer = ctypes.create_unicode_buffer(size)
         needed = get_short_path(path, buffer, size)
         if needed == 0:
             return path
@@ -30,7 +30,7 @@ def _short_path(path: str) -> str:
 def _mci_send(command: str) -> None:
     if os.name != 'nt':
         raise RuntimeError('Native packaged TTS playback is only supported on Windows.')
-    result = int(windll.winmm.mciSendStringW(command, 0, 0, 0))
+    result = int(ctypes.windll.winmm.mciSendStringW(command, 0, 0, 0))
     if result:
         raise RuntimeError(f'Windows audio playback failed with MCI error {result}.')
 
@@ -82,6 +82,16 @@ def synthesize_and_play(
                 pass
 
 
+def runtime_healthcheck() -> dict[str, object]:
+    windows_native = os.name == 'nt' and hasattr(ctypes, 'windll') and hasattr(ctypes.windll, 'winmm')
+    return {
+        'status': 'PASS' if windows_native else 'FAIL',
+        'platform': sys.platform,
+        'windows_native_audio': windows_native,
+        'edge_tts_version': getattr(edge_tts, '__version__', 'unknown'),
+    }
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument('--voice', required=True)
@@ -114,10 +124,8 @@ def run_edge_playback_worker(argv: list[str] | None = None) -> int:
         )
         return 0
     except Exception as exc:
-        # No credentials are involved in this worker. Keep diagnostics concise and
-        # never include environment/configuration values.
         print(f'JARVIS TTS worker failed: {type(exc).__name__}: {exc}', file=sys.stderr)
         return 1
 
 
-__all__ = ['play_mp3_windows', 'run_edge_playback_worker', 'synthesize_and_play']
+__all__ = ['play_mp3_windows', 'run_edge_playback_worker', 'runtime_healthcheck', 'synthesize_and_play']
