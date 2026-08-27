@@ -25,11 +25,12 @@ Runtime diagnostics use the more precise states `INSTALLED`, `CONFIGURED`, `LOCA
 
 | Area | Status | What that means |
 |---|---|---|
-| Canonical application version | TESTED | `jarvis.version.APP_VERSION` is the release authority; package/config/build/installer derive from it. Exact-commit CI must still pass before release evidence is accepted. |
+| Canonical application version | TESTED | `jarvis.version.APP_VERSION` is the release authority; package/config/build/installer/self-check derive from it. Exact-commit CI must still pass before release evidence is accepted. |
 | Capability permission authority | TESTED | Active and legacy permission entry points delegate to the capability-based canonical policy. High-risk actions remain approval-controlled. |
-| Public V7 mission pipeline | TESTED | `jarvis.core.JarvisOmega` uses the persisted orchestrator, tool evidence, verification, recovery/replanning and observability. |
-| Legacy `jarvis.core_v7` direct mission API | LIMITED | A duplicated legacy mission loop still exists for compatibility and remains technical debt; do not treat it as the preferred production entry point. |
+| Public mission pipeline | TESTED | `jarvis.core.JarvisOmega` uses the persisted memory-aware orchestrator, tool evidence, verification, recovery/replanning and observability. |
+| Compatibility mission entry point | TESTED | `jarvis.core_v7.JarvisOmega.run_mission()` is an orchestrator wrapper using the audited recording tool runtime; the duplicated legacy mission loop has been removed. |
 | Provider/model routing | TESTED | Contract, timeout, error classification and fallback behavior are automated. Real provider inference is NOT VERIFIED until tested with a real credential on the exact packaged build. |
+| Response-quality runtime | TESTED | Stable free-text routing, deterministic local identity handling, garbled-response repair and desktop cleanup are composed directly into `JarvisOmega`; startup no longer monkey-patches `chat()` or `_select_model()`. |
 | Computer Use V2 logic | TESTED | UIA-first targeting, ambiguity rejection, OCR fallback and partial/unverified evidence behavior are automated. Real desktop/UI/device E2E is NOT VERIFIED. |
 | Voice/TTS worker/package path | TESTED | Frozen-worker routing and software state transitions are automated. Audible speaker output is NOT VERIFIED unless a person actually hears the exact packaged build. |
 | Microphone/speech input | LIMITED | Package/config presence can be diagnosed; physical microphone capture/recognition is NOT VERIFIED without a real device test. |
@@ -38,9 +39,10 @@ Runtime diagnostics use the more precise states `INSTALLED`, `CONFIGURED`, `LOCA
 | Memory / persistence / backup | TESTED | Schema migration, memory lifecycle, secret persistence blocking, backup/integrity and restore gates are automated. |
 | Observability / redaction | TESTED | Provider/tool/verification/failure metadata and secret redaction are covered; unsupported cost/success metrics are not fabricated. |
 | Controlled self-development | EXPERIMENTAL | Sandbox/test/benchmark/approval/release/rollback controls exist. Production self-modification remains disabled by default. |
+| Skill lifecycle runtime | TESTED | Skill build/activation methods are declared directly on the public core; the historical installer function is now a no-op compatibility shim. |
 | Windows EXE + installer CI | TESTED | CI builds the frozen EXE and installer, runs package healthchecks and performs isolated install/uninstall validation. This is not a substitute for human GUI/device E2E. |
 | Real Windows GUI/device/live-provider E2E | NOT VERIFIED | Must be recorded separately for the exact candidate using the Windows E2E checklist. |
-| Runtime monkey-patch reduction | LIMITED | Runtime/UI compatibility installers still replace selected methods at startup; further composition/dependency-injection migration remains technical debt. |
+| Remaining UI extension mutation | LIMITED | Voice and Command Center UI compatibility extensions still replace selected UI methods at startup. Core chat/model/skill runtime mutation has been removed; further UI composition migration remains technical debt. |
 
 ## Versioning
 
@@ -84,7 +86,7 @@ Preferred production entry point:
 from jarvis.core import JarvisOmega
 ```
 
-The public V7 core uses the persisted mission orchestrator and evidence-aware tool runtime. Direct use of the older `jarvis.core_v7.JarvisOmega.run_mission()` path is retained only for compatibility and is currently **LIMITED** pending full consolidation.
+The public core uses the persisted memory-aware mission orchestrator and evidence-aware tool runtime. The older `jarvis.core_v7.JarvisOmega.run_mission()` API remains only for compatibility, but it now delegates to the persisted orchestrator instead of running an independent mission loop.
 
 ## Computer use
 
@@ -105,12 +107,14 @@ Important actions are not considered verified merely because Windows accepted mo
 
 ## Diagnostics
 
-Run:
+Run the canonical release self-check:
 
 ```powershell
 .\.venv\Scripts\python.exe self_check.py
-.\.venv\Scripts\python.exe self_check_v75.py
+.\.venv\Scripts\python.exe self_check_release.py
 ```
+
+`self_check_v75.py` remains only as a backward-compatible wrapper for historical automation.
 
 `self_check.py` distinguishes package installation from configuration, local functionality, physical-device verification and live/E2E verification. It intentionally reports microphone, audible TTS, real computer-use device behavior and live provider inference as `NOT_TESTED` unless those checks were actually performed elsewhere with qualifying evidence.
 
@@ -224,6 +228,8 @@ The workflow covers:
 - post-packaging full regression.
 
 A green workflow is required for the automated release gate. It does **not** prove audible TTS, microphone operation, live OpenRouter/OpenAI inference, real Chrome/Notepad interaction, focus handling, DPI behavior, or other physical workstation behavior.
+
+Repository administrators should also enable branch protection/rulesets with required CI checks before treating a release branch as protected. Repository settings are separate from application source code and are not inferred from a green workflow.
 
 ## Exact Windows E2E evidence
 
