@@ -5,6 +5,7 @@ from typing import Any
 from openai import OpenAI
 
 from .base import AIProvider, ProviderTurn, ToolCall, ToolResult
+from .deadline import call_with_deadline, transport_timeout_seconds
 
 
 class OpenAIProvider(AIProvider):
@@ -46,8 +47,11 @@ class OpenAIProvider(AIProvider):
         return out
 
     def _turn(self, response, input_items: list[dict]) -> ProviderTurn:
+        output = getattr(response, 'output', None)
+        if output is None:
+            raise ValueError('OpenAI returned a malformed response: missing output.')
         calls = []
-        for item in response.output:
+        for item in output:
             if getattr(item, 'type', None) == 'function_call':
                 calls.append(ToolCall(
                     id=item.call_id,
@@ -55,11 +59,11 @@ class OpenAIProvider(AIProvider):
                     arguments=item.arguments or '{}',
                 ))
         return ProviderTurn(
-            text=(response.output_text or '').strip(),
+            text=(getattr(response, 'output_text', '') or '').strip(),
             tool_calls=calls,
             state={
                 'input_items': list(input_items),
-                'output_items': [self._dump(item) for item in response.output],
+                'output_items': [self._dump(item) for item in output],
             },
             model=getattr(response, 'model', '') or '',
             provider=self.name,
@@ -80,14 +84,18 @@ class OpenAIProvider(AIProvider):
             'instructions': system,
             'input': input_items,
             'store': False,
-            'timeout': timeout,
+            'timeout': transport_timeout_seconds(timeout),
         }
         if self.reasoning_effort:
             kwargs['reasoning'] = {'effort': self.reasoning_effort}
         normalized_tools = self._tools(tools or [])
         if normalized_tools:
             kwargs['tools'] = normalized_tools
-        response = self.client.responses.create(**kwargs)
+        response = call_with_deadline(
+            lambda: self.client.responses.create(**kwargs),
+            timeout,
+            operation='OpenAI response',
+        )
         return self._turn(response, input_items)
 
     def chat(self, *, system: str, messages: list[dict], model: str, timeout: float) -> ProviderTurn:
@@ -138,11 +146,15 @@ class OpenAIProvider(AIProvider):
         for url in image_urls:
             content.append({'type': 'input_image', 'image_url': url, 'detail': 'auto'})
         input_items = [{'role': 'user', 'content': content}]
-        response = self.client.responses.create(
-            model=model,
-            instructions=system,
-            input=input_items,
-            store=False,
-            timeout=timeout,
+        response = call_with_deadline(
+            lambda: self.client.responses.create(
+                model=model,
+                instructions=system,
+                input=input_items,
+                store=False,
+                timeout=transport_timeout_seconds(timeout),
+            ),
+            timeout,
+            operation='OpenAI vision response',
         )
         return self._turn(response, input_items)
