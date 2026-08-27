@@ -1,8 +1,9 @@
-"""Public JARVIS OMEGA V7/V7.5 compatibility core.
+"""Public JARVIS OMEGA core.
 
 `JarvisOmega` preserves the established public API while layering verified missions,
-security, memory, capability awareness, evaluation, observability, skill proposals
-and bounded self-development over the provider-neutral core.
+security, memory, capability awareness, evaluation, observability, response-quality
+controls, skill lifecycle APIs and bounded self-development over the provider-neutral
+core.
 """
 
 from __future__ import annotations
@@ -22,8 +23,16 @@ from .evaluation import CapabilityGapDetector, SelfEvaluationEngine
 from .memory_v7 import MemoryKind, V7MemoryStore
 from .observability import JarvisHealthSystem, ObservabilityManager
 from .prompt import system_prompt
+from .providers.deadline import RequestCancelledError
 from .providers.observed import ObservedProvider
 from .providers.router import ModelRouter
+from .response_quality import (
+    clean_display_text,
+    local_identity_answer,
+    looks_garbled,
+    preferred_text_model,
+    repair_answer,
+)
 from .skills import SkillRegistry, WorkflowLearningEngine
 
 
@@ -84,10 +93,51 @@ class JarvisOmega(_ProviderCore):
         self.last_context_stats: dict = {}
 
     def _select_model(self, text: str, kind: str = 'chat') -> str:
-        """Use the V7.5 category router while keeping the V6/V7 method contract."""
+        """Select a routed model, then apply the stable free-text compatibility rule."""
         route = self.model_router.select(text, kind)
         self.last_route = route.category.lower()
-        return route.model or settings.model
+        selected = route.model or settings.model
+        return preferred_text_model(selected, kind)
+
+    def chat(self, text: str, *, request_id: str | None = None) -> str:
+        """Run a chat turn with response-quality controls composed into the core.
+
+        Historically desktop startup replaced this method dynamically. Keeping the
+        behavior here makes CLI, tests and packaged desktop use the same execution
+        path and removes startup-order dependence.
+        """
+        text = text.strip()
+        if not text:
+            return ''
+
+        self.last_request_kind = 'chat'
+        self._active_model = self._select_model(text, 'chat')
+        self.last_provider_used = settings.provider
+        started = time.perf_counter()
+        with self._request_scope(settings.ai_timeout_seconds, 'AI request', request_id):
+            self.memory.add_message(self.session_id, 'user', text)
+            try:
+                identity = local_identity_answer(text)
+                if identity is not None:
+                    answer = identity
+                    self.last_provider_used = 'local-identity-guard'
+                    self.last_model_used = 'deterministic-local'
+                    self.last_tool_mode = 'identity-guard'
+                else:
+                    try:
+                        answer = self._chat_provider()
+                    except RequestCancelledError:
+                        raise
+                    except Exception as exc:
+                        answer = self._chat_local_fallback(exc)
+                    if looks_garbled(answer, text):
+                        answer = repair_answer(self, text, answer)
+                    answer = clean_display_text(answer)
+                self.memory.add_message(self.session_id, 'assistant', answer)
+                self._maybe_auto_summary()
+                return answer
+            finally:
+                self.last_latency = time.perf_counter() - started
 
     def _latest_user_request(self) -> str:
         try:
@@ -179,6 +229,72 @@ class JarvisOmega(_ProviderCore):
 
     def skill_proposals(self, limit: int = 100) -> list[dict]:
         return self.skill_registry.recent(limit)
+
+    def _skill_build_engine(self):
+        """Create the guarded skill builder without runtime class mutation."""
+        from .skills.builder import SkillBuildEngine
+
+        development = self._get_self_development_engine()
+
+        def reasoner(system: str, user: str) -> str:
+            return self._one_shot_text(system, user, 'coding')
+
+        return SkillBuildEngine(self.skill_registry, development, reasoner)
+
+    def prepare_skill_build(self, skill_id: str) -> dict:
+        result = self._skill_build_engine().prepare(skill_id)
+        self.observability.record(
+            category='SELF_DEVELOPMENT', event_type='skill.sandbox_prepared', status='SUCCESS',
+            session_id=self.session_id,
+            metadata={'skill_id': skill_id, 'improvement_proposal_id': result['improvement']['id']},
+        )
+        return result
+
+    def run_skill_build(self, skill_id: str) -> dict:
+        result = self._skill_build_engine().build(skill_id)
+        self.observability.record(
+            category='SELF_DEVELOPMENT', event_type='skill.build_completed',
+            status=str(result['skill'].get('status', 'UNKNOWN')),
+            session_id=self.session_id,
+            metadata={
+                'skill_id': skill_id,
+                'improvement_proposal_id': result['skill'].get('improvement_proposal_id'),
+            },
+        )
+        return result
+
+    def _skill_activation_engine(self):
+        from .skills.activation import SkillActivationEngine
+
+        development = self._get_self_development_engine()
+        return SkillActivationEngine(
+            self.skill_registry,
+            development.store,
+            repo_root=development.sandbox.repo_root,
+        )
+
+    def activate_skill(self, skill_id: str, *, explicit_user_approval: bool) -> dict:
+        result = self._skill_activation_engine().activate(
+            skill_id,
+            explicit_user_approval=explicit_user_approval,
+        )
+        self.observability.record(
+            category='SELF_DEVELOPMENT', event_type='skill.activated', status='SUCCESS',
+            session_id=self.session_id,
+            metadata={'skill_id': skill_id, 'slug': result.get('slug')},
+        )
+        return result
+
+    def disable_skill(self, skill_id: str, *, explicit_user_approval: bool) -> dict:
+        result = self._skill_activation_engine().disable(
+            skill_id,
+            explicit_user_approval=explicit_user_approval,
+        )
+        self.observability.record(
+            category='SELF_DEVELOPMENT', event_type='skill.disabled', status='SUCCESS',
+            session_id=self.session_id, metadata={'skill_id': skill_id},
+        )
+        return result
 
     def _get_self_development_engine(self):
         if not settings.self_development_enabled:
