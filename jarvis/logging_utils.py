@@ -15,13 +15,31 @@ from .product_paths import PATHS
 LOG_DIR = PATHS.log_dir
 CRASH_DIR = PATHS.crash_dir
 _SECRET_KEY_RE = re.compile(r'(?i)(api[_-]?key|authorization|password|passwd|secret|token|refresh[_-]?token|access[_-]?token)')
-_SECRET_VALUE_PATTERNS = [re.compile(r'\bsk-[A-Za-z0-9_-]{12,}\b'), re.compile(r'\bsk-or-v1-[A-Za-z0-9_-]{12,}\b'), re.compile(r'(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{12,}')]
+_SECRET_VALUE_PATTERNS = [
+    re.compile(r'\bsk-[A-Za-z0-9_-]{12,}\b'),
+    re.compile(r'(?i)\b((?:bearer|basic)\s+)[A-Za-z0-9._~+/=-]{12,}'),
+    re.compile(r'\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b'),
+    re.compile(r'(?i)(https?://)[^\s/@:]+:[^\s/@]+@'),
+]
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r'''(?ix)
+    (?<![A-Za-z0-9_])
+    ["']?((?:[A-Za-z0-9]+[_-])*(?:api[_-]?key|authorization|password|passwd|secret|token|refresh[_-]?token|access[_-]?token))["']?
+    (?![A-Za-z0-9_])\s*[:=]\s*
+    (?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}\]]+)
+    ''',
+)
 
 def redact_text(value: str) -> str:
     text = str(value)
     for pattern in _SECRET_VALUE_PATTERNS:
-        text = pattern.sub(r'\1[REDACTED]' if 'bearer' in pattern.pattern.lower() else '[REDACTED]', text)
-    return re.sub(r'(?i)\b(api[_-]?key|password|passwd|secret|token|refresh[_-]?token|access[_-]?token)\s*[:=]\s*[^\s,;]+', lambda m: f'{m.group(1)}=[REDACTED]', text)
+        if '(?:bearer|basic)' in pattern.pattern.lower():
+            text = pattern.sub(r'\1[REDACTED]', text)
+        elif 'https?' in pattern.pattern.lower():
+            text = pattern.sub(r'\1[REDACTED]@', text)
+        else:
+            text = pattern.sub('[REDACTED]', text)
+    return _SECRET_ASSIGNMENT_RE.sub(lambda match: f'{match.group(1)}=[REDACTED]', text)
 
 def redact_value(value: Any) -> Any:
     if isinstance(value, dict): return {str(k): '[REDACTED]' if _SECRET_KEY_RE.search(str(k)) else redact_value(v) for k,v in value.items()}

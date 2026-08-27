@@ -116,6 +116,17 @@ class V7SecurityTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             ensure_safe_for_persistent_memory('token=abcdefghijklmnopqrstuvwxyz123456')
 
+    def test_secret_detector_catches_json_jwt_basic_and_url_credentials(self):
+        samples = (
+            '{"api_key": "a-very-secret-value"}',
+            'Authorization: Basic dXNlcjpwYXNzd29yZA==',
+            'eyJabcdefghijk.abcdefghijk.abcdefghijk',
+            'https://user:password@example.com/private',
+        )
+        for sample in samples:
+            with self.subTest(sample=sample):
+                self.assertTrue(contains_secret(sample))
+
     def test_audit_store_hashes_args_and_redacts_request(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = AuditStore(Path(tmp) / 'audit.db')

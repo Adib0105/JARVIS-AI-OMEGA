@@ -13,9 +13,12 @@ class SecretFinding:
 _PATTERNS: tuple[tuple[str, re.Pattern, str], ...] = (
     ('openai_key', re.compile(r'\bsk-(?:proj-|or-v1-)?[A-Za-z0-9_-]{16,}\b'), 'API-key-like value'),
     ('bearer_token', re.compile(r'(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}'), 'Bearer token'),
+    ('basic_credential', re.compile(r'(?i)\bbasic\s+[A-Za-z0-9+/=]{12,}'), 'Basic authorization credential'),
+    ('jwt', re.compile(r'\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b'), 'JWT-like token'),
+    ('url_credential', re.compile(r'(?i)https?://[^\s/@:]+:[^\s/@]+@'), 'URL-embedded credential'),
     ('private_key', re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'), 'Private key block'),
-    ('password_assignment', re.compile(r'(?i)\b(?:password|passwd|passcode|pin)\s*[:=]\s*\S{4,}'), 'Password/passcode assignment'),
-    ('token_assignment', re.compile(r'(?i)\b(?:token|access[_ -]?token|refresh[_ -]?token|oauth[_ -]?token|api[_ -]?key|secret)\s*[:=]\s*\S{8,}'), 'Token/secret assignment'),
+    ('password_assignment', re.compile(r'''(?ix)["']?(?:[A-Za-z0-9]+[_ -])*(?:password|passwd|passcode|pin)["']?\s*[:=]\s*(?:"[^"]{4,}"|'[^']{4,}'|\S{4,})'''), 'Password/passcode assignment'),
+    ('token_assignment', re.compile(r'''(?ix)["']?(?:[A-Za-z0-9]+[_ -])*(?:token|access[_ -]?token|refresh[_ -]?token|oauth[_ -]?token|api[_ -]?key|secret)["']?\s*[:=]\s*(?:"[^"]{8,}"|'[^']{8,}'|\S{8,})'''), 'Token/secret assignment'),
     ('recovery_code', re.compile(r'(?i)\b(?:recovery|backup)\s+code\s*[:=]\s*[A-Za-z0-9 -]{6,}'), 'Recovery/backup code'),
 )
 
