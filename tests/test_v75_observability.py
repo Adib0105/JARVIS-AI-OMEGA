@@ -101,10 +101,24 @@ class V75ObservabilityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             health = JarvisHealthSystem(Path(tmp) / 'jarvis.db')
             report = health.run()
-            self.assertIn(report.status, {HealthStatus.PASS, HealthStatus.WARNING, HealthStatus.FAIL})
+            self.assertIn(report.status, {HealthStatus.PASS, HealthStatus.WARNING, HealthStatus.FAIL, HealthStatus.NOT_VERIFIED})
             database = next(item for item in report.checks if item.name == 'Database')
             self.assertEqual(database.status, HealthStatus.PASS)
             self.assertIn('quick_check=ok', database.detail)
+
+    def test_configured_or_installed_external_capability_is_not_reported_pass(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            report = JarvisHealthSystem(Path(tmp) / 'jarvis.db').run()
+            checks = {item.name: item for item in report.checks}
+            provider = checks['AI Provider']
+            if 'No usable hosted API key' not in provider.detail:
+                self.assertEqual(provider.status, HealthStatus.NOT_VERIFIED)
+            for name in ('Vision', 'Voice', 'Microphone'):
+                check = checks[name]
+                if check.status not in {HealthStatus.WARNING, HealthStatus.FAIL}:
+                    self.assertEqual(check.status, HealthStatus.NOT_VERIFIED, name)
+            payload = report.as_dict()
+            self.assertIn('NOT_VERIFIED', payload['counts'])
 
 
 if __name__ == '__main__':
