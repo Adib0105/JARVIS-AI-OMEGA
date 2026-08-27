@@ -19,6 +19,11 @@ if ($LASTEXITCODE -ne 0) {
     throw 'PyInstaller is not installed. Install it deliberately with: .\.venv\Scripts\python.exe -m pip install pyinstaller'
 }
 
+& $Python -c "import edge_tts, pyttsx3, pyautogui, sounddevice, speech_recognition"
+if ($LASTEXITCODE -ne 0) {
+    throw 'A required Windows voice/microphone/desktop dependency is unavailable. Install requirements.txt, requirements-windows.txt, and requirements-build.txt.'
+}
+
 & $Python -m compileall -f -q .
 if ($LASTEXITCODE -ne 0) { throw 'compileall failed; build stopped.' }
 
@@ -37,6 +42,8 @@ $Args = @(
     '--collect-submodules', 'jarvis',
     '--collect-submodules', 'edge_tts',
     '--collect-submodules', 'speech_recognition',
+    '--collect-all', 'sounddevice',
+    '--collect-submodules', 'pyautogui',
     'desktop_app.py'
 )
 & $Python @Args
@@ -57,6 +64,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Packaged TTS runtime healthcheck failed.' }
 Copy-Item (Join-Path $Root '.env.example') (Join-Path $Dist '.env.example') -Force
 Copy-Item (Join-Path $Root 'README.md') (Join-Path $Dist 'README.md') -Force
 Copy-Item (Join-Path $Root 'LICENSE') (Join-Path $Dist 'LICENSE') -Force
+
+& $Python (Join-Path $Root 'scripts\validate_release_bundle.py') $Dist
+if ($LASTEXITCODE -ne 0) { throw 'Release bundle secret/private-data validation failed.' }
 
 Write-Host "Build ready: $Exe" -ForegroundColor Green
 Write-Host 'Private .env / OAuth / database files were NOT bundled.' -ForegroundColor Yellow

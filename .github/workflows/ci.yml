@@ -63,6 +63,7 @@ jobs:
         with: {python-version: '3.14'}
       - run: python -m pip install --upgrade pip
       - run: pip install -r requirements.txt
+      - run: pip install -r requirements-windows.txt
       - run: python -m compileall -f -q .
       - name: Full Windows regression suite
         shell: pwsh
@@ -93,6 +94,7 @@ jobs:
           python -m venv .venv
           .\.venv\Scripts\python.exe -m pip install --upgrade pip
           .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+          .\.venv\Scripts\python.exe -m pip install -r requirements-windows.txt
           .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
           .\build_windows.ps1
           .\dist\JARVIS-OMEGA-V7\JARVIS-OMEGA-V7.exe --first-run-healthcheck | Tee-Object first-run-healthcheck.json
@@ -105,8 +107,8 @@ jobs:
         shell: pwsh
         run: |
           $dist = '.\dist\JARVIS-OMEGA-V7'
-          $forbidden = Get-ChildItem $dist -Recurse -File | Where-Object { $_.Name -eq '.env' -or $_.Extension -in @('.db','.sqlite','.sqlite3') -or $_.Name -in @('google_token.json','google_credentials.json') }
-          if ($forbidden) { throw 'Secrets/private runtime data found in bundle.' }
+          .\.venv\Scripts\python.exe .\scripts\validate_release_bundle.py $dist
+          if ($LASTEXITCODE -ne 0) { throw 'Secrets/private runtime data found in bundle.' }
       - name: Build installer
         shell: pwsh
         run: |
@@ -203,6 +205,7 @@ jobs:
       - uses: actions/setup-python@v5
         with: {python-version: '3.14'}
       - run: pip install -r requirements.txt
+      - run: pip install -r requirements-windows.txt
       - name: Complete post-packaging regression
         shell: pwsh
         run: python -m unittest discover -s tests -v
