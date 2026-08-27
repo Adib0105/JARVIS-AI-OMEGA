@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from .common.results import OperationResult
+
 
 @runtime_checkable
 class PermissionDecision(Protocol):
-    """Minimal permission decision contract shared by legacy and V7 gates."""
+    """Minimal permission decision contract shared by legacy and capability gates."""
 
     allowed: bool
     reason: str
@@ -21,10 +23,24 @@ class PermissionChecker(Protocol):
 
 @runtime_checkable
 class ToolRuntime(Protocol):
-    """Provider/agent-facing tool runtime contract."""
+    """Legacy provider/agent-facing tool contract retained for compatibility."""
 
     def schemas(self, include_local: bool = True) -> list[dict]:
         ...
 
     def call(self, name: str, args: dict) -> str:
         ...
+
+
+@runtime_checkable
+class EvidenceAwareToolRuntime(ToolRuntime, Protocol):
+    """V8 migration contract exposing canonical operation result semantics."""
+
+    def call_result(self, name: str, args: dict) -> OperationResult:
+        ...
+
+
+__all__ = [
+    'PermissionChecker', 'PermissionDecision', 'ToolRuntime',
+    'EvidenceAwareToolRuntime',
+]
