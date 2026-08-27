@@ -79,10 +79,13 @@ TOOL_SECURITY: dict[str, ToolSecurityProfile] = {
     'add_reminder': profile('add_reminder', MEDIUM, {Capability.MEMORY_WRITE}, 'Creates a local reminder.', True),
     'list_reminders': profile('list_reminders', LOW, {Capability.MEMORY_READ}, 'Reads local reminders.'),
 
-    # Public web
+    # Public web / safe browser reads
     'search_web': profile('search_web', LOW, {Capability.WEB_READ}, 'Sends a public search query to the configured search service.'),
     'search_news': profile('search_news', LOW, {Capability.WEB_READ}, 'Sends a public news query to the configured search service.'),
-    'read_web_page': profile('read_web_page', LOW, {Capability.WEB_READ}, 'Downloads and reads a public HTTP/HTTPS page as untrusted data.'),
+    'read_web_page': profile('read_web_page', LOW, {Capability.WEB_READ, Capability.BROWSER_READ}, 'Downloads and reads a DNS/redirect-validated public HTTP/HTTPS page as untrusted data.'),
+    'browser_trust': profile('browser_trust', LOW, {Capability.BROWSER_READ}, 'Checks URL/DNS public-network trust without navigating.'),
+    'browser_read_safe': profile('browser_read_safe', LOW, {Capability.WEB_READ, Capability.BROWSER_READ}, 'Reads a DNS/redirect-validated public page and scans returned text as untrusted data.'),
+    'browser_extract_safe': profile('browser_extract_safe', LOW, {Capability.WEB_READ, Capability.BROWSER_READ}, 'Extracts text from a DNS/redirect-validated public page as untrusted data.'),
 
     # Google Workspace
     'google_status': profile('google_status', MEDIUM, {Capability.ACCOUNT_CONFIG_READ}, 'Checks whether local Google OAuth configuration files exist.'),
@@ -100,9 +103,13 @@ TOOL_SECURITY: dict[str, ToolSecurityProfile] = {
     'open_local_path': profile('open_local_path', MEDIUM, {Capability.FILE_READ, Capability.APP_CONTROL}, 'Opens an approved local file or folder with the operating system.', True),
 
     # Browser / apps / desktop
-    'open_url': profile('open_url', MEDIUM, {Capability.BROWSER_CONTROL}, 'Opens an external HTTP/HTTPS URL in the default browser.', True),
-    'browser_search': profile('browser_search', MEDIUM, {Capability.BROWSER_CONTROL}, 'Opens a browser search page.', True),
+    'open_url': profile('open_url', MEDIUM, {Capability.BROWSER_CONTROL}, 'Opens an external public HTTP/HTTPS URL after DNS validation.', True),
+    'browser_search': profile('browser_search', MEDIUM, {Capability.BROWSER_CONTROL}, 'Opens a DNS-validated browser search page.', True),
     'open_app': profile('open_app', MEDIUM, {Capability.APP_CONTROL}, 'Launches an allowlisted Windows application.', True),
+    'computer_status': profile('computer_status', LOW, {Capability.SCREEN_READ}, 'Reads desktop automation availability plus monitor/DPI metadata.'),
+    'list_ui_targets': profile('list_ui_targets', MEDIUM, {Capability.SCREEN_READ}, 'Reads visible UI Automation target metadata without acting on it.'),
+    'semantic_click': profile('semantic_click', HIGH, {Capability.SCREEN_READ, Capability.SCREEN_CONTROL, Capability.MOUSE_CONTROL}, 'Resolves and clicks a visible UI target after focus/readiness checks.', True),
+    'semantic_type': profile('semantic_type', HIGH, {Capability.SCREEN_READ, Capability.SCREEN_CONTROL, Capability.KEYBOARD_CONTROL}, 'Resolves a visible UI target, recovers focus, types text and verifies readback when possible.', True),
     'type_text': profile('type_text', HIGH, {Capability.KEYBOARD_CONTROL}, 'Types text into the currently focused desktop application.', True),
     'press_key': profile('press_key', HIGH, {Capability.KEYBOARD_CONTROL}, 'Presses an allowlisted key in the focused desktop application.', True),
     'hotkey': profile('hotkey', HIGH, {Capability.KEYBOARD_CONTROL}, 'Presses an allowlisted keyboard shortcut.', True),
