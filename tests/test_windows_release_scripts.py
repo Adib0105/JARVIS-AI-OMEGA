@@ -34,6 +34,16 @@ class WindowsReleaseScriptTests(unittest.TestCase):
         self.assertIn('ActualProductVersion', build)
         self.assertNotIn(f"$Version = '{APP_VERSION}'", build)
 
+    def test_windows_release_packages_semantic_uia_backend(self):
+        requirements = (ROOT / 'requirements-windows.txt').read_text(encoding='utf-8')
+        constraints = (ROOT / 'constraints-release.txt').read_text(encoding='utf-8')
+        build = (ROOT / 'build_windows.ps1').read_text(encoding='utf-8')
+
+        self.assertIn('pywinauto==0.6.9', requirements)
+        self.assertIn('pywinauto==0.6.9', constraints)
+        self.assertIn('import edge_tts, pyttsx3, pyautogui, pywinauto, sounddevice, speech_recognition', build)
+        self.assertIn("'--collect-submodules', 'pywinauto'", build)
+
     def test_windows_setup_uses_constrained_release_environment(self):
         setup = (ROOT / 'setup_windows.ps1').read_text(encoding='utf-8')
 
