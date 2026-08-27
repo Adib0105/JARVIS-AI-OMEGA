@@ -11,10 +11,11 @@ if ($LASTEXITCODE -ne 0 -or -not $Version) { throw 'Could not read canonical app
 $WindowsVersion = (& $Python -c "from jarvis.version import WINDOWS_FILE_VERSION; print(WINDOWS_FILE_VERSION)").Trim()
 if ($LASTEXITCODE -ne 0 -or -not $WindowsVersion) { throw 'Could not derive canonical Windows file version.' }
 
+$ProductBinaryName = 'JARVIS-OMEGA'
 $Iss = Join-Path $Root 'installer\JarvisOmega.iss'
-$BuiltExe = Join-Path $Root 'dist\JARVIS-OMEGA-V7\JARVIS-OMEGA-V7.exe'
+$BuiltExe = Join-Path $Root "dist\$ProductBinaryName\$ProductBinaryName.exe"
 if (-not (Test-Path $BuiltExe)) {
-    throw 'V7 executable is missing. Run .\build_windows.ps1 first.'
+    throw "Executable is missing: $BuiltExe. Run .\build_windows.ps1 first."
 }
 
 $Candidates = @(
