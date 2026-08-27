@@ -43,11 +43,42 @@ class V75SelfDevelopmentTests(unittest.TestCase):
             allowed, _ = policy.path_allowed(path); self.assertFalse(allowed, path)
         self.assertTrue(policy.path_allowed('jarvis/documents.py')[0])
 
+    def test_policy_blocks_self_development_control_plane(self):
+        policy = SelfDevelopmentPolicy()
+        protected = (
+            'jarvis/self_development/policies.py',
+            'jarvis/self_development/sandbox.py',
+            'jarvis/self_development/builder.py',
+            'jarvis/self_development/git_manager.py',
+            'jarvis/self_development/lease.py',
+            'jarvis/self_development/rollback.py',
+            'jarvis/self_development/release.py',
+            'jarvis/self_development/engine.py',
+            'jarvis/self_development/tester.py',
+            'jarvis/skills/activation.py',
+        )
+        for path in protected:
+            allowed, reason = policy.path_allowed(path)
+            self.assertFalse(allowed, path)
+            self.assertIn('control-plane', reason)
+
+    def test_policy_normalization_cannot_alias_protected_control_file(self):
+        policy = SelfDevelopmentPolicy()
+        for path in (
+            './jarvis/self_development/release.py',
+            'jarvis\\self_development\\sandbox.py',
+            'jarvis/self_development/../self_development/release.py',
+        ):
+            allowed, _ = policy.path_allowed(path)
+            self.assertFalse(allowed, path)
+
     def test_builder_cannot_escape_sandbox(self):
         with tempfile.TemporaryDirectory() as tmp:
             builder = SelfDevelopmentBuilder(Path(tmp))
             with self.assertRaises(PermissionError): builder.write_text('../escape.py', 'x = 1')
             with self.assertRaises(PermissionError): builder.write_text('jarvis/security/policy.py', 'unsafe = True')
+            with self.assertRaises(PermissionError): builder.write_text('jarvis/self_development/release.py', 'unsafe = True')
+            with self.assertRaises(PermissionError): builder.write_text('jarvis/self_development/sandbox.py', 'unsafe = True')
 
     def test_proposal_store_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
