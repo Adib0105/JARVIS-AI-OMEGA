@@ -62,7 +62,7 @@ def _rebrand_chat_history(app) -> None:
 
 
 def run_adaptive_gui() -> None:
-    """Launch the desktop through a subclass rather than mutating GUI classes."""
+    """Launch the desktop through composed subclasses rather than class mutation."""
     import tkinter as tk
 
     from . import gui as gui_module
@@ -70,6 +70,7 @@ def run_adaptive_gui() -> None:
     from .security.audit_ui import show_audit_viewer
     from .security.policy import ApprovalDecision
     from .ui_command_center import show_command_center
+    from .voice_ui import voice_desktop_class
 
     root = tk.Tk()
     screen_w = max(800, root.winfo_screenwidth())
@@ -83,7 +84,7 @@ def run_adaptive_gui() -> None:
         except Exception:
             pass
 
-    base_desktop = gui_module.JarvisDesktop
+    base_desktop = voice_desktop_class(gui_module.JarvisDesktop, gui_module)
 
     class AdaptiveJarvisDesktop(base_desktop):
         @staticmethod
