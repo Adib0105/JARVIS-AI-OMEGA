@@ -47,14 +47,67 @@ class PromptInjectionScan:
 
 
 def _unsafe_ip(value: str) -> bool:
+    """Return True unless an address is suitable for a public-web connection."""
     try:
         ip = ipaddress.ip_address(value)
     except ValueError:
         return False
+    mapped = getattr(ip, 'ipv4_mapped', None)
+    if mapped is not None:
+        return _unsafe_ip(str(mapped))
     return bool(
-        ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast
-        or ip.is_reserved or ip.is_unspecified
+        not ip.is_global
+        or ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
     )
+
+
+def resolve_public_addresses(host: str, port: int) -> tuple[tuple[int, str], ...]:
+    """Resolve a hostname and fail closed unless every answer is public.
+
+    Returning the address family alongside the numeric address lets the caller pin a
+    subsequent connection to an address that was actually validated, avoiding a second
+    hostname lookup at connect time.
+    """
+    normalized = str(host).strip().lower().rstrip('.')
+    if not normalized:
+        raise ValueError('Hostname is empty.')
+    try:
+        rows = socket.getaddrinfo(
+            normalized,
+            int(port),
+            family=socket.AF_UNSPEC,
+            type=socket.SOCK_STREAM,
+        )
+    except socket.gaierror as exc:
+        raise ValueError(f'Hostname could not be resolved: {normalized}') from exc
+
+    resolved: list[tuple[int, str]] = []
+    seen: set[tuple[int, str]] = set()
+    unsafe: list[str] = []
+    for family, socktype, _proto, _canonname, sockaddr in rows:
+        if socktype not in {0, socket.SOCK_STREAM} or not sockaddr:
+            continue
+        address = str(sockaddr[0]).split('%', 1)[0]
+        if _unsafe_ip(address):
+            unsafe.append(address)
+            continue
+        item = (int(family), address)
+        if item not in seen:
+            seen.add(item)
+            resolved.append(item)
+
+    # Mixed public/private answers are blocked as well. Choosing only the public answer
+    # would make DNS rebinding/misconfiguration harder to detect and reason about.
+    if unsafe:
+        raise ValueError('Hostname resolves to a non-public address.')
+    if not resolved:
+        raise ValueError('Hostname did not resolve to a usable public address.')
+    return tuple(resolved)
 
 
 def assess_public_url(url: str, *, resolve_dns: bool = False) -> BrowserTrustResult:
@@ -78,13 +131,9 @@ def assess_public_url(url: str, *, resolve_dns: bool = False) -> BrowserTrustRes
 
     if resolve_dns and not reasons:
         try:
-            addresses = {row[4][0] for row in socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == 'https' else 80))}
-            unsafe = sorted(address for address in addresses if _unsafe_ip(address))
-            if unsafe:
-                reasons.append('hostname resolves to a non-public address')
-        except socket.gaierror:
-            # DNS failure is not converted to a trust grant; the later fetch will fail.
-            pass
+            resolve_public_addresses(host, parsed.port or (443 if parsed.scheme == 'https' else 80))
+        except ValueError as exc:
+            reasons.append(str(exc))
 
     if reasons:
         return BrowserTrustResult(False, host, parsed.scheme, 'BLOCKED', tuple(reasons))
