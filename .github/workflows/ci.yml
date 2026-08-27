@@ -27,25 +27,19 @@ jobs:
       PRODUCTION_SELF_MODIFICATION: 'false'
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: {fetch-depth: 0}
       - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Compile all Python
-        run: python -m compileall -f -q .
-      - name: Full unit integration security evaluation suite
+        with: {python-version: '${{ matrix.python-version }}'}
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - run: python -m compileall -f -q .
+      - name: Full regression
         shell: bash
         run: |
           set -o pipefail
           python -m unittest discover -s tests -v 2>&1 | tee test-output.txt
-      - name: Upload test output
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: linux-test-output-${{ matrix.python-version }}
           path: test-output.txt
@@ -64,17 +58,12 @@ jobs:
       PRODUCTION_SELF_MODIFICATION: 'false'
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: {fetch-depth: 0}
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.14'
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      - name: Compile all Python
-        run: python -m compileall -f -q .
+        with: {python-version: '3.14'}
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt
+      - run: python -m compileall -f -q .
       - name: Full Windows regression suite
         shell: pwsh
         run: |
@@ -82,61 +71,117 @@ jobs:
           $code = $LASTEXITCODE
           Get-Content windows-test-output.txt
           if ($code -ne 0) { exit $code }
-      - name: Upload Windows test output
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: windows-test-output-3.14
           path: windows-test-output.txt
           if-no-files-found: ignore
 
-  windows-package-smoke:
-    name: windows-package-smoke (3.14)
+  windows-build:
+    name: exe-and-installer-build
     needs: windows-regression
     runs-on: windows-latest
-    env:
-      OPENROUTER_API_KEY: test-key-not-used
-      AI_PROVIDER: openrouter
-      ENABLE_MIC_INPUT: 'false'
-      ENABLE_GOOGLE_WORKSPACE: 'false'
-      PRODUCTION_SELF_MODIFICATION: 'false'
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        with: {fetch-depth: 0}
       - uses: actions/setup-python@v5
-        with:
-          python-version: '3.14'
-      - name: Create isolated build environment
+        with: {python-version: '3.14'}
+      - name: Build EXE
         shell: pwsh
         run: |
           python -m venv .venv
           .\.venv\Scripts\python.exe -m pip install --upgrade pip
           .\.venv\Scripts\python.exe -m pip install -r requirements.txt
           .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
-      - name: Build V7 Windows application
-        shell: pwsh
-        run: .\build_windows.ps1
-      - name: Verify package and secret exclusion
+          .\build_windows.ps1
+          .\dist\JARVIS-OMEGA-V7\JARVIS-OMEGA-V7.exe --package-healthcheck | Tee-Object exe-healthcheck.json
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged EXE healthcheck failed.' }
+      - name: Verify secret exclusion
         shell: pwsh
         run: |
           $dist = '.\dist\JARVIS-OMEGA-V7'
-          $exe = Join-Path $dist 'JARVIS-OMEGA-V7.exe'
-          if (-not (Test-Path $exe)) { throw "Packaged EXE missing: $exe" }
-          $forbidden = Get-ChildItem $dist -Recurse -File | Where-Object {
-            $_.Name -eq '.env' -or
-            $_.Extension -in @('.db', '.sqlite', '.sqlite3') -or
-            $_.Name -in @('google_token.json', 'google_credentials.json')
-          }
-          if ($forbidden) {
-            $forbidden | ForEach-Object { Write-Host "FORBIDDEN BUNDLE FILE: $($_.FullName)" }
-            throw 'Secrets/private runtime data must not be bundled.'
-          }
-          Write-Host "Package smoke PASS: $exe"
-      - name: Upload package smoke artifact
-        if: success()
-        uses: actions/upload-artifact@v4
+          $forbidden = Get-ChildItem $dist -Recurse -File | Where-Object { $_.Name -eq '.env' -or $_.Extension -in @('.db','.sqlite','.sqlite3') -or $_.Name -in @('google_token.json','google_credentials.json') }
+          if ($forbidden) { throw 'Secrets/private runtime data found in bundle.' }
+      - name: Build installer
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) { throw 'Inno Setup compiler unavailable.' }
+          & $iscc '/DMyAppVersion=8.0.0-rc1' '.\installer\JarvisOmega.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
+          $setup = Get-ChildItem '.\dist\installer\JARVIS-AI-OMEGA-Setup-*.exe' | Select-Object -First 1
+          if (-not $setup) { throw 'Installer artifact missing.' }
+          (Get-FileHash $setup.FullName -Algorithm SHA256).Hash | Set-Content '.\dist\installer\SHA256.txt'
+      - uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-OMEGA-V7-windows-smoke
-          path: dist/JARVIS-OMEGA-V7
-          retention-days: 3
+          name: jarvis-windows-release-candidate
+          path: |
+            dist/installer/*
+            exe-healthcheck.json
+          retention-days: 7
+
+  installed-app-validation:
+    name: isolated-installer-validation
+    needs: windows-build
+    runs-on: windows-latest
+    steps:
+      # Deliberately NO repository checkout and NO Python setup in this job.
+      - uses: actions/download-artifact@v4
+        with:
+          name: jarvis-windows-release-candidate
+          path: rc
+      - name: Install generated installer only
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem '.\rc\JARVIS-AI-OMEGA-Setup-*.exe' -Recurse | Select-Object -First 1
+          if (-not $setup) { throw 'Installer missing.' }
+          Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS="desktopicon"' -Wait
+          $exe = Join-Path $env:ProgramFiles 'JARVIS AI OMEGA\JARVIS-OMEGA-V7.exe'
+          if (-not (Test-Path $exe)) { throw 'Installed executable missing.' }
+          & $exe --package-healthcheck | Tee-Object installed-healthcheck.json
+          if ($LASTEXITCODE -ne 0) { throw 'Installed application healthcheck failed.' }
+          $uninstall = Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object DisplayName -like 'JARVIS AI OMEGA*' | Select-Object -First 1
+          if (-not $uninstall) { throw 'Registered uninstaller not found.' }
+          if (-not (Test-Path "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\JARVIS AI OMEGA\JARVIS AI OMEGA.lnk")) { throw 'Start Menu shortcut missing.' }
+          if (-not (Test-Path "$env:USERPROFILE\Desktop\JARVIS AI OMEGA.lnk")) { throw 'Desktop shortcut missing.' }
+      - name: Uninstall and verify user data preservation
+        shell: pwsh
+        run: |
+          $data = Join-Path $env:LOCALAPPDATA 'JARVIS AI OMEGA'
+          New-Item -ItemType Directory -Force $data | Out-Null
+          'preserve-me' | Set-Content (Join-Path $data 'uninstall-preservation-test.txt')
+          $entry = Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object DisplayName -like 'JARVIS AI OMEGA*' | Select-Object -First 1
+          if (-not $entry.UninstallString) { throw 'Uninstall command missing.' }
+          $cmd = $entry.UninstallString.Trim('"')
+          Start-Process $cmd -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+          if (Test-Path (Join-Path $env:ProgramFiles 'JARVIS AI OMEGA\JARVIS-OMEGA-V7.exe')) { throw 'Application remained after uninstall.' }
+          if (-not (Test-Path (Join-Path $data 'uninstall-preservation-test.txt'))) { throw 'User data was unexpectedly deleted.' }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installed-app-validation-evidence
+          path: installed-healthcheck.json
+          if-no-files-found: ignore
+
+  post-packaging-regression:
+    name: post-packaging-regression
+    needs: installed-app-validation
+    runs-on: windows-latest
+    env:
+      PYTHONWARNINGS: error::ResourceWarning
+      OPENROUTER_API_KEY: test-key-not-used
+      AI_PROVIDER: openrouter
+      ENABLE_MIC_INPUT: 'false'
+      ENABLE_GOOGLE_WORKSPACE: 'false'
+      SELF_DEVELOPMENT_ENABLED: 'true'
+      PRODUCTION_SELF_MODIFICATION: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.14'}
+      - run: pip install -r requirements.txt
+      - name: Complete post-packaging regression
+        shell: pwsh
+        run: python -m unittest discover -s tests -v
