@@ -23,7 +23,7 @@ class ImprovementBenchmarkResult:
 
 
 class SelfImprovementBenchmark:
-    """Attach deterministic benchmark evidence to an improvement proposal."""
+    """Attach deterministic before/after benchmark evidence to an improvement proposal."""
 
     def __init__(self, development: SelfDevelopmentEngine, benchmark: AgentEvaluationBenchmark) -> None:
         self.development = development
@@ -33,6 +33,8 @@ class SelfImprovementBenchmark:
         proposal = self.development.store.get(proposal_id)
         if proposal is None:
             raise KeyError(proposal_id)
+        if not results:
+            raise ValueError('Baseline benchmark requires at least one deterministic scenario result.')
         snapshot = self.benchmark.record(f'{proposal_id}:before', results)
         proposal.evaluation_summary['benchmark_before_id'] = snapshot.id
         proposal.evaluation_summary['benchmark_before'] = snapshot.metrics
@@ -43,6 +45,8 @@ class SelfImprovementBenchmark:
         proposal = self.development.store.get(proposal_id)
         if proposal is None:
             raise KeyError(proposal_id)
+        if not results:
+            raise ValueError('Candidate benchmark requires at least one deterministic scenario result.')
         before_id = proposal.evaluation_summary.get('benchmark_before_id')
         if not before_id:
             raise RuntimeError('Record the before benchmark before post-change evaluation.')
@@ -63,9 +67,10 @@ class SelfImprovementBenchmark:
         if proposal is None:
             raise KeyError(proposal_id)
         comparison = proposal.evaluation_summary.get('benchmark_comparison') or {}
-        regression = proposal.evaluation_summary.get('regression') or proposal.test_summary.get('regression') or {}
+        regression = proposal.test_summary.get('regression') or {}
         regression_ok = bool(regression.get('ok'))
+        has_before = bool(proposal.evaluation_summary.get('benchmark_before_id'))
+        has_after = bool(proposal.evaluation_summary.get('benchmark_after_id'))
         benchmark_ok = bool(comparison.get('successful_improvement'))
-        # A directly corrected deterministic regression is valid evidence even when a
-        # broader benchmark has no applicable metrics. Subjective model claims are not.
-        return regression_ok or benchmark_ok
+        no_regressions = not bool(comparison.get('regressions'))
+        return bool(regression_ok and has_before and has_after and benchmark_ok and no_regressions)
