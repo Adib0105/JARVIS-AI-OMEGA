@@ -6,6 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from .product_paths import PATHS, config_env_path
+from .version import APP_VERSION
 
 ROOT = PATHS.install_dir
 load_dotenv(config_env_path())
@@ -42,7 +43,7 @@ def _path(name: str, default: Path) -> Path:
 
 @dataclass(frozen=True)
 class Settings:
-    app_version: str = '8.0.0-rc1'
+    app_version: str = APP_VERSION
     provider: str = os.getenv('AI_PROVIDER', 'openrouter').strip().lower()
     openrouter_api_key: str = os.getenv('OPENROUTER_API_KEY', '')
     openrouter_model: str = os.getenv('OPENROUTER_MODEL', 'openrouter/free').strip()
