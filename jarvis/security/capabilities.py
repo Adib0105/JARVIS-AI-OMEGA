@@ -86,6 +86,9 @@ TOOL_SECURITY: dict[str, ToolSecurityProfile] = {
     'browser_trust': profile('browser_trust', LOW, {Capability.BROWSER_READ}, 'Checks URL/DNS public-network trust without navigating.'),
     'browser_read_safe': profile('browser_read_safe', LOW, {Capability.WEB_READ, Capability.BROWSER_READ}, 'Reads a DNS/redirect-validated public page and scans returned text as untrusted data.'),
     'browser_extract_safe': profile('browser_extract_safe', LOW, {Capability.WEB_READ, Capability.BROWSER_READ}, 'Extracts text from a DNS/redirect-validated public page as untrusted data.'),
+    'browser_snapshot': profile('browser_snapshot', LOW, {Capability.WEB_READ, Capability.BROWSER_READ}, 'Safely fetches a public page and computes a content fingerprint.'),
+    'browser_changed': profile('browser_changed', LOW, {Capability.WEB_READ, Capability.BROWSER_READ}, 'Safely re-fetches a public page and compares its content fingerprint.'),
+    'browser_research': profile('browser_research', LOW, {Capability.WEB_READ, Capability.BROWSER_READ}, 'Searches and safely reads a bounded set of public sources as untrusted research evidence.'),
 
     # Google Workspace
     'google_status': profile('google_status', MEDIUM, {Capability.ACCOUNT_CONFIG_READ}, 'Checks whether local Google OAuth configuration files exist.'),
