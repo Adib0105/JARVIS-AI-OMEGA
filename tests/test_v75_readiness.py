@@ -42,6 +42,27 @@ class V75ReadinessTests(unittest.TestCase):
             self.assertIn('microphone_live', pending)
             self.assertIn('provider_live', pending)
 
+    def test_provider_live_remains_required_when_api_key_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            certifier = self._certifier(Path(tmp), mic=False, google=False, api_key='')
+            evidence = {
+                'desktop_gui': True,
+                'computer_use': True,
+                'windows_package_launch': True,
+                'inno_installer_install_uninstall': True,
+            }
+            with patch.object(
+                certifier,
+                '_automated_checks',
+                return_value=[ReadinessCheck('software', 'PASS', 'ok')],
+            ):
+                report = certifier.certify(evidence).as_dict()
+
+            provider = next(row for row in report['checks'] if row['name'] == 'provider_live')
+            self.assertTrue(provider['required'])
+            self.assertEqual(provider['status'], 'NOT_VERIFIED')
+            self.assertFalse(report['final_release_ready'])
+
     def test_explicit_live_evidence_can_complete_release_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             certifier = self._certifier(Path(tmp), mic=False, google=False)
