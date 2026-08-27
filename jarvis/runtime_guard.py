@@ -62,14 +62,14 @@ def _rebrand_chat_history(app) -> None:
 
 
 def run_adaptive_gui() -> None:
-    """Launch the desktop through composed subclasses rather than class mutation."""
+    """Launch desktop, voice controls and Command Center through composition."""
     import tkinter as tk
 
     from . import gui as gui_module
     from .security.approval_ui import ask_approval
     from .security.audit_ui import show_audit_viewer
     from .security.policy import ApprovalDecision
-    from .ui_command_center import show_command_center
+    from .ui_command_center_composed import show_command_center
     from .voice_ui import voice_desktop_class
 
     root = tk.Tk()
