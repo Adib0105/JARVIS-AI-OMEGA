@@ -9,6 +9,7 @@ from tkinter import messagebox
 
 from .config import ROOT, settings
 from .logging_utils import CRASH_DIR, LOG_DIR
+from .product_paths import config_env_path
 from .updater import check_latest_release
 
 
@@ -25,15 +26,19 @@ EDITABLE_KEYS = {
 
 
 def _env_path() -> Path:
-    return ROOT / '.env'
+    return config_env_path()
 
 
 def _read_env_lines() -> list[str]:
     path = _env_path()
     if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
         example = ROOT / '.env.example'
         if example.exists():
-            path.write_text(example.read_text(encoding='utf-8'), encoding='utf-8')
+            text = example.read_text(encoding='utf-8')
+            text = re.sub(r'(?m)^OPENROUTER_API_KEY=.*$', 'OPENROUTER_API_KEY=', text)
+            text = re.sub(r'(?m)^OPENAI_API_KEY=.*$', 'OPENAI_API_KEY=', text)
+            path.write_text(text, encoding='utf-8')
         else:
             path.write_text('', encoding='utf-8')
     return path.read_text(encoding='utf-8', errors='replace').splitlines()
