@@ -1,234 +1,197 @@
 from __future__ import annotations
 
-import os
+import importlib
 import platform
 import sys
 
-
-def check(label: str, ok: bool, detail: str = '') -> bool:
-    tag = 'PASS' if ok else 'FAIL'
-    print(f'[{tag}] {label}' + (f' - {detail}' if detail else ''))
-    return ok
+from jarvis.diagnostics import DiagnosticResult, DiagnosticState
 
 
-def optional(label: str, ok: bool, detail: str = '') -> None:
-    tag = 'PASS' if ok else 'INFO'
-    print(f'[{tag}] {label}' + (f' - {detail}' if detail else ''))
+RESULTS: list[DiagnosticResult] = []
 
 
-def main() -> None:
-    results = []
-    results.append(check('Python >= 3.10', sys.version_info >= (3, 10), platform.python_version()))
+def report(name: str, state: DiagnosticState, detail: str = '', *, required: bool = False) -> None:
+    result = DiagnosticResult(name, state, detail, required)
+    RESULTS.append(result)
+    print(result.line())
 
-    required_imports = [
+
+def module_state(label: str, module_name: str, *, required: bool = False) -> bool:
+    try:
+        module = importlib.import_module(module_name)
+        report(label, DiagnosticState.INSTALLED, getattr(module, '__version__', 'installed'), required=required)
+        return True
+    except Exception as exc:
+        report(
+            label,
+            DiagnosticState.FAILED if required else DiagnosticState.DEGRADED,
+            f'{type(exc).__name__}: {exc}',
+            required=required,
+        )
+        return False
+
+
+def main() -> int:
+    RESULTS.clear()
+    python_ok = sys.version_info >= (3, 10)
+    report(
+        'Python runtime',
+        DiagnosticState.LOCAL_FUNCTIONAL if python_ok else DiagnosticState.FAILED,
+        platform.python_version(),
+        required=True,
+    )
+
+    for label, module_name in (
         ('OpenAI-compatible SDK', 'openai'),
         ('Rich terminal UI', 'rich'),
-        ('Free public web search', 'ddgs'),
-        ('System telemetry', 'psutil'),
-        ('PDF intelligence', 'pypdf'),
-        ('DOCX intelligence', 'docx'),
-        ('Excel intelligence', 'openpyxl'),
-    ]
-    for label, module in required_imports:
-        try:
-            imported = __import__(module)
-            results.append(check(label, True, getattr(imported, '__version__', 'installed')))
-        except Exception as exc:
-            results.append(check(label, False, str(exc)))
+        ('Public web search package', 'ddgs'),
+        ('System telemetry package', 'psutil'),
+        ('PDF package', 'pypdf'),
+        ('DOCX package', 'docx'),
+        ('Excel package', 'openpyxl'),
+    ):
+        module_state(label, module_name, required=True)
 
-    try:
-        from PIL import Image, ImageGrab, ImageTk
-        _ = (Image, ImageGrab, ImageTk)
-        results.append(check('V7 image upload + screen vision', True, 'Pillow installed'))
-    except Exception as exc:
-        results.append(check('V7 image upload + screen vision', False, str(exc)))
+    pillow = module_state('Image processing package', 'PIL', required=True)
+    edge = module_state('Edge TTS package', 'edge_tts')
+    offline_tts = module_state('Offline TTS package', 'pyttsx3')
+    desktop = module_state('Desktop input package', 'pyautogui')
+    sound = module_state('Audio capture package', 'sounddevice')
+    speech = module_state('Speech recognition package', 'speech_recognition')
 
-    try:
-        import edge_tts
-        results.append(check('Neural Hindi/Hinglish TTS', True, getattr(edge_tts, '__version__', 'installed')))
-    except Exception as exc:
-        results.append(check('Neural Hindi/Hinglish TTS', False, str(exc)))
-    try:
-        import pyttsx3
-        results.append(check('Offline TTS fallback', True, getattr(pyttsx3, '__version__', 'installed')))
-    except Exception as exc:
-        results.append(check('Offline TTS fallback', False, str(exc)))
-    try:
-        import tkinter
-        results.append(check('Animated ARC desktop GUI', True, f'Tk {tkinter.TkVersion}'))
-    except Exception as exc:
-        results.append(check('Animated ARC desktop GUI', False, str(exc)))
-
-    try:
-        from jarvis.providers import AIProvider, create_primary_provider
-        _ = (AIProvider, create_primary_provider)
-        results.append(check('V7 provider abstraction', True, 'provider-neutral contracts loaded'))
-    except Exception as exc:
-        results.append(check('V7 provider abstraction', False, str(exc)))
-
-    try:
-        from jarvis.errors import ErrorCategory, classify_exception
-        _ = classify_exception(TimeoutError('test timeout'))
-        results.append(check('V7 error taxonomy', ErrorCategory.TIMEOUT.value == 'TIMEOUT', 'typed failure categories loaded'))
-    except Exception as exc:
-        results.append(check('V7 error taxonomy', False, str(exc)))
-
-    try:
-        from jarvis.security import AuditStore, Capability
-        _ = (AuditStore, Capability)
-        results.append(check('V7 capability security + audit', True, 'security primitives loaded'))
-    except Exception as exc:
-        results.append(check('V7 capability security + audit', False, str(exc)))
-
-    # V7.5 engineering foundations: imports should be deterministic and must not
-    # require a live AI request or destructive action.
-    foundation_checks = [
-        ('V7.5 Capability Registry', 'jarvis.capability_registry', 'CapabilityRegistry'),
-        ('V7.5 Self Evaluation', 'jarvis.evaluation', 'SelfEvaluationEngine'),
-        ('V7.5 Gap Detection', 'jarvis.evaluation', 'CapabilityGapDetector'),
-        ('V7.5 Observability', 'jarvis.observability', 'ObservabilityManager'),
-        ('V7.5 Health System', 'jarvis.observability', 'JarvisHealthSystem'),
-        ('V7.5 Self Development', 'jarvis.self_development', 'SelfDevelopmentEngine'),
-        ('V7.5 Skill Registry', 'jarvis.skills', 'SkillRegistry'),
-        ('V7.5 Backup Manager', 'jarvis.storage', 'BackupManager'),
-    ]
-    for label, module_name, attr in foundation_checks:
-        try:
-            module = __import__(module_name, fromlist=[attr])
-            getattr(module, attr)
-            results.append(check(label, True, f'{module_name}.{attr} loaded'))
-        except Exception as exc:
-            results.append(check(label, False, str(exc)))
-
-    # Optional Windows modules: text chat remains usable if these are missing.
-    try:
-        import pyautogui
-        optional('Desktop keyboard/mouse automation', True, getattr(pyautogui, '__version__', 'installed'))
-    except Exception as exc:
-        optional('Desktop keyboard/mouse automation', False, f'optional: {exc}')
-    try:
-        import sounddevice
-        import speech_recognition
-        optional('Push-to-talk / wake-word microphone', True, 'sounddevice + SpeechRecognition installed')
-    except Exception as exc:
-        optional('Push-to-talk / wake-word microphone', False, f'optional: {exc}')
-
-    try:
-        from jarvis.computer_use.visual_fallback import VisualTargetBackend
-        visual = VisualTargetBackend().status()
-        optional(
-            'Computer Use V2 OCR fallback',
-            visual.available,
-            visual.detail if visual.available else f'optional local OCR unavailable: {visual.detail}',
-        )
-    except Exception as exc:
-        optional('Computer Use V2 OCR fallback', False, f'optional: {exc}')
+    report(
+        'Image/screen feature device verification',
+        DiagnosticState.NOT_TESTED,
+        'Pillow is installed.' if pillow else 'Image package missing; device path not exercised.',
+    )
+    report(
+        'TTS audible speaker output',
+        DiagnosticState.NOT_TESTED,
+        'Backend package present; this diagnostic does not claim audible output.' if (edge or offline_tts)
+        else 'No TTS backend package is currently available.',
+    )
+    report(
+        'Microphone capture / speech recognition',
+        DiagnosticState.NOT_TESTED,
+        'Packages present; no physical microphone was exercised.' if (sound and speech)
+        else 'One or more microphone packages are unavailable; no device test was performed.',
+    )
+    report(
+        'Computer-use keyboard/mouse device verification',
+        DiagnosticState.NOT_TESTED,
+        'Automation package present; no real desktop action was verified.' if desktop
+        else 'Desktop automation package unavailable; no device test was performed.',
+    )
 
     try:
         from jarvis import __version__
         from jarvis.capability_registry import CapabilityRegistry
         from jarvis.config import settings
         from jarvis.config_validation import ValidationLevel, validate_settings
-        from jarvis.memory_lifecycle import MemoryLifecycleManager
         from jarvis.memory_v7 import V7MemoryStore
         from jarvis.observability import ObservabilityManager
         from jarvis.storage import BackupManager, TARGET_SCHEMA_VERSION
+        from jarvis.version import APP_VERSION
 
-        results.append(check('JARVIS version', __version__ == settings.app_version == '7.0.0', __version__))
+        consistent = __version__ == settings.app_version == APP_VERSION
+        report(
+            'Application version consistency',
+            DiagnosticState.LOCAL_FUNCTIONAL if consistent else DiagnosticState.FAILED,
+            f'package={__version__}; config={settings.app_version}; canonical={APP_VERSION}',
+            required=True,
+        )
+
         findings = validate_settings(settings)
-        for finding in findings:
-            if finding.level == ValidationLevel.FAIL:
-                results.append(check(f'Config {finding.key}', False, finding.message))
-            elif finding.level == ValidationLevel.WARNING:
-                optional(f'Config {finding.key}', False, finding.message)
+        failures = [item for item in findings if item.level == ValidationLevel.FAIL]
+        warnings = [item for item in findings if item.level == ValidationLevel.WARNING]
+        if failures:
+            report(
+                'Runtime configuration validation',
+                DiagnosticState.FAILED,
+                '; '.join(f'{item.key}: {item.message}' for item in failures)[:1500],
+                required=True,
+            )
+        elif warnings:
+            report(
+                'Runtime configuration validation',
+                DiagnosticState.DEGRADED,
+                '; '.join(f'{item.key}: {item.message}' for item in warnings)[:1500],
+            )
+        else:
+            report('Runtime configuration validation', DiagnosticState.CONFIGURED, 'no validation findings')
 
-        provider_ok = settings.provider in {'openrouter', 'openai'}
-        results.append(check('AI provider', provider_ok, settings.provider))
-
-        placeholders = {'put_your_openrouter_key_here', 'put_your_api_key_here', 'YAHAN_APNI_OPENROUTER_KEY'}
-        key_ok = bool(settings.api_key and settings.api_key not in placeholders)
         key_name = 'OPENROUTER_API_KEY' if settings.provider == 'openrouter' else 'OPENAI_API_KEY'
-        results.append(check(f'{key_name} configured', key_ok, settings.model))
-
-        if settings.provider == 'openrouter':
-            optional('Free/test model route', settings.model == 'openrouter/free' or ':free' in settings.model, settings.model)
-
-        results.append(check('Public web tools', settings.enable_public_web_tools, 'DDGS metasearch'))
-        results.append(check('Desktop automation config', settings.enable_desktop_automation, 'capability-policy gated'))
-        results.append(check('Document intelligence config', settings.enable_document_intelligence, 'PDF/DOCX/XLSX/CSV'))
-        results.append(check('Coding workspace config', settings.enable_coding_tools, 'safe writes + unittest'))
-        results.append(check('Mission planner config', settings.mission_max_steps >= 1, f'max steps={settings.mission_max_steps}'))
-        results.append(check('Image attachments', settings.max_image_attachments >= 1, f'max={settings.max_image_attachments}'))
-        results.append(check('AI timeout', settings.ai_timeout_seconds > 0, f'{settings.ai_timeout_seconds}s'))
-        results.append(check('Vision timeout', settings.vision_timeout_seconds > 0, f'{settings.vision_timeout_seconds}s'))
+        placeholders = {'put_your_openrouter_key_here', 'put_your_api_key_here', 'YAHAN_APNI_OPENROUTER_KEY'}
+        key_configured = bool(settings.api_key and settings.api_key not in placeholders)
+        report(
+            'AI provider configuration',
+            DiagnosticState.CONFIGURED if key_configured else DiagnosticState.DEGRADED,
+            f'provider={settings.provider}; model={settings.model}; {key_name}=' + ('configured' if key_configured else 'missing/placeholder'),
+        )
+        report(
+            'Live AI provider inference',
+            DiagnosticState.NOT_TESTED,
+            'No live provider request is made by self_check.py; successful inference requires separate evidence.',
+        )
 
         memory = V7MemoryStore(settings.db_path)
         memory_stats = memory.v7_stats()
-        results.append(check(
-            'V7 SQLite schema migration',
-            memory_stats.get('schema_version') == TARGET_SCHEMA_VERSION,
+        schema_ok = memory_stats.get('schema_version') == TARGET_SCHEMA_VERSION
+        report(
+            'SQLite schema migration',
+            DiagnosticState.LOCAL_FUNCTIONAL if schema_ok else DiagnosticState.FAILED,
             f"schema={memory_stats.get('schema_version')} target={TARGET_SCHEMA_VERSION}",
-        ))
-        results.append(check(
-            'V7 layered memory tables',
-            isinstance(memory_stats.get('memory_layers'), dict),
-            f"layers={memory_stats.get('memory_layers', {})}; working={memory_stats.get('working_memory_items', 0)}",
-        ))
-        lifecycle = MemoryLifecycleManager(settings.db_path)
-        lifecycle_columns = lifecycle._columns()
-        results.append(check(
-            'V7.5 memory lifecycle schema',
-            'status' in lifecycle_columns,
-            f"status-column={'present' if 'status' in lifecycle_columns else 'missing'}",
-        ))
-        optional(
-            'Hybrid embedding reranker',
-            bool(memory_stats.get('embedding_reranker_configured')),
-            'explicitly configured' if memory_stats.get('embedding_reranker_configured') else 'off by default; local BM25+sparse retrieval remains active',
-        )
-        optional(
-            'Pre-V7 database backup',
-            bool(memory.migration_result.get('backup')),
-            memory.migration_result.get('backup') or 'not needed/already migrated',
+            required=True,
         )
 
         capabilities = CapabilityRegistry().snapshot(refresh=True)
         broken = [item['name'] for item in capabilities if item['status'] == 'BROKEN']
-        results.append(check('V7.5 capability registry runtime', not broken, f'capabilities={len(capabilities)}; broken={broken}'))
-
-        observability = ObservabilityManager(settings.db_path)
-        usage = observability.usage_summary('today')
-        results.append(check('V7.5 observability database', isinstance(usage, dict), f"requests_today={usage.get('requests', 0)}"))
-
-        backup = BackupManager(settings.db_path)
-        integrity = backup.integrity_check()
-        results.append(check('Database integrity', integrity.get('ok') is True, str(integrity.get('result') or integrity)))
-
-        voice_detail = (
-            f'engine={settings.voice_engine}, hindi={settings.voice_hindi}, '
-            f'hinglish={settings.voice_hinglish}, pitch={settings.edge_voice_pitch}, rate={settings.edge_voice_rate}'
+        report(
+            'Capability Registry local check',
+            DiagnosticState.LOCAL_FUNCTIONAL if not broken else DiagnosticState.DEGRADED,
+            f'capabilities={len(capabilities)}; broken={broken}',
         )
-        results.append(check('Voice output enabled', settings.enable_voice_output, voice_detail))
-        optional('Microphone configured', settings.enable_mic_input, f'wake default={settings.enable_wake_word}, phrase={settings.wake_word}')
-        results.append(check(
-            'Database folder writable',
-            os.access(settings.db_path.parent, os.W_OK) if settings.db_path.parent.exists() else True,
-            str(settings.db_path),
-        ))
-        results.append(check('Export folder configured', True, str(settings.export_dir)))
-        roots = [str(p) for p in settings.allowed_file_roots if p.exists()]
-        results.append(check('Local roots', bool(roots), '; '.join(roots) or 'none'))
 
-        optional(
-            'Production self-modification',
-            settings.production_self_modification,
-            'enabled deliberately' if settings.production_self_modification else 'OFF by default — sandbox development remains available',
+        usage = ObservabilityManager(settings.db_path).usage_summary('today')
+        report(
+            'Observability database',
+            DiagnosticState.LOCAL_FUNCTIONAL if isinstance(usage, dict) else DiagnosticState.FAILED,
+            'local event store query completed',
+            required=True,
+        )
+
+        integrity = BackupManager(settings.db_path).integrity_check()
+        report(
+            'Database integrity',
+            DiagnosticState.LOCAL_FUNCTIONAL if integrity.get('ok') is True else DiagnosticState.FAILED,
+            str(integrity.get('result') or integrity),
+            required=True,
+        )
+
+        report(
+            'Production self-modification policy',
+            DiagnosticState.CONFIGURED if not settings.production_self_modification else DiagnosticState.DEGRADED,
+            'disabled by default' if not settings.production_self_modification else 'enabled deliberately; human approval/release gates still required',
         )
     except Exception as exc:
-        results.append(check('JARVIS config/memory/V7.5 diagnostics', False, str(exc)))
+        report(
+            'JARVIS core diagnostics',
+            DiagnosticState.FAILED,
+            f'{type(exc).__name__}: {exc}',
+            required=True,
+        )
 
-    print('\nJARVIS OMEGA V7 / V7.5 ENGINEERING CORE:', 'READY' if all(results) else 'NEEDS ATTENTION')
+    report(
+        'Real Windows device E2E',
+        DiagnosticState.NOT_TESTED,
+        'GUI focus, DPI/resolution, microphone, audible TTS, real browser/UIA and live-provider behavior require separate real-machine evidence.',
+    )
+
+    required_failures = [item for item in RESULTS if item.required and item.failed]
+    print('\nAUTOMATED DIAGNOSTIC RESULT:', 'FAILED' if required_failures else 'COMPLETE')
+    print('Device/live/E2E states above remain NOT_TESTED unless separately verified with evidence.')
+    return 1 if required_failures else 0
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())
