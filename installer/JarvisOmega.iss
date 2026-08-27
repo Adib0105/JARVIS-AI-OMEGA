@@ -2,6 +2,9 @@
 #ifndef MyAppVersion
   #define MyAppVersion "8.0.0-rc1"
 #endif
+#ifndef MyWindowsVersion
+  #define MyWindowsVersion "8.0.0.1"
+#endif
 #define MyAppPublisher "Adib Azam"
 #define MyAppExeName "JARVIS-OMEGA-V7.exe"
 
@@ -23,9 +26,9 @@ PrivilegesRequired=admin
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-VersionInfoVersion=8.0.0.0
+VersionInfoVersion={#MyWindowsVersion}
 VersionInfoProductName={#MyAppName}
-VersionInfoProductVersion={#MyAppVersion}
+VersionInfoProductVersion={#MyWindowsVersion}
 VersionInfoCompany={#MyAppPublisher}
 
 [Files]
