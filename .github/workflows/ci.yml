@@ -97,16 +97,16 @@ jobs:
           .\.venv\Scripts\python.exe -m pip install -c constraints-release.txt -r requirements-windows.txt
           .\.venv\Scripts\python.exe -m pip install -c constraints-release.txt -r requirements-build.txt
           .\build_windows.ps1
-          .\dist\JARVIS-OMEGA-V7\JARVIS-OMEGA-V7.exe --first-run-healthcheck | Tee-Object first-run-healthcheck.json
+          .\dist\JARVIS-OMEGA\JARVIS-OMEGA.exe --first-run-healthcheck | Tee-Object first-run-healthcheck.json
           if ($LASTEXITCODE -ne 0) { throw 'Packaged first-run bootstrap healthcheck failed.' }
-          .\dist\JARVIS-OMEGA-V7\JARVIS-OMEGA-V7.exe --package-healthcheck | Tee-Object exe-healthcheck.json
+          .\dist\JARVIS-OMEGA\JARVIS-OMEGA.exe --package-healthcheck | Tee-Object exe-healthcheck.json
           if ($LASTEXITCODE -ne 0) { throw 'Packaged EXE healthcheck failed.' }
-          .\dist\JARVIS-OMEGA-V7\JARVIS-OMEGA-V7.exe --tts-runtime-healthcheck | Tee-Object tts-runtime-healthcheck.json
+          .\dist\JARVIS-OMEGA\JARVIS-OMEGA.exe --tts-runtime-healthcheck | Tee-Object tts-runtime-healthcheck.json
           if ($LASTEXITCODE -ne 0) { throw 'Packaged TTS worker/runtime healthcheck failed.' }
       - name: Verify secret exclusion
         shell: pwsh
         run: |
-          $dist = '.\dist\JARVIS-OMEGA-V7'
+          $dist = '.\dist\JARVIS-OMEGA'
           .\.venv\Scripts\python.exe .\scripts\validate_release_bundle.py $dist
           if ($LASTEXITCODE -ne 0) { throw 'Secrets/private runtime data found in bundle.' }
       - name: Build installer from canonical version
@@ -144,7 +144,7 @@ jobs:
           $setup = Get-ChildItem '.\rc\JARVIS-AI-OMEGA-Setup-*.exe' -Recurse | Select-Object -First 1
           if (-not $setup) { throw 'Installer missing.' }
           Start-Process $setup.FullName -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS="desktopicon"' -Wait
-          $exe = Join-Path $env:ProgramFiles 'JARVIS AI OMEGA\JARVIS-OMEGA-V7.exe'
+          $exe = Join-Path $env:ProgramFiles 'JARVIS AI OMEGA\JARVIS-OMEGA.exe'
           if (-not (Test-Path $exe)) { throw 'Installed executable missing.' }
           & $exe --first-run-healthcheck | Tee-Object installed-first-run-healthcheck.json
           if ($LASTEXITCODE -ne 0) { throw 'Installed first-run bootstrap healthcheck failed.' }
@@ -174,7 +174,7 @@ jobs:
           if (-not $entry.UninstallString) { throw 'Uninstall command missing.' }
           $cmd = $entry.UninstallString.Trim('"')
           Start-Process $cmd -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
-          if (Test-Path (Join-Path $env:ProgramFiles 'JARVIS AI OMEGA\JARVIS-OMEGA-V7.exe')) { throw 'Application remained after uninstall.' }
+          if (Test-Path (Join-Path $env:ProgramFiles 'JARVIS AI OMEGA\JARVIS-OMEGA.exe')) { throw 'Application remained after uninstall.' }
           if (-not (Test-Path (Join-Path $data 'uninstall-preservation-test.txt'))) { throw 'User data was unexpectedly deleted.' }
       - uses: actions/upload-artifact@v6
         if: always()
