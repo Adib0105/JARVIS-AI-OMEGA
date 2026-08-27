@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import runpy
 import unittest
 from pathlib import Path
@@ -46,6 +47,25 @@ class WindowsReleaseScriptTests(unittest.TestCase):
         self.assertIn('from jarvis.version import APP_VERSION', setup)
         self.assertIn('self_check.py', setup)
         self.assertNotIn('pip install --upgrade pip', setup)
+
+    def test_google_setup_is_pinned_constrained_and_not_legacy_branded(self):
+        setup = (ROOT / 'setup_google.ps1').read_text(encoding='utf-8')
+        requirements = (ROOT / 'requirements-google.txt').read_text(encoding='utf-8')
+
+        self.assertNotIn('V6', setup)
+        self.assertNotIn('V7.5', setup)
+        self.assertIn('-c constraints-release.txt -r requirements-google.txt', setup)
+        self.assertIn('from jarvis.version import APP_VERSION', setup)
+        self.assertIn('Google Workspace dependency import verification failed', setup)
+
+        dependency_lines = [
+            line.strip() for line in requirements.splitlines()
+            if line.strip() and not line.lstrip().startswith('#')
+        ]
+        self.assertEqual(len(dependency_lines), 3)
+        for line in dependency_lines:
+            self.assertRegex(line, r'^[A-Za-z0-9_.-]+==[^=<>!~]+$')
+            self.assertIsNone(re.search(r'(>=|<=|~=|!=|>|<)', line))
 
     def test_launchers_do_not_hardcode_legacy_product_versions(self):
         for name in ('run_desktop.bat', 'run_jarvis.bat'):
