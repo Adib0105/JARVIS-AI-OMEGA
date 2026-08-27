@@ -211,10 +211,13 @@ class ReleaseReadinessCertifier:
         return 'NOT_VERIFIED', 'No live workstation evidence supplied.'
 
     def _live_checks(self, live_evidence: dict[str, Any]) -> list[ReadinessCheck]:
+        # A real provider response is a final release gate even when the local machine
+        # has no API key configured yet. Missing configuration is not evidence that an
+        # AI assistant can answer in the release environment; it remains NOT_VERIFIED.
         specs = [
             ('desktop_gui', True, 'workstation'),
             ('computer_use', True, 'workstation'),
-            ('provider_live', bool(getattr(self.settings, 'api_key', '')), 'external'),
+            ('provider_live', True, 'external'),
             ('windows_package_launch', True, 'workstation'),
             ('inno_installer_install_uninstall', True, 'workstation'),
         ]
