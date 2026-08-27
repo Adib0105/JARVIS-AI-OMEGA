@@ -39,9 +39,12 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertNotIn(f'/DMyAppVersion={APP_VERSION}', workflow)
         self.assertIn('jarvis.version', installer_script)
 
-    def test_readme_release_version_matches_canonical_source(self):
+    def test_readme_release_heading_matches_canonical_source(self):
         readme = (ROOT / 'README.md').read_text(encoding='utf-8')
-        self.assertIn(APP_VERSION, readme)
+        first_line = readme.splitlines()[0]
+        self.assertIn(APP_VERSION, first_line)
+        self.assertNotIn('V7.5', first_line)
+        self.assertNotIn('7.0.0', first_line)
 
 
 if __name__ == '__main__':
