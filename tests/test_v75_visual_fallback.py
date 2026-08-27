@@ -17,6 +17,15 @@ class V75VisualFallbackTests(unittest.TestCase):
         self.assertEqual(targets[0].control_type, 'OCRText')
         self.assertEqual(targets[0].center, (50, 35))
 
+    def test_virtual_desktop_offset_is_applied_to_ocr_coordinates(self):
+        rows = [
+            {'text': 'Left monitor button', 'conf': '95', 'left': 100, 'top': 40, 'width': 80, 'height': 20},
+        ]
+        targets = VisualTargetBackend.targets_from_rows(rows, offset_x=-1920, offset_y=-100)
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(targets[0].safe_dict()['bounds'], [-1820, -60, -1740, -40])
+        self.assertEqual(targets[0].center, (-1780, -50))
+
     def test_missing_ocr_runtime_returns_no_target_instead_of_guessing(self):
         backend = VisualTargetBackend()
         fake = type('S', (), {'available': False, 'backend': 'none', 'detail': 'not installed'})()
