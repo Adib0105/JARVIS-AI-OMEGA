@@ -37,17 +37,13 @@ class PolicyCheck:
 
 
 class SelfDevelopmentPolicy:
-    """Non-bypassable default policy for generated experiments.
-
-    Self-development can propose changes to security-core files, but normal sandbox
-    automation refuses them. A human-controlled development process can still edit
-    those files outside this engine when deliberately reviewing the security design.
-    """
+    """Non-bypassable default policy for generated experiments."""
 
     def __init__(self) -> None:
-        self.max_files_changed = max(1, int(os.getenv('MAX_FILES_CHANGED', '20')))
-        self.max_lines_changed = max(20, int(os.getenv('MAX_LINES_CHANGED', '1200')))
-        self.max_build_time = max(10, int(os.getenv('MAX_BUILD_TIME', '300')))
+        self.max_files_changed = max(1, min(int(os.getenv('MAX_FILES_CHANGED', '20')), 200))
+        self.max_lines_changed = max(20, min(int(os.getenv('MAX_LINES_CHANGED', '1200')), 20000))
+        self.max_build_time = max(10, min(int(os.getenv('MAX_BUILD_TIME', '300')), 1800))
+        self.max_test_time = max(10, min(int(os.getenv('MAX_TEST_TIME', '300')), 1800))
         self.require_approval_for_production = os.getenv(
             'REQUIRE_APPROVAL_FOR_PRODUCTION', 'true'
         ).strip().lower() in {'1', 'true', 'yes', 'on'}
@@ -93,8 +89,4 @@ class SelfDevelopmentPolicy:
         return PolicyCheck(not reasons, tuple(reasons), len(unique), int(lines_changed))
 
     def can_activate_production(self, *, explicit_user_approval: bool) -> bool:
-        if self.require_approval_for_production:
-            return bool(explicit_user_approval)
-        # Even if config relaxes approval, activation is never allowed through this
-        # policy unless the caller supplies an explicit affirmative decision.
         return bool(explicit_user_approval)
