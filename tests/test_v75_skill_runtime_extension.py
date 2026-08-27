@@ -5,11 +5,15 @@ from jarvis.skill_runtime_extension import install_skill_runtime
 
 
 class V75SkillRuntimeExtensionTests(unittest.TestCase):
-    def test_installer_exposes_guarded_skill_lifecycle_methods(self):
+    def test_compatibility_installer_is_noop_and_methods_are_native(self):
+        before = {
+            name: getattr(JarvisOmega, name)
+            for name in ('prepare_skill_build', 'run_skill_build', 'activate_skill', 'disable_skill')
+        }
         install_skill_runtime()
-        self.assertTrue(getattr(JarvisOmega, '_v75_skill_runtime_installed', False))
-        for name in ('prepare_skill_build', 'run_skill_build', 'activate_skill', 'disable_skill'):
-            self.assertTrue(callable(getattr(JarvisOmega, name, None)), name)
+        for name, method in before.items():
+            self.assertIs(getattr(JarvisOmega, name), method)
+            self.assertIn(name, JarvisOmega.__dict__)
 
 
 if __name__ == '__main__':
