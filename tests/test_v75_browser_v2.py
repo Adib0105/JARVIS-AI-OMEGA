@@ -1,3 +1,4 @@
+import hashlib
 import socket
 import unittest
 from unittest.mock import patch
@@ -65,6 +66,43 @@ class V75BrowserV2Tests(unittest.TestCase):
         with patch('jarvis.computer_use.browser.read_web_page', return_value=text):
             full = BrowserAgent.extract('https://example.com/page')
         self.assertTrue(full['prompt_injection_scan']['suspicious'])
+
+    def test_snapshot_hashes_safe_reader_content_deterministically(self):
+        text = 'stable public content'
+        expected = hashlib.sha256(text.encode('utf-8')).hexdigest()
+        with patch('jarvis.computer_use.browser.read_web_page', return_value=text):
+            snapshot = BrowserAgent.snapshot('https://example.com/page', max_chars=2000)
+        self.assertTrue(snapshot['ok'])
+        self.assertEqual(snapshot['sha256'], expected)
+        self.assertEqual(snapshot['verification']['status'], 'VERIFIED')
+        self.assertTrue(snapshot['untrusted_content'])
+
+    def test_change_detection_validates_prior_digest_and_compares_fresh_snapshot(self):
+        invalid = BrowserAgent.changed('https://example.com/page', 'not-a-digest', max_chars=2000)
+        self.assertFalse(invalid['ok'])
+
+        old = hashlib.sha256(b'old').hexdigest()
+        with patch('jarvis.computer_use.browser.read_web_page', return_value='new'):
+            changed = BrowserAgent.changed('https://example.com/page', old, max_chars=2000)
+        self.assertTrue(changed['ok'])
+        self.assertTrue(changed['changed'])
+        self.assertEqual(changed['verification']['status'], 'VERIFIED')
+
+    def test_research_is_bounded_and_never_claims_factual_verification(self):
+        search_rows = [
+            {'title': 'One', 'url': 'https://one.example/page', 'snippet': 'first'},
+            {'title': 'Two', 'url': 'https://two.example/page', 'snippet': 'second'},
+            {'title': 'Three', 'url': 'https://three.example/page', 'snippet': 'third'},
+        ]
+        with patch('jarvis.computer_use.browser.search_web', return_value=search_rows), \
+             patch('jarvis.computer_use.browser.read_web_page', side_effect=['one content', 'two content']) as reader:
+            result = BrowserAgent.research('topic', max_results=3, max_pages=2, max_chars_per_page=2000)
+        self.assertTrue(result['ok'])
+        self.assertEqual(len(result['sources_read']), 2)
+        self.assertEqual(reader.call_count, 2)
+        self.assertEqual(result['verification']['status'], 'PARTIAL')
+        self.assertFalse(result['verification']['verified'])
+        self.assertTrue(result['untrusted_content'])
 
     def test_public_web_reader_rejects_private_ip_before_network_call(self):
         with patch('jarvis.web_tools._request_once') as request:
