@@ -121,6 +121,14 @@ def install_voice_ui() -> None:
         original_voice_state(self, state)
         try:
             self.root.after(0, lambda s=state: update_voice_panel(self, s))
+            if state == 'error':
+                self.root.after(
+                    0,
+                    lambda: self._append(
+                        'SYSTEM',
+                        'VOICE ERROR: speech synthesis/playback failed. Text response is still available; check Windows audio output/network and retry VOICE TEST.',
+                    ),
+                )
         except Exception:
             pass
 
