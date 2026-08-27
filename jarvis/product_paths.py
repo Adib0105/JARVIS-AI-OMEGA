@@ -34,3 +34,14 @@ def product_paths() -> ProductPaths:
 
 
 PATHS = product_paths()
+
+
+def config_env_path() -> Path:
+    """Return the canonical environment file for this runtime.
+
+    Packaged applications must never write configuration beside the executable
+    under Program Files. Development keeps the historical repository .env path.
+    """
+    if bool(getattr(sys, 'frozen', False)):
+        return PATHS.config_dir / '.env'
+    return PATHS.install_dir / '.env'
