@@ -11,7 +11,11 @@ if (-not (Test-Path $Python)) {
     $Python = (Get-Command python -ErrorAction Stop).Source
 }
 
-Write-Host 'JARVIS AI OMEGA V7 // Windows Build' -ForegroundColor Cyan
+$Version = (& $Python -c "from jarvis.version import APP_VERSION; print(APP_VERSION)").Trim()
+if ($LASTEXITCODE -ne 0 -or -not $Version) { throw 'Could not read canonical application version.' }
+
+$ProductBinaryName = 'JARVIS-OMEGA'
+Write-Host "JARVIS AI OMEGA $Version // Windows Build" -ForegroundColor Cyan
 Write-Host "Python: $Python"
 
 & $Python -c "import PyInstaller" 2>$null
@@ -32,13 +36,16 @@ if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed; build stopped.' }
 
 if ($Clean) {
     Remove-Item -Recurse -Force (Join-Path $Root 'build') -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force (Join-Path $Root "dist\$ProductBinaryName") -ErrorAction SilentlyContinue
+    # Remove the historical V7-named output so stale binaries cannot be mistaken
+    # for the current release candidate after a successful rebuild.
     Remove-Item -Recurse -Force (Join-Path $Root 'dist\JARVIS-OMEGA-V7') -ErrorAction SilentlyContinue
 }
 
 $Args = @(
     '-m', 'PyInstaller',
     '--noconfirm', '--clean', '--windowed',
-    '--name', 'JARVIS-OMEGA-V7',
+    '--name', $ProductBinaryName,
     '--collect-submodules', 'jarvis',
     '--collect-submodules', 'edge_tts',
     '--collect-submodules', 'speech_recognition',
@@ -49,8 +56,8 @@ $Args = @(
 & $Python @Args
 if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed.' }
 
-$Dist = Join-Path $Root 'dist\JARVIS-OMEGA-V7'
-$Exe = Join-Path $Dist 'JARVIS-OMEGA-V7.exe'
+$Dist = Join-Path $Root "dist\$ProductBinaryName"
+$Exe = Join-Path $Dist "$ProductBinaryName.exe"
 if (-not (Test-Path $Exe)) { throw "Expected executable was not created: $Exe" }
 
 # Prove the frozen executable contains the TTS worker and can spawn that worker
@@ -69,4 +76,5 @@ Copy-Item (Join-Path $Root 'LICENSE') (Join-Path $Dist 'LICENSE') -Force
 if ($LASTEXITCODE -ne 0) { throw 'Release bundle secret/private-data validation failed.' }
 
 Write-Host "Build ready: $Exe" -ForegroundColor Green
+Write-Host "Version: $Version" -ForegroundColor Green
 Write-Host 'Private .env / OAuth / database files were NOT bundled.' -ForegroundColor Yellow
