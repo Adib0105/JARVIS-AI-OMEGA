@@ -37,9 +37,26 @@ class SelfDevelopmentBuilder:
         allowed, reason = self.policy.path_allowed(normalized)
         if not allowed:
             raise PermissionError(f'{normalized}: {reason}')
-        target = (self.sandbox_root / normalized).resolve()
+
+        candidate = self.sandbox_root / normalized
+        target = candidate.resolve()
         if self.sandbox_root != target and self.sandbox_root not in target.parents:
             raise PermissionError('Generated path escaped sandbox.')
+
+        # The requested spelling is not the whole security boundary. A symlink,
+        # junction or other reparse/alias path can resolve to a protected file while
+        # still remaining inside the sandbox. Re-check the canonical resolved target
+        # relative to the worktree so aliases cannot bypass immutable path policy.
+        try:
+            resolved_relative = target.relative_to(self.sandbox_root).as_posix()
+        except ValueError as exc:
+            raise PermissionError('Generated path escaped sandbox.') from exc
+        resolved_allowed, resolved_reason = self.policy.path_allowed(resolved_relative)
+        if not resolved_allowed:
+            raise PermissionError(
+                f'{normalized}: resolved target {resolved_relative}: {resolved_reason}'
+            )
+
         if target.suffix.lower() not in self.ALLOWED_SUFFIXES:
             raise PermissionError(f'Generated file type is not allowlisted: {target.suffix or "<none>"}')
         return target, normalized
