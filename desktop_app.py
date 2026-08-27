@@ -67,7 +67,20 @@ def first_run_healthcheck() -> int:
         return 1
 
 
+def _is_edge_playback_worker_invocation() -> bool:
+    return len(sys.argv) >= 3 and sys.argv[1] == '-m' and sys.argv[2] == 'edge_playback'
+
+
 def main() -> int:
+    # VoiceOutput historically launches ``sys.executable -m edge_playback`` so it
+    # can interrupt playback. In a PyInstaller build sys.executable is this JARVIS
+    # EXE, not python.exe. Route that child invocation before bootstrap/UI imports
+    # so it performs TTS work and exits instead of opening a second desktop window.
+    if _is_edge_playback_worker_invocation():
+        from jarvis.tts_worker import run_edge_playback_worker
+
+        return run_edge_playback_worker(sys.argv[3:])
+
     if '--package-healthcheck' in sys.argv:
         return packaged_healthcheck()
     if '--first-run-healthcheck' in sys.argv:
