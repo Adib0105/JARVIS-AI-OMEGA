@@ -8,6 +8,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Iterator
 
+from .agent.orchestrator import MissionOrchestrator
+from .agent.tool_runtime import RecordingToolRegistry
 from .attachments import image_data_url, normalize_image_paths
 from .config import settings
 from .config_validation import require_valid_settings
@@ -22,15 +24,14 @@ from .providers.deadline import (
     current_request_budget,
     request_lifecycle,
 )
-from .tools import ToolRegistry
 
 
 class JarvisOmega:
-    """JARVIS OMEGA V7 compatibility core.
+    """JARVIS OMEGA V7 provider-neutral compatibility core.
 
-    Phase 1 keeps the public V6 JarvisOmega interface while moving model/provider
-    SDK details behind `jarvis.providers`. Later V7 phases place orchestration,
-    mission state, verification and recovery above this class.
+    The established public interface is preserved, but tool execution and missions
+    use the same audited V7 runtime contracts as the main public core. Higher-level
+    subclasses may replace the orchestrator with a more context-aware implementation.
     """
 
     SMART_HINTS = {
@@ -48,7 +49,8 @@ class JarvisOmega:
         self.client = getattr(self.provider, 'client', None)
 
         self.memory = MemoryStore()
-        self.tools = ToolRegistry(self.memory, confirmer)
+        self.tools = RecordingToolRegistry(self.memory, confirmer)
+        self.orchestrator = MissionOrchestrator(self)
         self.session_id = self.memory.new_session('JARVIS OMEGA V7 session')
         self.last_latency = 0.0
         self.last_model_used = settings.model
@@ -57,6 +59,7 @@ class JarvisOmega:
         self.last_tool_mode = 'full'
         self.last_request_kind = 'chat'
         self.last_plan: list[str] = []
+        self.last_mission_id: str | None = None
         self._active_model = settings.model
         self._request_lock = threading.RLock()
         self._active_request: RequestBudget | None = None
@@ -339,39 +342,10 @@ class JarvisOmega:
         return self.last_plan
 
     def run_mission(self, goal: str, progress: Callable[[str], None] | None = None) -> str:
-        """V6-compatible mission loop. Replaced by persisted V7 orchestrator in Phase 2."""
-        progress = progress or (lambda _msg: None)
-        started = time.perf_counter()
-        self.last_request_kind = 'mission'
-        plan = self.plan_mission(goal)
-        if not plan:
-            return 'Mission plan could not be created.'
-        progress('PLAN: ' + ' | '.join(plan))
-
-        results: list[str] = []
-        for index, step in enumerate(plan, 1):
-            progress(f'EXECUTING {index}/{len(plan)}: {step}')
-            prompt = (
-                f'JARVIS OMEGA V7 MISSION\nOverall goal: {goal}\n'
-                f'Current step {index}/{len(plan)}: {step}\n'
-                'Execute this step using available tools only when needed. Respect every permission gate. '
-                'Return a concise result for this step. Never claim a tool succeeded if its result says it failed.'
-            )
-            result = self.chat(prompt)
-            results.append(result)
-            progress(f'COMPLETED {index}/{len(plan)}')
-
-        joined = '\n\n'.join(f'Step {i + 1}: {r}' for i, r in enumerate(results))
-        progress('REVIEWING MISSION...')
-        review = self._one_shot_text(
-            'You are JARVIS OMEGA V7 Reviewer. Review the supplied mission results. Do not invent tool outcomes. '
-            'Give a concise final status, what was completed, what is unverified, blockers, and exact next action if needed.',
-            f'Goal: {goal}\nPlan: {json.dumps(plan, ensure_ascii=False)}\nExecution results:\n{joined}',
-            'review',
-        )
-        self.memory.add_message(self.session_id, 'assistant', f'[MISSION REVIEW]\n{review}')
-        self.last_latency = time.perf_counter() - started
-        return review
+        """Compatibility wrapper over the canonical persisted mission pipeline."""
+        mission = self.orchestrator.run(goal, progress)
+        self.last_mission_id = mission.id
+        return mission.final_report
 
     @staticmethod
     def _tool_compat_problem(exc: BaseException) -> bool:
