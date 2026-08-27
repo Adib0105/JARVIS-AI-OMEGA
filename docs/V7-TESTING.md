@@ -1,14 +1,16 @@
-# JARVIS AI OMEGA V7 / V7.5 — Testing & Evaluation
+# JARVIS AI OMEGA — Testing & Evaluation
+
+The filename is historical. Current release/version claims derive from `jarvis.version.APP_VERSION`.
 
 ## Quality rule
 
-A feature is not called complete merely because a module exists.
+A module existing or importing successfully is not proof that the feature works end to end.
 
 ```text
 IMPLEMENTED + INTEGRATED + TESTED + VERIFIED
 ```
 
-CI green is required for release readiness, but physical-device and external-account behavior may still need workstation validation.
+Runtime diagnostics distinguish `INSTALLED`, `CONFIGURED`, `LOCAL_FUNCTIONAL`, `INTEGRATION_TESTED`, `DEVICE_VERIFIED`, `E2E_VERIFIED`, `DEGRADED`, `FAILED` and `NOT_TESTED`.
 
 ## Local developer gate
 
@@ -16,209 +18,84 @@ Windows PowerShell:
 
 ```powershell
 .\.venv\Scripts\python.exe self_check.py
-.\.venv\Scripts\python.exe self_check_v75.py
 .\.venv\Scripts\python.exe -m compileall -f -q .
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-Run the full suite after touching shared runtime, security, memory, computer-use, self-development or storage code.
+`self_check_v75.py` is retained only as a backward-compatible wrapper.
+
+Run the full suite after touching shared runtime, security, memory, provider routing, computer-use, packaging, self-development or storage code.
 
 ## CI matrix
 
-The V7.5 workflow targets:
+Automated regression covers:
 
-- Linux Python 3.11
-- Linux Python 3.12
-- Linux Python 3.13
-- Linux Python 3.14
-- Windows Python 3.14
+- Linux Python 3.11;
+- Linux Python 3.12;
+- Linux Python 3.13;
+- Linux Python 3.14;
+- Windows Python 3.14.7.
 
-Regression jobs run forced compilation plus full unittest discovery.
-
-`ResourceWarning` is promoted to an error so leaked files/SQLite handles cannot be ignored.
+CI uses pip 26.2.1 plus `constraints-release.txt` and exact direct dependency pins. `ResourceWarning` is promoted to an error so leaked file/database handles cannot be ignored.
 
 ## Windows packaging gate
 
-After Windows regression passes, CI performs a PyInstaller smoke build.
+After Windows regression passes, CI builds the frozen application and installer.
 
-The gate verifies that:
+Automated packaging evidence includes:
 
-- `JARVIS-OMEGA-V7.exe` is produced;
-- the distribution does not intentionally bundle `.env`;
-- live `.db`, `.sqlite` or `.sqlite3` runtime data is excluded;
-- Google OAuth credential/token files are excluded.
+- `dist/JARVIS-OMEGA/JARVIS-OMEGA.exe` produced;
+- canonical Windows PE file/product version metadata embedded and verified;
+- first-run/package/TTS-worker software healthchecks;
+- `.env`, live databases, OAuth credentials/tokens and other private material excluded;
+- installer generated from canonical application version;
+- installer SHA-256 generated;
+- isolated installation without repository checkout or Python setup;
+- installed-app healthchecks;
+- shortcuts and uninstaller present;
+- uninstall preserves per-user data;
+- full post-packaging regression.
 
-Build dependencies come from `requirements-build.txt`.
+This does not prove physical speaker/microphone behavior, live provider responses or real desktop UI effects.
 
 ## Test categories
 
-The repository includes coverage for:
-
-### Foundation / providers
-
-- provider-neutral contracts
-- typed/configuration errors
-- model/provider error classification
-- route/model behavior
-
-### Missions / agent reliability
-
-- persisted missions
-- verified successful reasoning paths
-- retry eligibility
-- recovery / replanning
-- failure-history preservation
-- pause / resume / cancel
-- PARTIAL vs VERIFIED evidence behavior
-
-### Security
-
-- capability profiles
-- Trusted Local Mode boundaries
-- ALWAYS_ASK / explicit DENY precedence
-- unknown-tool denial
-- secret detection/redaction
-- audit safety
-- high-risk permission bypass attempts
-
-### Memory / RAG / documents
-
-- layered memory/context
-- schema migration
-- hybrid retrieval
-- reinforcement
-- superseding / current truth
-- secret persistence blocking
-- document content-hash duplicate/update behavior
-- memory lifecycle contradiction/stale/decay behavior
-
-### Computer Use / browser
-
-- semantic target confidence
-- ambiguity rejection
-- no-guess behavior
-- post-action evidence
-- OCR fallback integration
-- browser URL trust policy
-- private/local target rejection
-- prompt-injection isolation
-- untrusted webpage content handling
-
-### V7.5 self-evaluation / self-development
-
-- persisted evaluation history
-- measured rates from evidence
-- unsupported metric `N/A` behavior
-- capability gap detection
-- proposal persistence
-- sandbox path isolation
-- immutable-core protection
-- bounded self-coding / repair
-- offline-development truthfulness
-- before/after benchmark binding
-
-### Skills / workflow learning
-
-- repeated safe workflow proposal
-- sensitive side-effect sequence rejection
-- skill manifest completeness
-- sandbox build preparation
-- deployed-only activation
-- explicit operator activation requirement
-
-### Data / release
-
-- backup integrity manifest/hash
-- export/import round trip
-- destructive restore confirmation
-- pre-restore backup
-- controlled release gating
-- production self-modification default OFF
-- history-preserving rollback
-
-### Observability / health
-
-- safe event persistence
-- secret redaction
-- provider fallback/failure recording
-- token aggregation
-- cost only when provider explicitly reports it
-- real local database health checks
+The repository contains deterministic coverage for provider contracts/routing/timeouts/fallbacks; mission persistence, verification, recovery and replanning; capability permissions and Trusted Local Mode boundaries; secret detection/redaction; memory/RAG/document lifecycle; Computer Use confidence/ambiguity/OCR behavior; browser trust and prompt-injection isolation; controlled self-development and rollback; skill lifecycle controls; backup/integrity; observability; diagnostics truthfulness; canonical versioning; file-root/symlink/junction security; and Windows release-script consistency.
 
 ## Evaluation benchmark
 
-`jarvis/evaluation/benchmark.py` stores deterministic scenario results historically.
+`jarvis/evaluation/benchmark.py` stores deterministic scenario results. Supported categories include task success, tool accuracy, verification accuracy, recovery, replanning, safety, memory accuracy, computer-use accuracy, browser accuracy and average latency.
 
-Supported metric categories include:
-
-- task success
-- tool accuracy
-- verification accuracy
-- recovery
-- replanning
-- safety
-- memory accuracy
-- computer-use accuracy
-- browser accuracy
-- average latency
-
-Before/after comparison treats lower latency as better and success/accuracy metrics as higher-is-better.
-
-A model statement such as “performance improved” is not benchmark evidence.
+A model statement that performance improved is not benchmark evidence. Before/after claims must bind to actual measured runs.
 
 ## Adversarial security expectations
 
-Tests should fail safely for attempts involving:
-
-- prompt injection
-- secret persistence/extraction
-- private browser targets
-- unknown tools
-- permission bypass
-- sandbox escape
-- security-core self-modification
-- unrestricted shell exposure
-- Trusted Local Mode high-risk bypass
+Tests should fail safely for prompt injection, secret extraction/persistence, private browser targets, unknown tools, permission bypass, path/sandbox escape, security-core self-modification, unrestricted shell exposure and Trusted Local Mode high-risk bypass.
 
 Security failures block release readiness.
 
-## Workstation smoke testing
+## Exact-commit evidence rule
 
-CI cannot prove every real-device behavior.
+Never reuse CI, package, device or live-provider evidence from an older commit after source/dependency/build changes. The exact commit being released must have its own qualifying evidence.
 
-Before stable release, test on the actual Windows workstation:
+## Real Windows workstation gate
 
-- desktop app launches normally
-- Agent Command Center opens
-- configured provider answers
-- voice starts/stops/changes speed correctly
-- closing the app stops playback
-- microphone/wake word if enabled
-- Screen Vision permission/capture if enabled
-- Chrome/allowlisted app control
-- UIA semantic targeting
-- OCR fallback if locally configured
-- backup/integrity
-- optional Gmail/Calendar only if included in release claim
-- packaged EXE launch
-- Inno installer install/uninstall after local compilation
+CI cannot prove every real-device behavior. Use [WINDOWS-E2E-CHECKLIST.md](WINDOWS-E2E-CHECKLIST.md) for the exact release candidate and record untested areas as `NOT VERIFIED`.
 
-See [V7-RELEASE.md](V7-RELEASE.md).
+Important real-machine checks include GUI startup/shutdown, Chrome/Notepad control, UIA and OCR behavior, focus handling, keyboard/mouse effects plus post-action verification, DPI/resolution movement, audible TTS, microphone/speech recognition, real provider inference and failure behavior, network disconnect/reconnect, and clean installed first run/uninstall.
 
-## How to debug red CI
+## Debugging red CI
 
-1. identify the first meaningful failure;
-2. reproduce it on the closest local Python/platform when possible;
-3. isolate the root contract being violated;
-4. fix the implementation;
-5. rerun focused tests;
-6. rerun the full suite;
-7. confirm other platforms still pass.
+1. Identify the first meaningful failure.
+2. Reproduce on the closest local platform when possible.
+3. Fix the violated contract/root cause.
+4. Run focused tests.
+5. Run the full suite.
+6. Rebuild/repackage when packaging code changed.
+7. Accept release evidence only for the resulting exact commit.
 
-Do not add sleeps, skip tests or hard-code expected values unless that change represents the actual contract.
+Do not add arbitrary sleeps, skips, weakened assertions or hard-coded PASS states merely to make CI green.
 
 ## Release rule
 
-Do not declare a release ready while required CI is red.
-
-Do not claim optional hardware/provider/account features were validated unless they were actually tested in that environment.
+A green automated workflow is required but not sufficient. Do not claim hardware, live-provider or real UI behavior as verified unless it was actually tested for the exact candidate.
