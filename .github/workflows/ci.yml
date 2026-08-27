@@ -136,7 +136,7 @@ jobs:
     runs-on: windows-latest
     steps:
       # Deliberately NO repository checkout and NO Python setup in this job.
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: jarvis-windows-release-candidate
           path: rc
