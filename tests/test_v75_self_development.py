@@ -80,6 +80,23 @@ class V75SelfDevelopmentTests(unittest.TestCase):
             with self.assertRaises(PermissionError): builder.write_text('jarvis/self_development/release.py', 'unsafe = True')
             with self.assertRaises(PermissionError): builder.write_text('jarvis/self_development/sandbox.py', 'unsafe = True')
 
+    def test_builder_cannot_alias_protected_file_through_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            protected = root / 'jarvis' / 'security' / 'policy.py'
+            protected.parent.mkdir(parents=True)
+            protected.write_text('SAFE = True\n', encoding='utf-8')
+            alias = root / 'harmless.py'
+            try:
+                alias.symlink_to(protected)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest(f'symlink creation unavailable on this platform: {exc}')
+
+            builder = SelfDevelopmentBuilder(root)
+            with self.assertRaises(PermissionError):
+                builder.write_text('harmless.py', 'SAFE = False\n')
+            self.assertEqual(protected.read_text(encoding='utf-8'), 'SAFE = True\n')
+
     def test_proposal_store_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = ProposalStore(Path(tmp) / 'state.db')
