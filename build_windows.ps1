@@ -26,7 +26,7 @@ if ($LASTEXITCODE -ne 0) {
     throw 'PyInstaller is not installed. Install it deliberately with: .\.venv\Scripts\python.exe -m pip install -c constraints-release.txt -r requirements-build.txt'
 }
 
-& $Python -c "import edge_tts, pyttsx3, pyautogui, sounddevice, speech_recognition"
+& $Python -c "import edge_tts, pyttsx3, pyautogui, pywinauto, sounddevice, speech_recognition"
 if ($LASTEXITCODE -ne 0) {
     throw 'A required Windows voice/microphone/desktop dependency is unavailable. Install the constrained runtime and Windows requirement sets.'
 }
@@ -59,6 +59,7 @@ $Args = @(
     '--collect-submodules', 'jarvis',
     '--collect-submodules', 'edge_tts',
     '--collect-submodules', 'speech_recognition',
+    '--collect-submodules', 'pywinauto',
     '--collect-all', 'sounddevice',
     '--collect-submodules', 'pyautogui',
     'desktop_app.py'
