@@ -119,7 +119,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installer build failed.' }
           $setup = Get-ChildItem '.\dist\installer\JARVIS-AI-OMEGA-Setup-*.exe' | Select-Object -First 1
           if (-not $setup) { throw 'Installer artifact missing.' }
-          (Get-FileHash $setup.FullName -Algorithm SHA256).Hash | Set-Content '.\dist\installer\SHA256.txt'
+          (Get-FileHash $setup.FullName -Algorithm SHA256).Hash | Tee-Object -FilePath '.\dist\installer\SHA256.txt'
       - uses: actions/upload-artifact@v6
         with:
           name: jarvis-windows-release-candidate
