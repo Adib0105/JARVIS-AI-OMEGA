@@ -60,6 +60,8 @@ Current release candidate:
 
 Do not add another hard-coded application version in runtime configuration, diagnostics, packaging metadata, installer scripts or CI. Windows numeric file-version metadata is derived from the canonical release version.
 
+The packaged executable uses the stable product identity `JARVIS-OMEGA.exe`; the release version belongs in product metadata and the installer filename, not in the executable path. This keeps shortcuts, automation and upgrade paths stable across future releases.
+
 ## Security boundary
 
 Tool requests follow the capability/security policy before execution. The intended flow is:
@@ -192,7 +194,7 @@ Build the frozen application:
 Expected executable:
 
 ```text
-dist/JARVIS-OMEGA-V7/JARVIS-OMEGA-V7.exe
+dist/JARVIS-OMEGA/JARVIS-OMEGA.exe
 ```
 
 After installing Inno Setup 6.7.1, build the installer:
