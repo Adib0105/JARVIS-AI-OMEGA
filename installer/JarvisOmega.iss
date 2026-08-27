@@ -6,7 +6,7 @@
   #error MyWindowsVersion must be supplied by build_installer.ps1 from jarvis.version
 #endif
 #define MyAppPublisher "Adib Azam"
-#define MyAppExeName "JARVIS-OMEGA-V7.exe"
+#define MyAppExeName "JARVIS-OMEGA.exe"
 
 [Setup]
 AppId={{A26A8779-4A69-4A6D-8DBD-0D3E88E8A701}
@@ -32,7 +32,7 @@ VersionInfoProductVersion={#MyWindowsVersion}
 VersionInfoCompany={#MyAppPublisher}
 
 [Files]
-Source: "..\dist\JARVIS-OMEGA-V7\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist\JARVIS-OMEGA\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\JARVIS AI OMEGA"; Filename: "{app}\{#MyAppExeName}"
