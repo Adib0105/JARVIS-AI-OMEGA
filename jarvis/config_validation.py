@@ -55,7 +55,7 @@ def validate_settings(settings) -> list[ValidationFinding]:
     add('VOICE_HINGLISH', bool(settings.voice_hinglish), 'Hinglish voice must be configured.')
     add('VOICE_HINDI', bool(settings.voice_hindi), 'Hindi voice must be configured.')
     if hasattr(settings, 'voice_chunk_chars'):
-        add('VOICE_CHUNK_CHARS', 80 <= settings.voice_chunk_chars <= 1200, 'Voice chunk size must be 80..1200 characters.')
+        add('VOICE_CHUNK_CHARS', 80 <= settings.voice_chunk_chars <= 6000, 'Voice chunk size must be 80..6000 characters.')
     add('TTS_TIMEOUT_SECONDS', settings.tts_timeout_seconds > 0, 'Edge TTS timeout must be greater than zero.')
     add('OFFLINE_TTS_TIMEOUT_SECONDS', settings.offline_tts_timeout_seconds > 0, 'Offline TTS timeout must be greater than zero.')
     add('MIC_RECORD_SECONDS', 1.0 <= settings.mic_record_seconds <= 20.0, 'Microphone recording length must be 1..20 seconds.')
