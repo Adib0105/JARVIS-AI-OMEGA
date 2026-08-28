@@ -106,7 +106,28 @@ def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
     win.grab_set()
 
     tk.Label(win, text=f'JARVIS OMEGA {settings.app_version} SETTINGS', bg='#06111a', fg='#53e7ff', font=('Segoe UI', 16, 'bold')).pack(anchor='w', padx=18, pady=(16, 2))
-    tk.Label(win, text='API keys, Google OAuth JSON, and stored tokens are intentionally hidden. Saved changes apply after restart.', bg='#06111a', fg='#86a8b8', justify='left', font=('Segoe UI', 9), wraplength=640).pack(anchor='w', padx=18, pady=(0, 10))
+    tk.Label(win, text='API keys, Google OAuth JSON, and stored tokens are intentionally hidden. Saved changes apply after restart.', bg='#06111a', fg='#86a8b8', justify='left', font=('Segoe UI', 9), wraplength=640).pack(anchor='w', padx=18, pady=(0, 8))
+
+    # Keep software update controls outside the scrollable form so Windows DPI/display
+    # scaling can never hide the only update entry point.
+    update_bar = tk.Frame(win, bg='#0a202e', bd=0, highlightthickness=1, highlightbackground='#12394c')
+    update_bar.pack(fill='x', padx=18, pady=(0, 8))
+    update_text = tk.Frame(update_bar, bg='#0a202e')
+    update_text.pack(side='left', fill='x', expand=True, padx=(12, 6), pady=8)
+    tk.Label(update_text, text='SOFTWARE UPDATE', bg='#0a202e', fg='#ffd166', font=('Consolas', 9, 'bold')).pack(anchor='w')
+    tk.Label(update_text, text=f'Current version: {settings.app_version}', bg='#0a202e', fg='#86a8b8', font=('Segoe UI', 9)).pack(anchor='w')
+    tk.Button(
+        update_bar,
+        text='CHECK FOR UPDATE',
+        command=lambda: show_update_dialog(win),
+        bg='#0b2a3a',
+        fg='#53e7ff',
+        activebackground='#12394c',
+        activeforeground='white',
+        relief='flat',
+        padx=12,
+        pady=7,
+    ).pack(side='right', padx=10, pady=8)
 
     canvas = tk.Canvas(win, bg='#06111a', highlightthickness=0)
     scrollbar = tk.Scrollbar(win, orient='vertical', command=canvas.yview)
