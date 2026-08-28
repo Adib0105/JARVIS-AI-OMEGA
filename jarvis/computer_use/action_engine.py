@@ -193,9 +193,18 @@ class ComputerActionEngine:
                 'resolution_backend': 'windows-uia',
                 'focus_recovery': readiness,
             }
+
+        # Focus/selection that already existed before the click is not evidence that the
+        # click achieved anything. Wait for a post-action state transition (or target
+        # disappearance/value change) instead of promoting an unchanged precondition.
         observed = self._observe_until(
             match.target,
-            lambda row: bool(row.get('focused') is True or row.get('selected') is True or row.get('exists') is False or row.get('value') != before.get('value')),
+            lambda row: bool(
+                (before.get('focused') is not True and row.get('focused') is True)
+                or (before.get('selected') is not True and row.get('selected') is True)
+                or row.get('exists') is False
+                or row.get('value') != before.get('value')
+            ),
         )
         verification = self._verify_click(before, after, observed)
         return {
@@ -299,13 +308,19 @@ class ComputerActionEngine:
 
     @staticmethod
     def _verify_click(before: dict, after: dict, observed: dict) -> dict:
-        if observed.get('focused') is True or observed.get('selected') is True:
+        focused_transition = before.get('focused') is not True and (
+            after.get('focused') is True or observed.get('focused') is True
+        )
+        selected_transition = before.get('selected') is not True and (
+            after.get('selected') is True or observed.get('selected') is True
+        )
+        if focused_transition or selected_transition:
             return {
                 'status': 'VERIFIED',
                 'verified': True,
                 'evidence': {
-                    'focused': observed.get('focused'),
-                    'selected': observed.get('selected'),
+                    'focus_transition': focused_transition,
+                    'selection_transition': selected_transition,
                     'exists': observed.get('exists'),
                 },
             }
@@ -325,9 +340,12 @@ class ComputerActionEngine:
             'status': 'PARTIAL',
             'verified': False,
             'evidence': {
-                'focused': observed.get('focused'),
-                'selected': observed.get('selected'),
+                'focused_before': before.get('focused'),
+                'focused_after': observed.get('focused'),
+                'selected_before': before.get('selected'),
+                'selected_after': observed.get('selected'),
                 'exists': observed.get('exists'),
                 'after_action_observation': bool(observed.get('observed')),
+                'reason': 'No post-click UI state transition was independently observed.',
             },
         }
