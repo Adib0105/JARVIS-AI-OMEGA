@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 import unittest
 
+from jarvis.config import settings
 from jarvis.microphone import (
     WakeWordListener,
     recognition_languages,
@@ -28,6 +29,14 @@ class VoiceInteractionTests(unittest.TestCase):
     def test_missing_barge_in_handler_is_truthfully_reported(self):
         set_voice_interrupt_handler(None)
         self.assertFalse(request_voice_interrupt())
+
+    def test_default_listener_uses_runtime_timing_configuration(self):
+        listener = WakeWordListener(on_command=lambda _text: None)
+        self.assertEqual(listener.chunk_seconds, max(2.0, min(settings.wake_chunk_seconds, 8.0)))
+        self.assertEqual(
+            listener.continuous_seconds,
+            max(0.0, min(settings.voice_continuous_seconds, 60.0)),
+        )
 
     def test_wake_phrase_extracts_inline_command(self):
         listener = WakeWordListener(on_command=lambda _text: None, wake_word='hey jarvis')
