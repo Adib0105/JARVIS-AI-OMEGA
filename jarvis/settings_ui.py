@@ -9,7 +9,7 @@ from tkinter import messagebox
 from .config import settings
 from .logging_utils import CRASH_DIR, LOG_DIR
 from .product_paths import config_env_path
-from .updater import check_latest_release
+from .updater import check_latest_release, download_update, launch_update
 
 
 EDITABLE_KEYS = {
@@ -35,12 +35,10 @@ def _env_path() -> Path:
 
 
 def update_env_values(values: dict[str, str]) -> None:
-    """Update only allowlisted non-secret UI settings without exposing API/OAuth secrets."""
     cleaned = {k: str(v).strip() for k, v in values.items() if k in EDITABLE_KEYS}
     if not cleaned:
         return
     from .first_run import _replace_env_values
-
     _replace_env_values(_env_path(), cleaned)
 
 
@@ -53,17 +51,49 @@ def _open_folder(path: Path) -> None:
 
 
 def show_update_dialog(root: tk.Misc) -> None:
+    """Check, download, verify and launch an upgrade installer from a GitHub Release."""
     try:
         result = check_latest_release(settings.app_version)
     except Exception as exc:
         messagebox.showerror('JARVIS OMEGA Update Check', str(exc), parent=root)
         return
     message = result.get('message', 'Update check completed.')
-    if result.get('available') and result.get('url'):
-        if messagebox.askyesno('JARVIS OMEGA Update Available', message + '\n\nOpen GitHub release page?', parent=root):
-            webbrowser.open(result['url'], new=2)
-    else:
+    if not result.get('available'):
         messagebox.showinfo('JARVIS OMEGA Update Check', message, parent=root)
+        return
+    if not result.get('installer') or not result.get('checksum'):
+        messagebox.showwarning(
+            'JARVIS OMEGA Update Available',
+            message + '\n\nThis release is missing the verified installer/update assets. Automatic update was refused.',
+            parent=root,
+        )
+        return
+    if not messagebox.askyesno(
+        'JARVIS OMEGA Update Available',
+        message + '\n\nDownload and verify this update now?',
+        parent=root,
+    ):
+        return
+    try:
+        installer = download_update(result)
+    except Exception as exc:
+        messagebox.showerror('JARVIS OMEGA Update Download', str(exc), parent=root)
+        return
+    if not messagebox.askyesno(
+        'JARVIS OMEGA Update Ready',
+        'Update downloaded and SHA-256 verified.\n\nRestart & Update now?\n\nYour LocalAppData account, memory and settings are preserved by the installer.',
+        parent=root,
+    ):
+        return
+    try:
+        launch_update(installer)
+    except Exception as exc:
+        messagebox.showerror('JARVIS OMEGA Update', str(exc), parent=root)
+        return
+    try:
+        root.winfo_toplevel().after(300, root.winfo_toplevel().destroy)
+    except Exception:
+        pass
 
 
 def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
@@ -75,18 +105,8 @@ def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
     win.transient(root)
     win.grab_set()
 
-    tk.Label(
-        win,
-        text=f'JARVIS OMEGA {settings.app_version} SETTINGS',
-        bg='#06111a',
-        fg='#53e7ff',
-        font=('Segoe UI', 16, 'bold'),
-    ).pack(anchor='w', padx=18, pady=(16, 2))
-    tk.Label(
-        win,
-        text='API keys, Google OAuth JSON, and stored tokens are intentionally hidden. Saved changes apply after restart.',
-        bg='#06111a', fg='#86a8b8', justify='left', font=('Segoe UI', 9), wraplength=640,
-    ).pack(anchor='w', padx=18, pady=(0, 10))
+    tk.Label(win, text=f'JARVIS OMEGA {settings.app_version} SETTINGS', bg='#06111a', fg='#53e7ff', font=('Segoe UI', 16, 'bold')).pack(anchor='w', padx=18, pady=(16, 2))
+    tk.Label(win, text='API keys, Google OAuth JSON, and stored tokens are intentionally hidden. Saved changes apply after restart.', bg='#06111a', fg='#86a8b8', justify='left', font=('Segoe UI', 9), wraplength=640).pack(anchor='w', padx=18, pady=(0, 10))
 
     canvas = tk.Canvas(win, bg='#06111a', highlightthickness=0)
     scrollbar = tk.Scrollbar(win, orient='vertical', command=canvas.yview)
@@ -103,35 +123,14 @@ def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
         tk.Label(body, text=title, bg='#091a26', fg='#ffd166', font=('Consolas', 9, 'bold')).pack(anchor='w', pady=(10, 4))
 
     def bool_row(label: str, key: str, current: bool):
-        var = tk.BooleanVar(value=current)
-        values[key] = var
-        tk.Checkbutton(
-            body,
-            text=label,
-            variable=var,
-            bg='#091a26',
-            fg='#dff9ff',
-            selectcolor='#0b2a3a',
-            activebackground='#091a26',
-            activeforeground='white',
-            font=('Segoe UI', 9),
-        ).pack(anchor='w', pady=1)
+        var = tk.BooleanVar(value=current); values[key] = var
+        tk.Checkbutton(body, text=label, variable=var, bg='#091a26', fg='#dff9ff', selectcolor='#0b2a3a', activebackground='#091a26', activeforeground='white', font=('Segoe UI', 9)).pack(anchor='w', pady=1)
 
     def text_row(label: str, key: str, current, width: int = 31):
-        row = tk.Frame(body, bg='#091a26')
-        row.pack(fill='x', pady=2)
+        row = tk.Frame(body, bg='#091a26'); row.pack(fill='x', pady=2)
         tk.Label(row, text=label, bg='#091a26', fg='#86a8b8', width=27, anchor='w').pack(side='left')
-        var = tk.StringVar(value=str(current))
-        values[key] = var
-        tk.Entry(
-            row,
-            textvariable=var,
-            width=width,
-            bg='#07131d',
-            fg='white',
-            insertbackground='#53e7ff',
-            relief='flat',
-        ).pack(side='right', ipady=4)
+        var = tk.StringVar(value=str(current)); values[key] = var
+        tk.Entry(row, textvariable=var, width=width, bg='#07131d', fg='white', insertbackground='#53e7ff', relief='flat').pack(side='right', ipady=4)
 
     section('VOICE + MICROPHONE')
     bool_row('Spoken replies', 'ENABLE_VOICE_OUTPUT', settings.enable_voice_output)
@@ -183,25 +182,19 @@ def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
     text_row('Telemetry refresh ms', 'SYSTEM_REFRESH_MS', settings.system_refresh_ms)
     text_row('Reminder poll seconds', 'REMINDER_POLL_SECONDS', settings.reminder_poll_seconds)
 
-    action = tk.Frame(win, bg='#06111a')
-    action.place(relx=0, rely=1, relwidth=1, anchor='sw', height=64)
+    action = tk.Frame(win, bg='#06111a'); action.place(relx=0, rely=1, relwidth=1, anchor='sw', height=64)
 
     def save():
         payload: dict[str, str] = {}
         for key, var in values.items():
-            value = var.get()
-            payload[key] = ('true' if bool(value) else 'false') if isinstance(var, tk.BooleanVar) else str(value)
-        try:
-            update_env_values(payload)
+            value = var.get(); payload[key] = ('true' if bool(value) else 'false') if isinstance(var, tk.BooleanVar) else str(value)
+        try: update_env_values(payload)
         except Exception as exc:
-            messagebox.showerror('Settings', str(exc), parent=win)
-            return
+            messagebox.showerror('Settings', str(exc), parent=win); return
         messagebox.showinfo('Settings', 'Settings saved. Restart JARVIS to apply all changes.', parent=win)
         if on_saved:
-            try:
-                on_saved()
-            except Exception:
-                pass
+            try: on_saved()
+            except Exception: pass
         win.destroy()
 
     tk.Button(action, text='SAVE', command=save, bg='#0b2a3a', fg='#6affb8', relief='flat', padx=12, pady=7).pack(side='left', padx=(18, 4), pady=12)
