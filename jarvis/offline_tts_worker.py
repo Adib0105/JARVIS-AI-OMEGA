@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pyttsx3
 
+from .tts_worker import normalize_for_playback
+
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(add_help=False)
@@ -21,7 +23,7 @@ def run_offline_playback_worker(argv: list[str] | None = None) -> int:
         args, unknown = _parser().parse_known_args(list(argv or []))
         if unknown:
             raise ValueError(f'Unsupported offline TTS worker arguments: {unknown!r}')
-        text = Path(args.file).read_text(encoding='utf-8', errors='replace').strip()
+        text = normalize_for_playback(Path(args.file).read_text(encoding='utf-8', errors='replace'))
         if not text:
             raise ValueError('Offline TTS worker received empty text.')
         engine = pyttsx3.init()
