@@ -4,7 +4,7 @@ import tkinter as tk
 
 
 def voice_desktop_class(base_cls, gui_module):
-    """Return a desktop subclass with media-style voice controls composed in."""
+    """Return a desktop subclass with media-style emotional voice controls composed in."""
 
     class VoiceEnabledDesktop(base_cls):
         def _update_voice_panel(self, state: str | None = None) -> None:
@@ -12,8 +12,10 @@ def voice_desktop_class(base_cls, gui_module):
             if voice is None:
                 return
             current = (state or voice.state or 'idle').upper()
+            emotion = str(getattr(voice, 'emotion', '') or '').strip().upper()
+            detail = f' • {emotion}' if current in {'SPEAKING', 'PAUSED'} and emotion else ''
             if hasattr(self, 'voice_player_status'):
-                self.voice_player_status.set(f'VOICE: {current}')
+                self.voice_player_status.set(f'VOICE: {current}{detail}')
             if hasattr(self, 'voice_play_button'):
                 self.voice_play_button.configure(text='RESUME' if voice.paused else 'PLAY / PAUSE')
             if hasattr(self, 'voice_speed_label'):
