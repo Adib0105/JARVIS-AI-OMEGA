@@ -65,7 +65,7 @@ class StabilityPolishTests(unittest.TestCase):
             'VOICE_EMOTION_ENABLED=true',
             'VOICE_STREAMING_ENABLED=true',
             'VOICE_BARGE_IN=true',
-            'VOICE_CHUNK_CHARS=520',
+            'VOICE_CHUNK_CHARS=5000',
             'EDGE_VOICE_RATE=-1%',
             'WAKE_CHUNK_SECONDS=3.5',
             'VOICE_CONTINUOUS_SECONDS=18',
@@ -74,11 +74,12 @@ class StabilityPolishTests(unittest.TestCase):
             self.assertIn(expected, text)
         self.assertNotIn('OPENROUTER_APP_TITLE=JARVIS AI OMEGA V7', text)
 
-    def test_free_text_default_uses_bounded_fast_model(self):
+    def test_free_text_default_uses_live_router_not_ephemeral_model_slug(self):
         template = (ROOT / '.env.example').read_text(encoding='utf-8')
         source = (ROOT / 'jarvis' / 'response_quality.py').read_text(encoding='utf-8')
-        self.assertIn('OPENROUTER_STABLE_TEXT_MODEL=openai/gpt-oss-20b:free', template)
-        self.assertIn("'openai/gpt-oss-20b:free'", source)
+        self.assertIn('OPENROUTER_STABLE_TEXT_MODEL=openrouter/free', template)
+        self.assertIn("'openrouter/free'", source)
+        self.assertNotIn("'openai/gpt-oss-20b:free'", source)
         self.assertNotIn("'nvidia/nemotron-3-ultra-550b-a55b:free'", source)
 
     def test_settings_ui_exposes_new_voice_controls_without_v6_branding(self):
