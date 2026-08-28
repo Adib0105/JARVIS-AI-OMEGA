@@ -95,7 +95,16 @@ def _hotkey_loop(stop_event: threading.Event) -> None:
 
 
 def start_global_hotkeys() -> threading.Event:
-    """Start Ctrl+Alt+J (show JARVIS) and Ctrl+Alt+E (emoji picker) on Windows."""
+    """Enable desktop emoji support and global Ctrl+Alt+J / Ctrl+Alt+E hotkeys."""
+    # Install before run_adaptive_gui constructs JarvisDesktop so both the composer
+    # and chat body use the native Unicode emoji font and expose the in-app picker.
+    try:
+        from .emoji_support import install_emoji_support
+        install_emoji_support()
+    except Exception:
+        # Emoji enhancement must never prevent the assistant itself from starting.
+        pass
+
     stop_event = threading.Event()
     if os.name == 'nt':
         threading.Thread(
