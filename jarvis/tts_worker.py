@@ -12,7 +12,7 @@ import edge_tts
 
 
 _STANDALONE_DASH_RE = re.compile(r'(?<!\w)(?:--+|[\u2013\u2014\u2212])(?!\w)')
-_BULLET_DASH_RE = re.compile(r'(^|\s)[\-\u2013\u2014]\s+(?=\S)')
+_BULLET_DASH_RE = re.compile(r'(^|\s)-\s+(?=\S)')
 
 
 def normalize_for_playback(text: str) -> str:
@@ -24,8 +24,11 @@ def normalize_for_playback(text: str) -> str:
     a token that the neural voice may pronounce as "dash".
     """
     spoken = str(text or '').replace('\r', ' ').replace('\n', ' ')
-    spoken = _BULLET_DASH_RE.sub(r'\1', spoken)
+    # Convert typographic/double-dash separators first so they create a natural
+    # micro-pause. A plain single '-' followed by whitespace is treated as a
+    # display bullet and removed silently.
     spoken = _STANDALONE_DASH_RE.sub(', ', spoken)
+    spoken = _BULLET_DASH_RE.sub(r'\1', spoken)
     spoken = re.sub(r'\.{3,}', ', ', spoken)
     spoken = re.sub(r'\s+([,.;:!?।])', r'\1', spoken)
     spoken = re.sub(r'([,;:])\s*[,;:]+', r'\1 ', spoken)
