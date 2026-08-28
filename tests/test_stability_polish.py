@@ -73,6 +73,13 @@ class StabilityPolishTests(unittest.TestCase):
             self.assertIn(expected, text)
         self.assertNotIn('OPENROUTER_APP_TITLE=JARVIS AI OMEGA V7', text)
 
+    def test_free_text_default_uses_bounded_fast_model(self):
+        template = (ROOT / '.env.example').read_text(encoding='utf-8')
+        source = (ROOT / 'jarvis' / 'response_quality.py').read_text(encoding='utf-8')
+        self.assertIn('OPENROUTER_STABLE_TEXT_MODEL=openai/gpt-oss-20b:free', template)
+        self.assertIn("'openai/gpt-oss-20b:free'", source)
+        self.assertNotIn("'nvidia/nemotron-3-ultra-550b-a55b:free'", source)
+
     def test_settings_ui_exposes_new_voice_controls_without_v6_branding(self):
         text = (ROOT / 'jarvis' / 'settings_ui.py').read_text(encoding='utf-8')
         for key in (
