@@ -6,6 +6,7 @@ from jarvis.document_index import DocumentIndexStore
 from jarvis.documents import DocumentReader
 from jarvis.local_files import LocalFiles
 from jarvis.memory import MemoryStore
+from jarvis.memory_v7 import V7MemoryStore
 from jarvis.tools import ToolRegistry
 
 
@@ -77,6 +78,36 @@ class V75DocumentIndexTests(unittest.TestCase):
             updated = tools._index_document(str(original))
             self.assertEqual(updated['index']['status'], 'updated')
             self.assertTrue(updated['index']['previous_hash'])
+
+    def test_document_learning_redacts_credential_value_but_keeps_useful_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            db = root / 'jarvis.db'
+            document = root / 'resume.txt'
+            secret = 'super-secret-token-value-12345'
+            document.write_text(
+                'Adib resume skills Python customer support.\n'
+                f'access_token={secret}\n'
+                'Experience in CRM and digital marketing.',
+                encoding='utf-8',
+            )
+
+            memory = V7MemoryStore(db)
+            tools = ToolRegistry(memory, permission_checker=AllowAll())
+            tools.files.roots = (root.resolve(),)
+            result = tools._index_document(str(document))
+
+            self.assertEqual(result['index']['status'], 'indexed')
+            self.assertGreaterEqual(result['document'].get('credential_redactions', 0), 1)
+            rows = memory.search_knowledge('customer support', 10)
+            persisted = '\n'.join(str(row.get('content', '')) for row in rows)
+            self.assertIn('customer support', persisted)
+            self.assertIn('[REDACTED_CREDENTIAL]', persisted)
+            self.assertNotIn(secret, persisted)
+
+    def test_pdf_meaningful_text_ignores_synthetic_page_header(self):
+        self.assertEqual(DocumentReader._meaningful_text('\n--- PAGE 1 ---\n'), '')
+        self.assertEqual(DocumentReader._meaningful_text('\n--- PAGE 1 ---\nReal resume text'), 'Real resume text')
 
 
 if __name__ == '__main__':
