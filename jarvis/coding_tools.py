@@ -58,6 +58,50 @@ class CodingWorkspace:
         path.write_text(content, encoding='utf-8')
         return {'path': str(path), 'characters': len(content), 'backup': str(backup) if backup else None}
 
+    @staticmethod
+    def _same_executable(left: str | Path, right: str | Path) -> bool:
+        try:
+            return Path(left).resolve() == Path(right).resolve()
+        except Exception:
+            return str(left).lower() == str(right).lower()
+
+    def _test_python_command(self, root: Path) -> list[str]:
+        """Resolve a real Python interpreter without ever recursing into the frozen JARVIS EXE.
+
+        In a PyInstaller build ``sys.executable`` is JARVIS-AI-OMEGA.exe. Launching
+        it with ``-m unittest`` starts JARVIS again instead of Python and can create
+        recursive GUI processes. Prefer the selected project's virtual environment,
+        then a real Python found on PATH. Source/dev runs may safely use sys.executable.
+        """
+        project_candidates = (
+            root / '.venv' / 'Scripts' / 'python.exe',
+            root / 'venv' / 'Scripts' / 'python.exe',
+            root / '.venv' / 'bin' / 'python',
+            root / 'venv' / 'bin' / 'python',
+        )
+        for candidate in project_candidates:
+            if candidate.is_file():
+                return [str(candidate.resolve())]
+
+        frozen = bool(getattr(sys, 'frozen', False))
+        if not frozen and Path(sys.executable).is_file():
+            return [str(Path(sys.executable).resolve())]
+
+        packaged_executable = Path(sys.executable).resolve()
+        for name in ('python.exe', 'python3.exe', 'python', 'python3'):
+            discovered = shutil.which(name)
+            if discovered and not self._same_executable(discovered, packaged_executable):
+                return [str(Path(discovered).resolve())]
+
+        launcher = shutil.which('py.exe') or shutil.which('py')
+        if launcher and not self._same_executable(launcher, packaged_executable):
+            return [str(Path(launcher).resolve()), '-3']
+
+        raise RuntimeError(
+            'Python tests need a real Python interpreter. Create .venv in the selected project '
+            'or install Python 3 and make it available on PATH. JARVIS will not use its packaged EXE as Python.'
+        )
+
     def run_unit_tests(self, project_dir: str, timeout: int = 120) -> dict:
         root = self._safe(project_dir)
         if not root.is_dir():
@@ -65,13 +109,22 @@ class CodingWorkspace:
         tests = root / 'tests'
         if not tests.is_dir():
             raise FileNotFoundError('A tests/ folder is required for this allowlisted test action.')
+
+        python_command = self._test_python_command(root)
+        command = [*python_command, '-m', 'unittest', 'discover', '-s', 'tests', '-v']
         proc = subprocess.run(
-            [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-v'],
+            command,
             cwd=root,
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             timeout=max(10, min(int(timeout), 300)),
             shell=False,
         )
         output = (proc.stdout + '\n' + proc.stderr).strip()
-        return {'returncode': proc.returncode, 'output': output[-30000:]}
+        return {
+            'returncode': proc.returncode,
+            'output': output[-30000:],
+            'interpreter': ' '.join(python_command),
+        }
