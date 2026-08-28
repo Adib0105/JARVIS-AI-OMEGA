@@ -113,16 +113,22 @@ class WakeWordListener:
         on_error: Callable[[str], None] | None = None,
         wake_word: str = 'hey jarvis',
         language: str = 'auto',
-        chunk_seconds: float = 3.5,
-        continuous_seconds: float = 18.0,
+        chunk_seconds: float | None = None,
+        continuous_seconds: float | None = None,
     ) -> None:
+        from .config import settings
+
+        configured_chunk = settings.wake_chunk_seconds if chunk_seconds is None else chunk_seconds
+        configured_continuous = (
+            settings.voice_continuous_seconds if continuous_seconds is None else continuous_seconds
+        )
         self.on_command = on_command
         self.on_state = on_state or (lambda _state: None)
         self.on_error = on_error or (lambda _message: None)
         self.wake_word = wake_word.strip().lower() or 'hey jarvis'
         self.language = language
-        self.chunk_seconds = max(2.0, min(chunk_seconds, 8.0))
-        self.continuous_seconds = max(0.0, min(float(continuous_seconds), 60.0))
+        self.chunk_seconds = max(2.0, min(float(configured_chunk), 8.0))
+        self.continuous_seconds = max(0.0, min(float(configured_continuous), 60.0))
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._conversation_until = 0.0
