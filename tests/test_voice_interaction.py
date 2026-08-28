@@ -2,14 +2,30 @@ from __future__ import annotations
 
 import time
 import unittest
+from array import array
 
 from jarvis.config import settings
 from jarvis.microphone import (
     WakeWordListener,
+    _pcm_rms,
+    _record_until_silence,
     recognition_languages,
     request_voice_interrupt,
     set_voice_interrupt_handler,
 )
+
+
+class _FakeRawStream:
+    def __init__(self, levels: list[int], frames: int = 3200):
+        self.levels = list(levels)
+        self.frames = frames
+        self.reads = 0
+
+    def read(self, frames: int):
+        level = self.levels[min(self.reads, len(self.levels) - 1)] if self.levels else 0
+        self.reads += 1
+        samples = array('h', [level] * frames)
+        return samples.tobytes(), False
 
 
 class VoiceInteractionTests(unittest.TestCase):
@@ -65,6 +81,28 @@ class VoiceInteractionTests(unittest.TestCase):
         woke, command = listener._command_from_heard('open chrome')
         self.assertFalse(woke)
         self.assertEqual(command, '')
+
+    def test_pcm_rms_distinguishes_silence_from_clear_signal(self):
+        silence = array('h', [0] * 320).tobytes()
+        speech = array('h', [900] * 320).tobytes()
+        self.assertEqual(_pcm_rms(silence), 0.0)
+        self.assertGreater(_pcm_rms(speech), 800.0)
+
+    def test_push_to_talk_capture_stops_after_trailing_silence(self):
+        # Two quiet chunks, three speech chunks, then enough silence to trigger
+        # early stop. A six-second maximum would otherwise require ~30 reads.
+        stream = _FakeRawStream([0, 0, 900, 900, 900, 0, 0, 0, 0, 0, 0])
+        data, speech_seen, peak = _record_until_silence(stream, 6.0, 16000)
+        self.assertTrue(speech_seen)
+        self.assertGreater(peak, 800.0)
+        self.assertTrue(data)
+        self.assertLess(stream.reads, 30)
+
+    def test_silence_only_capture_never_claims_speech(self):
+        stream = _FakeRawStream([0] * 10)
+        _data, speech_seen, peak = _record_until_silence(stream, 2.0, 16000)
+        self.assertFalse(speech_seen)
+        self.assertEqual(peak, 0.0)
 
 
 if __name__ == '__main__':
