@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -38,7 +39,12 @@ class SelfDevelopmentTester:
     """Runs only explicit Python quality gates inside an isolated worktree."""
 
     def __init__(self, timeout: int = 300) -> None:
-        self.timeout = max(10, min(int(timeout), 900))
+        raw = os.getenv('MAX_TEST_TIME', '').strip()
+        try:
+            selected = int(raw) if raw else int(timeout)
+        except (TypeError, ValueError):
+            selected = int(timeout)
+        self.timeout = max(10, min(selected, 1800))
 
     def _run(self, name: str, args: list[str], cwd: Path) -> CheckResult:
         started = time.perf_counter()

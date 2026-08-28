@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
@@ -16,6 +17,16 @@ def _now() -> datetime:
 
 def _iso(value: datetime) -> str:
     return value.astimezone(timezone.utc).isoformat()
+
+
+def _configured_test_ttl_floor() -> int:
+    raw = os.getenv('MAX_TEST_TIME', '300').strip()
+    try:
+        test_timeout = int(raw)
+    except (TypeError, ValueError):
+        test_timeout = 300
+    test_timeout = max(10, min(test_timeout, 1800))
+    return min(7200, test_timeout + 120)
 
 
 @dataclass(frozen=True)
@@ -117,7 +128,10 @@ class DevelopmentLeaseStore:
         if not proposal_id.startswith('IMP-'):
             raise ValueError('Development leases require an IMP-* proposal ID.')
         token = str(owner_token or uuid4().hex)
-        ttl = max(30, min(int(ttl_seconds or self.default_ttl_seconds), 7200))
+        requested_ttl = int(ttl_seconds or self.default_ttl_seconds)
+        if operation == 'run-tests':
+            requested_ttl = max(requested_ttl, _configured_test_ttl_floor())
+        ttl = max(30, min(requested_ttl, 7200))
         now_dt = _now()
         now = _iso(now_dt)
         expires = _iso(now_dt + timedelta(seconds=ttl))

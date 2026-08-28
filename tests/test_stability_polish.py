@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import unittest
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
 from jarvis.config import settings
 from jarvis.config_validation import ValidationLevel, validate_settings
+from jarvis.self_development.lease import DevelopmentLeaseStore
+from jarvis.self_development.tester import SelfDevelopmentTester
 from jarvis.updater import _parse_version, check_latest_release
 from jarvis.version import APP_VERSION
 
@@ -99,6 +104,21 @@ class StabilityPolishTests(unittest.TestCase):
     def test_packaging_is_a_direct_runtime_dependency_for_semver_comparison(self):
         requirements = (ROOT / 'requirements.txt').read_text(encoding='utf-8').splitlines()
         self.assertIn('packaging==26.3', requirements)
+
+    def test_self_development_tester_respects_max_test_time(self):
+        with patch.dict(os.environ, {'MAX_TEST_TIME': '90'}, clear=False):
+            tester = SelfDevelopmentTester(timeout=30)
+        self.assertEqual(tester.timeout, 90)
+
+    def test_run_tests_lease_cannot_expire_before_test_budget(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {'MAX_TEST_TIME': '90'}, clear=False):
+                store = DevelopmentLeaseStore(Path(tmp) / 'leases.db', default_ttl_seconds=30)
+                lease = store.acquire('IMP-12345678', 'run-tests', ttl_seconds=30)
+            acquired = datetime.fromisoformat(lease.acquired_at)
+            expires = datetime.fromisoformat(lease.expires_at)
+            self.assertGreaterEqual((expires - acquired).total_seconds(), 210)
+            self.assertTrue(store.release(lease.proposal_id, lease.owner_token))
 
 
 if __name__ == '__main__':
