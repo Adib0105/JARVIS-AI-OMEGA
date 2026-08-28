@@ -23,6 +23,19 @@ def line(status: str, name: str, detail: str = '') -> None:
     print(f'[{status}] {name}{suffix}')
 
 
+def prepare_database_for_check(db_path) -> dict:
+    """Apply additive migrations before certifying a fresh or upgraded profile DB."""
+    migrator = SchemaMigrator(db_path)
+    migration = migrator.migrate()
+    lifecycle = MemoryLifecycleManager(db_path)
+    columns = lifecycle._columns()
+    return {
+        'schema_version': migrator.current_version(),
+        'migration': migration,
+        'memory_lifecycle_columns': columns,
+    }
+
+
 def main() -> int:
     failures = 0
     warnings = 0
@@ -70,18 +83,22 @@ def main() -> int:
     try:
         obs = ObservabilityManager(settings.db_path)
         sample = obs.sample_resources()
-        report('cpu_percent' in sample, 'Observability', 'resource sampling + local event store ready')
+        sampling_ready = sample.get('available') is not False and isinstance(sample.get('cpu_percent'), (int, float))
+        detail = 'resource sampling + local event store ready'
+        if sample.get('warnings'):
+            detail += f"; optional probes={sample['warnings']}"
+        report(sampling_ready, 'Observability', detail)
     except Exception as exc:
         failures += 1
         line('FAIL', 'Observability', f'{type(exc).__name__}: {exc}')
 
     try:
-        current = SchemaMigrator(settings.db_path).current_version()
+        database = prepare_database_for_check(settings.db_path)
+        current = database['schema_version']
         report(current >= 1, 'Database schema', f'version={current}')
         integrity = BackupManager(settings.db_path).integrity_check()
         report(integrity['ok'], 'Database integrity', integrity['result'])
-        lifecycle = MemoryLifecycleManager(settings.db_path)
-        columns = lifecycle._columns()
+        columns = database['memory_lifecycle_columns']
         report('status' in columns, 'Memory lifecycle', f"status-column={'present' if 'status' in columns else 'missing'}")
     except Exception as exc:
         failures += 1

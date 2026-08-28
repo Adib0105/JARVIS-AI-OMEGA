@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
 
+from self_check_release import prepare_database_for_check
 from jarvis.version import APP_VERSION
 
 
@@ -35,6 +37,13 @@ class ReleaseSelfCheckTests(unittest.TestCase):
     def test_readme_identifies_current_release(self):
         readme = (ROOT / 'README.md').read_text(encoding='utf-8')
         self.assertIn(APP_VERSION, readme)
+
+    def test_fresh_profile_database_is_migrated_before_release_certification(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = prepare_database_for_check(Path(tmp) / 'fresh-profile.db')
+
+        self.assertGreaterEqual(result['schema_version'], 7)
+        self.assertIn('status', result['memory_lifecycle_columns'])
 
 
 if __name__ == '__main__':

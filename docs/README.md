@@ -8,6 +8,9 @@ The active engineering/release-candidate branch is `v7-development`. Do not infe
 
 | Goal | Document |
 |---|---|
+| Review the current hardening baseline | [BASELINE-REPORT.md](BASELINE-REPORT.md) |
+| Inspect the capability/evidence matrix | [CAPABILITY-MATRIX.md](CAPABILITY-MATRIX.md) |
+| Read the current phase audit and blockers | [FINAL-AUDIT-V7.5-V8.md](FINAL-AUDIT-V7.5-V8.md) |
 | Install and run the current release candidate | [V7-SETUP.md](V7-SETUP.md) |
 | Understand current release evidence/status | [V7.5-STATUS.md](V7.5-STATUS.md) |
 | Run tests and quality gates | [V7-TESTING.md](V7-TESTING.md) |
@@ -16,6 +19,8 @@ The active engineering/release-candidate branch is `v7-development`. Do not infe
 | Fix common Windows/runtime issues | [V7-TROUBLESHOOTING.md](V7-TROUBLESHOOTING.md) |
 | Understand security boundaries | [V7-SECURITY.md](V7-SECURITY.md) |
 | Prepare a release | [V7-RELEASE.md](V7-RELEASE.md) |
+
+Stable unversioned entry points are available as [ARCHITECTURE.md](ARCHITECTURE.md), [SECURITY.md](SECURITY.md), [TESTING.md](TESTING.md), [RELEASE.md](RELEASE.md) and [KNOWN-LIMITATIONS.md](KNOWN-LIMITATIONS.md). They link to the deeper versioned references while keeping current evidence boundaries visible.
 
 ## Architecture and subsystem docs
 

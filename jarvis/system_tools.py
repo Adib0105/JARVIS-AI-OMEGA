@@ -45,10 +45,43 @@ def system_info() -> dict:
 def system_metrics() -> dict:
     try:
         import psutil
-        vm = psutil.virtual_memory(); disk = psutil.disk_usage(str(Path.home().anchor or '/')); battery = psutil.sensors_battery(); net = psutil.net_io_counters()
-        return {'cpu_percent': round(psutil.cpu_percent(interval=None), 1), 'memory_percent': round(vm.percent, 1), 'memory_available_gb': round(vm.available / (1024 ** 3), 2), 'disk_percent': round(disk.percent, 1), 'battery_percent': round(battery.percent, 1) if battery else None, 'battery_plugged': bool(battery.power_plugged) if battery else None, 'processes': len(psutil.pids()), 'network_sent_mb': round(net.bytes_sent / (1024 ** 2), 1), 'network_received_mb': round(net.bytes_recv / (1024 ** 2), 1)}
     except Exception as exc:
-        return {'available': False, 'error': str(exc)}
+        return {'available': False, 'error': f'psutil unavailable: {type(exc).__name__}'}
+
+    warnings: list[str] = []
+
+    def probe(name: str, operation, default=None):
+        try:
+            return operation()
+        except Exception as exc:
+            warnings.append(f'{name}:{type(exc).__name__}')
+            return default
+
+    cpu = probe('cpu', lambda: round(psutil.cpu_percent(interval=None), 1))
+    memory = probe('memory', psutil.virtual_memory)
+    disk = probe('disk', lambda: psutil.disk_usage(str(Path.home().anchor or os.sep)))
+    battery = probe('battery', psutil.sensors_battery)
+    network = probe('network', psutil.net_io_counters)
+    process_ids = probe('processes', psutil.pids, [])
+
+    core_available = cpu is not None and memory is not None and disk is not None
+    result = {
+        'available': core_available,
+        'cpu_percent': cpu,
+        'memory_percent': round(memory.percent, 1) if memory is not None else None,
+        'memory_available_gb': round(memory.available / (1024 ** 3), 2) if memory is not None else None,
+        'disk_percent': round(disk.percent, 1) if disk is not None else None,
+        'battery_percent': round(battery.percent, 1) if battery else None,
+        'battery_plugged': bool(battery.power_plugged) if battery else None,
+        'processes': len(process_ids),
+        'network_sent_mb': round(network.bytes_sent / (1024 ** 2), 1) if network else None,
+        'network_received_mb': round(network.bytes_recv / (1024 ** 2), 1) if network else None,
+    }
+    if warnings:
+        result['warnings'] = warnings
+    if not core_available:
+        result['error'] = 'One or more core system metrics are unavailable.'
+    return result
 
 
 def current_time() -> str:

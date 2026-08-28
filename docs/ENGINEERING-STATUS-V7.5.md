@@ -64,10 +64,16 @@ The most recent observed full regression run executed 422 tests. The previous rc
 
 ## Known bugs / gaps found in this audit pass
 
+### P0 hardening update — 2026-08-28
+
+The account-recovery/profile test gap identified below is now addressed on this branch: recovery hashing, failure/success, one-time consumption, rotation, missing-account behavior, secret bounds, legacy-schema migration, active-profile persistence and atomic avatar normalization have deterministic coverage. The baseline also found and fixed optional battery-probe isolation and fresh-database release self-check migration ordering.
+
+Local evidence after the changes: 432 tests PASS, one expected Windows-only skip, critical Ruff PASS, high-severity Bandit PASS, `pip check` PASS and core dependency audit PASS. Exact-change GitHub CI remains required before the P0 phase can be closed.
+
 ### P0/P0-candidate
 
 1. **No P0 may be declared cleared yet.** The current exact rc2 release pipeline has not completed green at the time of this audit snapshot. Until exact-head CI is green, updater/release behavior remains blocked.
-2. **New account recovery/profile behavior is under-tested.** Existing V8 account tests cover create/authentication/plaintext rejection/duplicate username/profile environment, but do not directly regression-test recovery-code reset, recovery-code hashing, display-name changes, avatar processing, logout/switch-account behavior or migration from older account schemas. Password recovery is a security-sensitive path and must get deterministic tests before being treated as hardened.
+2. **Account recovery/profile behavior was under-tested (FIXED LOCALLY; CI PENDING).** Recovery-code reset/hashing/replay prevention/rotation, avatar processing, active-profile round trip and migration from older account schemas now have deterministic tests. Display-name update behavior remains covered indirectly and broader GUI interaction still requires workstation evidence.
 3. **Physical Windows behavior remains unverified.** Automated Windows CI validates software/package/install behavior but does not prove real microphone, audible speaker, foreground focus, UIA/OCR on a user's desktop, multi-monitor/DPI or real browser/app interaction.
 
 ### P1

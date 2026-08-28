@@ -1,12 +1,16 @@
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from jarvis.observability.health import HealthStatus, JarvisHealthSystem, MINIMUM_PYTHON
 from jarvis.observability.manager import ObservabilityManager
 from jarvis.providers.base import AIProvider, ProviderTurn
 from jarvis.providers.observed import ObservedProvider
 from jarvis.providers.router import ModelRouter
+from jarvis.system_tools import system_metrics
 
 
 class FakeProvider(AIProvider):
@@ -122,6 +126,27 @@ class V75ObservabilityTests(unittest.TestCase):
                     self.assertEqual(check.status, HealthStatus.NOT_VERIFIED, name)
             payload = report.as_dict()
             self.assertIn('NOT_VERIFIED', payload['counts'])
+
+    def test_missing_optional_battery_sensor_does_not_hide_core_metrics(self):
+        def unavailable_battery():
+            raise FileNotFoundError('battery sensor unavailable')
+
+        fake_psutil = SimpleNamespace(
+            cpu_percent=lambda interval=None: 12.5,
+            virtual_memory=lambda: SimpleNamespace(percent=45.0, available=8 * 1024 ** 3),
+            disk_usage=lambda _path: SimpleNamespace(percent=60.0),
+            sensors_battery=unavailable_battery,
+            net_io_counters=lambda: SimpleNamespace(bytes_sent=2 * 1024 ** 2, bytes_recv=3 * 1024 ** 2),
+            pids=lambda: [1, 2, 3],
+        )
+        with patch.dict(sys.modules, {'psutil': fake_psutil}):
+            metrics = system_metrics()
+
+        self.assertTrue(metrics['available'])
+        self.assertEqual(metrics['cpu_percent'], 12.5)
+        self.assertEqual(metrics['memory_percent'], 45.0)
+        self.assertIsNone(metrics['battery_percent'])
+        self.assertIn('battery:FileNotFoundError', metrics['warnings'])
 
 
 if __name__ == '__main__':

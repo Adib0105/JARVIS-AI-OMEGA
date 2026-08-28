@@ -51,9 +51,9 @@ def install_account_ui() -> None:
             try: store.set_avatar(profile,Path(path)); load_avatar(); messagebox.showinfo('Profile','Profile photo saved.',parent=win)
             except Exception as exc: messagebox.showerror('Profile Photo',str(exc),parent=win)
         def recovery():
-            code=simpledialog.askstring('Recovery PIN','New recovery PIN/code (minimum 6 characters):',show='*',parent=win)
+            code=simpledialog.askstring('Recovery Code','New one-time recovery code (6-200 characters):',show='*',parent=win)
             if code is None: return
-            try: store.set_recovery_code(profile.id,code); messagebox.showinfo('Recovery','Recovery code updated. Isse safe jagah yaad/rakhna.',parent=win)
+            try: store.set_recovery_code(profile.id,code); messagebox.showinfo('Recovery','One-time recovery code updated. Isse safe jagah yaad/rakhna.',parent=win)
             except Exception as exc: messagebox.showerror('Recovery',str(exc),parent=win)
         def logout():
             if not messagebox.askyesno('Logout','Logout karke login screen par wapas jana hai?',parent=win): return
