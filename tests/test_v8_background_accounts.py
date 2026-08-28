@@ -4,6 +4,7 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -113,7 +114,7 @@ class AccountStoreTests(unittest.TestCase):
     def test_legacy_schema_migrates_recovery_columns_without_losing_account(self):
         with tempfile.TemporaryDirectory() as td:
             db_path = Path(td) / 'accounts.db'
-            with sqlite3.connect(db_path) as db:
+            with closing(sqlite3.connect(db_path)) as db:
                 db.execute('''CREATE TABLE accounts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL UNIQUE,
