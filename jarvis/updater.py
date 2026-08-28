@@ -4,7 +4,6 @@ import hashlib
 import json
 import os
 import subprocess
-import sys
 import tempfile
 import urllib.error
 import urllib.request
@@ -30,13 +29,7 @@ def _parse_version(value: str) -> Version:
 
 
 def _release_request(url: str) -> urllib.request.Request:
-    return urllib.request.Request(
-        url,
-        headers={
-            'Accept': 'application/vnd.github+json',
-            'User-Agent': f'JARVIS-AI-OMEGA/{APP_VERSION}',
-        },
-    )
+    return urllib.request.Request(url, headers={'Accept': 'application/vnd.github+json', 'User-Agent': f'JARVIS-AI-OMEGA/{APP_VERSION}'})
 
 
 def check_latest_release(current_version: str, timeout: float = 8.0) -> dict:
@@ -51,7 +44,6 @@ def check_latest_release(current_version: str, timeout: float = 8.0) -> dict:
         raise RuntimeError(f'GitHub update check failed: HTTP {status}') from exc
     except Exception as exc:
         raise RuntimeError(f'GitHub update check failed: {exc}') from exc
-
     tag = str(payload.get('tag_name') or '').strip()
     url = str(payload.get('html_url') or '').strip()
     if not tag:
@@ -60,7 +52,6 @@ def check_latest_release(current_version: str, timeout: float = 8.0) -> dict:
         newer = _parse_version(tag) > _parse_version(current_version)
     except ValueError as exc:
         raise RuntimeError(f'GitHub update check returned an unrecognized version: {tag!r}.') from exc
-
     installer = None
     checksum = None
     for asset in payload.get('assets') or []:
@@ -70,18 +61,7 @@ def check_latest_release(current_version: str, timeout: float = 8.0) -> dict:
             installer = {'name': name, 'url': download_url, 'size': int(asset.get('size') or 0)}
         elif name.upper() == 'SHA256.TXT' and download_url:
             checksum = {'name': name, 'url': download_url}
-
-    return {
-        'available': newer,
-        'published': True,
-        'current_version': current_version,
-        'latest_version': tag,
-        'url': url,
-        'name': payload.get('name') or tag,
-        'installer': installer,
-        'checksum': checksum,
-        'message': f'New version {tag} available.' if newer else f'You are up to date ({current_version}).',
-    }
+    return {'available': newer, 'published': True, 'current_version': current_version, 'latest_version': tag, 'url': url, 'name': payload.get('name') or tag, 'installer': installer, 'checksum': checksum, 'message': f'New version {tag} available.' if newer else f'You are up to date ({current_version}).'}
 
 
 def _download(url: str, destination: Path, *, timeout: float = 60.0, max_bytes: int = MAX_INSTALLER_BYTES) -> None:
@@ -105,10 +85,7 @@ def _download(url: str, destination: Path, *, timeout: float = 60.0, max_bytes: 
 def _expected_sha256(checksum_text: str, installer_name: str) -> str:
     target = installer_name.lower()
     for raw_line in checksum_text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        parts = line.replace('*', ' ').split()
+        parts = raw_line.strip().replace('*', ' ').split()
         if len(parts) >= 2 and parts[1].lower() == target:
             digest = parts[0].lower()
             if len(digest) == 64 and all(ch in '0123456789abcdef' for ch in digest):
@@ -125,7 +102,6 @@ def _sha256(path: Path) -> str:
 
 
 def download_update(release: dict, *, timeout: float = 60.0) -> Path:
-    """Download a published installer and verify it against the release SHA256 asset."""
     installer = release.get('installer') or {}
     checksum = release.get('checksum') or {}
     name = str(installer.get('name') or '')
@@ -138,8 +114,8 @@ def download_update(release: dict, *, timeout: float = 60.0) -> Path:
     declared_size = int(installer.get('size') or 0)
     if declared_size <= 0 or declared_size > MAX_INSTALLER_BYTES:
         raise RuntimeError('Installer asset size is invalid or exceeds the update safety limit.')
-
     update_dir = Path(tempfile.gettempdir()) / 'JARVIS-AI-OMEGA' / 'updates'
+    update_dir.mkdir(parents=True, exist_ok=True)
     installer_path = update_dir / name
     checksum_path = update_dir / 'SHA256.txt'
     _download(url, installer_path, timeout=timeout)
@@ -156,21 +132,13 @@ def download_update(release: dict, *, timeout: float = 60.0) -> Path:
 
 
 def launch_update(installer_path: Path) -> None:
-    """Launch the verified installer in upgrade mode. The current app may then exit safely."""
     path = Path(installer_path).resolve()
     if os.name != 'nt':
         raise RuntimeError('Automatic installer updates are supported on Windows only.')
     if not path.is_file() or not path.name.startswith(INSTALLER_PREFIX) or path.suffix.lower() != '.exe':
         raise RuntimeError('Verified JARVIS installer is missing.')
     flags = getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
-    subprocess.Popen(
-        [str(path), '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS'],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
-        creationflags=flags,
-    )
+    subprocess.Popen([str(path), '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS'], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True, creationflags=flags)
 
 
 __all__ = ['check_latest_release', 'download_update', 'launch_update']
