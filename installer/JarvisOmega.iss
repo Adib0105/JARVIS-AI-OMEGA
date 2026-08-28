@@ -32,9 +32,6 @@ VersionInfoProductVersion={#MyWindowsVersion}
 VersionInfoCompany={#MyAppPublisher}
 
 [InstallDelete]
-; Remove obsolete product binaries from historical installer layouts before copying
-; the canonical executable. This is intentionally scoped to known application files;
-; user data lives under LocalAppData and is not touched by upgrade cleanup.
 Type: files; Name: "{app}\JARVIS-OMEGA-V7.exe"
 Type: files; Name: "{app}\JARVIS-OMEGA-V6.exe"
 
@@ -48,9 +45,14 @@ Name: "{autodesktop}\JARVIS AI OMEGA"; Filename: "{app}\{#MyAppExeName}"; Tasks:
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
 
+[Registry]
+; Per-user startup keeps the assistant listening after Windows sign-in without
+; requiring the full desktop window to be opened manually. The value is removed
+; automatically on uninstall; profile data under LocalAppData is preserved.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "JARVIS AI OMEGA"; ValueData: """{app}\{#MyAppExeName}"" --background"; Flags: uninsdeletevalue
+
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch JARVIS AI OMEGA"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; User data intentionally remains under LocalAppData. Never silently delete it.
 Type: filesandordirs; Name: "{app}"
