@@ -37,16 +37,33 @@ class EmotionalVoiceTests(unittest.TestCase):
         self.assertEqual(detect_emotion('Warning: critical failure, act immediately.'), 'urgent')
         self.assertEqual(detect_emotion('Sorry, there is a problem. Please be careful.'), 'concerned')
         self.assertEqual(detect_emotion('Project status report and release review.'), 'professional')
-        self.assertEqual(detect_emotion('I am here and ready to help.'), 'calm')
+        self.assertEqual(detect_emotion('I am here and ready to help.'), 'happy')
 
-    def test_streaming_chunks_keep_natural_sentence_boundaries(self):
+    def test_streaming_chunks_pack_adjacent_sentences_into_continuous_utterances(self):
         text = 'First sentence is ready. Second sentence is also ready. Third sentence is here.'
-        chunks = speech_chunks(text, max_chars=45)
-        self.assertGreaterEqual(len(chunks), 2)
+        chunks = speech_chunks(text, max_chars=80)
         self.assertEqual(' '.join(chunks), text)
         self.assertTrue(all(len(chunk) <= 80 for chunk in chunks))
+        self.assertLess(len(chunks), 3)
 
-    def test_speak_queues_multiple_interruptible_chunks_for_long_answer(self):
+    def test_short_multi_sentence_reply_is_not_split_line_by_line(self):
+        text = (
+            'System check completed successfully. '
+            'The browser security layer is ready. '
+            'Computer control verification is also ready.'
+        )
+        chunks = speech_chunks(text, max_chars=260)
+        self.assertEqual(chunks, [text])
+
+    def test_long_reply_remains_bounded_for_interruptible_playback(self):
+        sentence = 'This sentence carries enough detail to exercise bounded neural speech playback safely.'
+        text = ' '.join([sentence] * 8)
+        chunks = speech_chunks(text, max_chars=260)
+        self.assertGreaterEqual(len(chunks), 2)
+        self.assertEqual(' '.join(chunks), text)
+        self.assertTrue(all(len(chunk) <= 260 for chunk in chunks))
+
+    def test_speak_queues_one_continuous_item_for_normal_multi_sentence_answer(self):
         voice = self._bare_voice()
         text = (
             'System check completed successfully. '
@@ -57,17 +74,19 @@ class EmotionalVoiceTests(unittest.TestCase):
         queued = []
         while not voice._queue.empty():
             queued.append(voice._queue.get_nowait())
-        self.assertGreaterEqual(len(queued), 2)
-        self.assertTrue(all(item.emotion == 'professional' for item in queued))
+        self.assertEqual(len(queued), 1)
+        self.assertEqual(queued[0].text, text)
+        self.assertEqual(queued[0].emotion, 'professional')
 
-    def test_happy_profile_changes_edge_prosody_without_unsafe_ranges(self):
+    def test_happy_profile_uses_subtle_prosody_without_robotic_pitch_jump(self):
         voice = self._bare_voice()
         voice._current_emotion = 'happy'
         voice._current_style = voice_style('happy')
         rate, volume, pitch = voice._edge_parameters('Great, done successfully!')
-        self.assertEqual(rate, '+4%')
-        self.assertEqual(volume, '+3%')
-        self.assertEqual(pitch, '+16Hz')
+        self.assertEqual(rate, '+0%')
+        self.assertEqual(volume, '+2%')
+        self.assertEqual(pitch, '+4Hz')
+        self.assertEqual(voice._current_style.pause_after_ms, 0)
 
     def test_stream_api_accepts_incremental_model_chunks(self):
         voice = self._bare_voice()
