@@ -7,8 +7,10 @@ import os
 import re
 import secrets
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterator
 
 from .product_paths import PATHS
 
@@ -49,8 +51,28 @@ class AccountStore:
         db.row_factory = sqlite3.Row
         return db
 
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        """Own and always close a SQLite connection, including on Windows errors.
+
+        sqlite3.Connection's own context manager commits/rolls back but does not
+        guarantee close. Explicit close prevents Windows file locks and keeps the
+        account store safe for installer repair, backup and test cleanup.
+        """
+        db = self._connect()
+        try:
+            yield db
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            db.close()
+
     def _init_schema(self) -> None:
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute(
                 '''CREATE TABLE IF NOT EXISTS accounts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -87,7 +109,7 @@ class AccountStore:
         salt = secrets.token_bytes(16)
         digest = self._derive(password, salt)
         try:
-            with self._connect() as db:
+            with self._connection() as db:
                 cur = db.execute(
                     'INSERT INTO accounts(username, display_name, password_salt, password_hash) VALUES(?,?,?,?)',
                     (user, name, salt, digest),
@@ -101,7 +123,7 @@ class AccountStore:
 
     def authenticate(self, username: str, password: str) -> UserProfile | None:
         user = username.strip().lower()
-        with self._connect() as db:
+        with self._connection() as db:
             row = db.execute('SELECT * FROM accounts WHERE username=?', (user,)).fetchone()
             if row is None:
                 return None
@@ -113,14 +135,14 @@ class AccountStore:
             return UserProfile(int(row['id']), str(row['username']), str(row['display_name']))
 
     def get(self, profile_id: int) -> UserProfile | None:
-        with self._connect() as db:
+        with self._connection() as db:
             row = db.execute('SELECT id, username, display_name FROM accounts WHERE id=?', (int(profile_id),)).fetchone()
         if row is None:
             return None
         return UserProfile(int(row['id']), str(row['username']), str(row['display_name']))
 
     def count(self) -> int:
-        with self._connect() as db:
+        with self._connection() as db:
             row = db.execute('SELECT COUNT(*) AS n FROM accounts').fetchone()
         return int(row['n'])
 
