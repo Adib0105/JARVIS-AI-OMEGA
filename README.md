@@ -235,7 +235,7 @@ Detailed architecture: [docs/V7-ARCHITECTURE.md](docs/V7-ARCHITECTURE.md)
 | Offline development | 🧪 Optional / experimental |
 | Skill build / activation | 🧪 Experimental / tested |
 | Controlled release / rollback | 🧪 Experimental / tested |
-| Windows V7.5 PyInstaller build | ⚙️ CI-gated; current hardening PR revalidation required |
+| Windows V7.5 PyInstaller build | ✅ PR CI run 642 built and passed secret-exclusion smoke |
 | Inno Setup installer | 🖥️ Local workstation validation required |
 | V7.5 production release | 🟡 BETA; live Windows/install/provider gates pending |
 

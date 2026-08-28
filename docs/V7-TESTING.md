@@ -203,6 +203,15 @@ On Linux with Python 3.12.13:
 
 This is local evidence, not a substitute for the Linux matrix, Windows regression, PyInstaller smoke or physical workstation gates.
 
+PR CI run 642 subsequently passed:
+
+- Linux regression on Python 3.11, 3.12, 3.13 and 3.14;
+- Windows regression on Python 3.14;
+- critical Ruff, high-severity Bandit and the combined core/Windows/Google/build dependency audit;
+- isolated V7.5 PyInstaller build, package secret/private-data exclusion and smoke-artifact upload.
+
+CI package success still does not prove Inno Setup installation, launch, upgrade/uninstall behavior or real hardware/provider/account workflows.
+
 ## Workstation smoke testing
 
 CI cannot prove every real-device behavior.

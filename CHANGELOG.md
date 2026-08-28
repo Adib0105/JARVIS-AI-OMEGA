@@ -20,7 +20,7 @@ All notable engineering changes to JARVIS AI OMEGA are documented here.
 - Added a committed capability inventory with implementation, entry point, dependency, permission, risk, evidence and limitation fields.
 - Centralized version/product/artifact names at `7.5.0`, moved builds/installers to V7.5 naming and removed the stale V7 installer definition.
 - Added bounded direct requirements, exact constraints, pinned audit tooling and CI gates for correctness lint, high-severity static security findings and dependency vulnerabilities.
-- Reconciled branch, release and historical-document claims. The candidate remains BETA pending current CI and real Windows/provider/hardware/installer evidence.
+- Reconciled branch, release and historical-document claims. PR CI run 642 passed Linux/Windows/security/dependency/package gates; the candidate remains BETA pending real Windows/provider/hardware/installer evidence and branch protection.
 
 ## V7 / V7.5 engineering track — unreleased
 
