@@ -32,6 +32,25 @@ class FakeBackend:
         return self.observe(target)
 
 
+class ClickTransitionBackend(FakeBackend):
+    def __init__(self, targets=None):
+        super().__init__(targets=targets, focus_after=False)
+        self.clicked = False
+
+    def observe(self, target):
+        return target.safe_dict() | {
+            'observed': True,
+            'exists': True,
+            'focused': self.clicked,
+            'selected': False,
+            'value': None,
+        }
+
+    def click(self, target):
+        self.clicked = True
+        return self.observe(target)
+
+
 class FocusAwareBackend(FakeBackend):
     def __init__(self, targets=None, *, stale_once=False):
         super().__init__(targets=targets, focus_after=True)
@@ -74,12 +93,21 @@ class V7ComputerUseTests(unittest.TestCase):
         self.assertFalse(match.resolved)
         self.assertIn('ambiguous', match.reason.lower())
 
-    def test_semantic_click_returns_observation_evidence(self):
-        engine = ComputerActionEngine(FakeBackend([self.downloads]), confidence_threshold=0.82)
+    def test_semantic_click_returns_observation_evidence_on_state_transition(self):
+        engine = ComputerActionEngine(ClickTransitionBackend([self.downloads]), confidence_threshold=0.82)
         result = engine.semantic_click('Downloads', window_hint='File Explorer')
         self.assertTrue(result['ok'])
         self.assertEqual(result['verification']['status'], 'VERIFIED')
         self.assertTrue(result['verification']['verified'])
+        self.assertTrue(result['verification']['evidence']['focus_transition'])
+
+    def test_semantic_click_does_not_verify_preexisting_focus(self):
+        engine = ComputerActionEngine(FakeBackend([self.downloads], focus_after=True), confidence_threshold=0.82)
+        result = engine.semantic_click('Downloads', window_hint='File Explorer')
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['verification']['status'], 'PARTIAL')
+        self.assertFalse(result['verification']['verified'])
+        self.assertIn('No post-click UI state transition', result['verification']['evidence']['reason'])
 
     def test_semantic_click_recovers_window_focus_before_action(self):
         backend = FocusAwareBackend([self.downloads])
