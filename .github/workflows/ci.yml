@@ -118,6 +118,8 @@ jobs:
           $setup = Get-ChildItem '.\dist\installer\JARVIS-AI-OMEGA-Setup-*.exe' | Select-Object -First 1
           if (-not $setup) { throw 'Installer artifact missing.' }
           if (-not (Test-Path '.\dist\installer\SHA256.txt')) { throw 'Installer checksum evidence missing.' }
+          $manifest = (Get-Content '.\dist\installer\SHA256.txt' -Raw).Trim()
+          if ($manifest -notmatch '^[0-9a-fA-F]{64}\s{2}JARVIS-AI-OMEGA-Setup-.+\.exe$') { throw 'Updater-compatible checksum manifest is invalid.' }
       - uses: actions/upload-artifact@v6
         with:
           name: jarvis-windows-release-candidate
@@ -133,7 +135,6 @@ jobs:
     needs: windows-build
     runs-on: windows-latest
     steps:
-      # Deliberately NO repository checkout and NO Python setup in this job.
       - uses: actions/download-artifact@v8
         with:
           name: jarvis-windows-release-candidate
@@ -145,15 +146,11 @@ jobs:
           if (-not $setup) { throw 'Installer missing.' }
           $silentArgs = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/TASKS="desktopicon"')
 
-          # Fresh install.
           Start-Process $setup.FullName -ArgumentList $silentArgs -Wait
           $appDir = Join-Path $env:ProgramFiles 'JARVIS AI OMEGA'
           $exe = Join-Path $appDir 'JARVIS-OMEGA.exe'
           if (-not (Test-Path $exe)) { throw 'Installed executable missing after fresh install.' }
 
-          # Seed historical-layout residue and persistent user data, then run the same
-          # installer again as a repair/upgrade simulation. The installer must remove
-          # known obsolete product binaries without touching LocalAppData.
           $legacyExe = Join-Path $appDir 'JARVIS-OMEGA-V7.exe'
           'legacy-binary-placeholder' | Set-Content $legacyExe
           if (-not (Test-Path $legacyExe)) { throw 'Could not seed legacy upgrade residue.' }
@@ -229,3 +226,53 @@ jobs:
       - name: Complete post-packaging regression
         shell: pwsh
         run: python -m unittest discover -s tests -v
+
+  publish-release:
+    name: publish-verified-github-release
+    needs: post-packaging-regression
+    if: github.event_name == 'push' && github.ref == 'refs/heads/v7-development'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with: {fetch-depth: 0}
+      - uses: actions/download-artifact@v8
+        with:
+          name: jarvis-windows-release-candidate
+          path: release
+      - name: Verify exact release payload
+        id: release_meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python -c 'from jarvis.version import APP_VERSION; print(APP_VERSION)')"
+          installer="release/JARVIS-AI-OMEGA-Setup-${version}.exe"
+          manifest="release/SHA256.txt"
+          test -f "$installer"
+          test -f "$manifest"
+          installer_name="$(basename "$installer")"
+          expected="$(awk -v name="$installer_name" 'tolower($2)==tolower(name){print tolower($1); exit}' "$manifest")"
+          test "${#expected}" -eq 64
+          actual="$(sha256sum "$installer" | awk '{print tolower($1)}')"
+          test "$actual" = "$expected"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "installer=$installer" >> "$GITHUB_OUTPUT"
+      - name: Publish release for in-app updater
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release_meta.outputs.version }}
+          INSTALLER: ${{ steps.release_meta.outputs.installer }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists; leaving verified published release unchanged."
+            exit 0
+          fi
+          gh release create "$tag" "$INSTALLER" release/SHA256.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "JARVIS AI OMEGA ${VERSION}" \
+            --notes "Verified Windows update for JARVIS AI OMEGA ${VERSION}. Published only after regression, Windows build, isolated installer validation, upgrade/data-preservation validation, and post-packaging regression passed for this exact commit."
