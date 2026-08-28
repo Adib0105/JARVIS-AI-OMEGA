@@ -4,24 +4,30 @@ import json
 import urllib.error
 import urllib.request
 
+from packaging.version import InvalidVersion, Version
+
+from .version import APP_VERSION
+
 RELEASE_API = 'https://api.github.com/repos/Adib0105/JARVIS-AI-OMEGA/releases/latest'
 
 
-def _version_tuple(value: str) -> tuple[int, ...]:
-    clean = value.strip().lower().lstrip('v')
-    parts = []
-    for token in clean.split('.'):
-        digits = ''.join(ch for ch in token if ch.isdigit())
-        if not digits:
-            break
-        parts.append(int(digits))
-    return tuple(parts or [0])
+def _parse_version(value: str) -> Version:
+    clean = str(value or '').strip()
+    if clean.lower().startswith('v'):
+        clean = clean[1:]
+    try:
+        return Version(clean)
+    except InvalidVersion as exc:
+        raise ValueError(f'Unsupported release version: {value!r}') from exc
 
 
 def check_latest_release(current_version: str, timeout: float = 8.0) -> dict:
     request = urllib.request.Request(
         RELEASE_API,
-        headers={'Accept': 'application/vnd.github+json', 'User-Agent': 'JARVIS-AI-OMEGA-V6'},
+        headers={
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': f'JARVIS-AI-OMEGA/{APP_VERSION}',
+        },
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -37,7 +43,13 @@ def check_latest_release(current_version: str, timeout: float = 8.0) -> dict:
 
     tag = str(payload.get('tag_name') or '').strip()
     url = str(payload.get('html_url') or '').strip()
-    newer = _version_tuple(tag) > _version_tuple(current_version)
+    if not tag:
+        raise RuntimeError('GitHub latest release did not include a tag_name.')
+    try:
+        newer = _parse_version(tag) > _parse_version(current_version)
+    except ValueError as exc:
+        raise RuntimeError(f'GitHub update check returned an unrecognized version: {tag!r}.') from exc
+
     return {
         'available': newer,
         'published': True,

@@ -13,10 +13,13 @@ from .updater import check_latest_release
 
 
 EDITABLE_KEYS = {
-    'ENABLE_VOICE_OUTPUT', 'EDGE_VOICE_RATE', 'EDGE_VOICE_VOLUME', 'EDGE_VOICE_PITCH',
+    'ENABLE_VOICE_OUTPUT', 'VOICE_PROFILE', 'VOICE_EMOTION_ENABLED', 'VOICE_STREAMING_ENABLED',
+    'VOICE_BARGE_IN', 'VOICE_CHUNK_CHARS',
+    'EDGE_VOICE_RATE', 'EDGE_VOICE_VOLUME', 'EDGE_VOICE_PITCH',
     'VOICE_HINDI', 'VOICE_HINGLISH', 'VOICE_ENGLISH', 'VOICE_FALLBACK',
     'TTS_TIMEOUT_SECONDS', 'OFFLINE_TTS_TIMEOUT_SECONDS',
     'ENABLE_MIC_INPUT', 'ENABLE_WAKE_WORD', 'WAKE_WORD', 'SPEECH_LANGUAGE', 'MIC_RECORD_SECONDS',
+    'WAKE_CHUNK_SECONDS', 'VOICE_CONTINUOUS_SECONDS',
     'REQUIRE_LOCAL_APPROVAL', 'ENABLE_DESKTOP_AUTOMATION', 'ENABLE_DOCUMENT_INTELLIGENCE',
     'ENABLE_CODING_TOOLS', 'ENABLE_GOOGLE_WORKSPACE',
     'MODEL_ROUTING', 'FAST_MODEL', 'SMART_MODEL', 'VISION_MODEL',
@@ -53,26 +56,32 @@ def show_update_dialog(root: tk.Misc) -> None:
     try:
         result = check_latest_release(settings.app_version)
     except Exception as exc:
-        messagebox.showerror('JARVIS V6 Update Check', str(exc), parent=root)
+        messagebox.showerror('JARVIS OMEGA Update Check', str(exc), parent=root)
         return
     message = result.get('message', 'Update check completed.')
     if result.get('available') and result.get('url'):
-        if messagebox.askyesno('JARVIS V6 Update Available', message + '\n\nOpen GitHub release page?', parent=root):
+        if messagebox.askyesno('JARVIS OMEGA Update Available', message + '\n\nOpen GitHub release page?', parent=root):
             webbrowser.open(result['url'], new=2)
     else:
-        messagebox.showinfo('JARVIS V6 Update Check', message, parent=root)
+        messagebox.showinfo('JARVIS OMEGA Update Check', message, parent=root)
 
 
 def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
     win = tk.Toplevel(root)
-    win.title('JARVIS OMEGA V6 // SETTINGS')
-    win.geometry('690x780')
-    win.minsize(650, 680)
+    win.title(f'JARVIS OMEGA {settings.app_version} // SETTINGS')
+    win.geometry('690x820')
+    win.minsize(650, 700)
     win.configure(bg='#06111a')
     win.transient(root)
     win.grab_set()
 
-    tk.Label(win, text='V6 CORE SETTINGS', bg='#06111a', fg='#53e7ff', font=('Segoe UI', 16, 'bold')).pack(anchor='w', padx=18, pady=(16, 2))
+    tk.Label(
+        win,
+        text=f'JARVIS OMEGA {settings.app_version} SETTINGS',
+        bg='#06111a',
+        fg='#53e7ff',
+        font=('Segoe UI', 16, 'bold'),
+    ).pack(anchor='w', padx=18, pady=(16, 2))
     tk.Label(
         win,
         text='API keys, Google OAuth JSON, and stored tokens are intentionally hidden. Saved changes apply after restart.',
@@ -96,7 +105,17 @@ def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
     def bool_row(label: str, key: str, current: bool):
         var = tk.BooleanVar(value=current)
         values[key] = var
-        tk.Checkbutton(body, text=label, variable=var, bg='#091a26', fg='#dff9ff', selectcolor='#0b2a3a', activebackground='#091a26', activeforeground='white', font=('Segoe UI', 9)).pack(anchor='w', pady=1)
+        tk.Checkbutton(
+            body,
+            text=label,
+            variable=var,
+            bg='#091a26',
+            fg='#dff9ff',
+            selectcolor='#0b2a3a',
+            activebackground='#091a26',
+            activeforeground='white',
+            font=('Segoe UI', 9),
+        ).pack(anchor='w', pady=1)
 
     def text_row(label: str, key: str, current, width: int = 31):
         row = tk.Frame(body, bg='#091a26')
@@ -104,15 +123,30 @@ def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
         tk.Label(row, text=label, bg='#091a26', fg='#86a8b8', width=27, anchor='w').pack(side='left')
         var = tk.StringVar(value=str(current))
         values[key] = var
-        tk.Entry(row, textvariable=var, width=width, bg='#07131d', fg='white', insertbackground='#53e7ff', relief='flat').pack(side='right', ipady=4)
+        tk.Entry(
+            row,
+            textvariable=var,
+            width=width,
+            bg='#07131d',
+            fg='white',
+            insertbackground='#53e7ff',
+            relief='flat',
+        ).pack(side='right', ipady=4)
 
     section('VOICE + MICROPHONE')
     bool_row('Spoken replies', 'ENABLE_VOICE_OUTPUT', settings.enable_voice_output)
+    text_row('Voice profile', 'VOICE_PROFILE', settings.voice_profile)
+    bool_row('Emotion-aware delivery', 'VOICE_EMOTION_ENABLED', settings.voice_emotion_enabled)
+    bool_row('Sentence streaming', 'VOICE_STREAMING_ENABLED', settings.voice_streaming_enabled)
+    bool_row('Barge-in interruption', 'VOICE_BARGE_IN', settings.voice_barge_in)
+    text_row('Voice chunk characters', 'VOICE_CHUNK_CHARS', settings.voice_chunk_chars)
     bool_row('Microphone / push-to-talk', 'ENABLE_MIC_INPUT', settings.enable_mic_input)
     bool_row('Wake-word auto start', 'ENABLE_WAKE_WORD', settings.enable_wake_word)
     text_row('Wake word', 'WAKE_WORD', settings.wake_word)
     text_row('Speech language', 'SPEECH_LANGUAGE', settings.speech_language)
     text_row('MIC seconds', 'MIC_RECORD_SECONDS', settings.mic_record_seconds)
+    text_row('Wake sample seconds', 'WAKE_CHUNK_SECONDS', settings.wake_chunk_seconds)
+    text_row('Continuous voice seconds', 'VOICE_CONTINUOUS_SECONDS', settings.voice_continuous_seconds)
     text_row('Voice rate', 'EDGE_VOICE_RATE', settings.edge_voice_rate)
     text_row('Voice volume', 'EDGE_VOICE_VOLUME', settings.edge_voice_volume)
     text_row('Voice pitch', 'EDGE_VOICE_PITCH', settings.edge_voice_pitch)
