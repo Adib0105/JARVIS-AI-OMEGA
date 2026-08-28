@@ -96,6 +96,16 @@ def _normalize_wake_text(text: str) -> str:
     return re.sub(r'[^a-z0-9 ]+', ' ', str(text or '').lower()).strip()
 
 
+def _wake_alias_match(original: str, alias: str):
+    """Find a normalized alias while preserving the untouched command suffix."""
+    words = [re.escape(part) for part in alias.split() if part]
+    if not words:
+        return None
+    # Allow normal punctuation/whitespace between wake words: "Hey, Jarvis" etc.
+    pattern = r'\b' + r'[\W_]+'.join(words) + r'\b'
+    return re.search(pattern, original, flags=re.IGNORECASE)
+
+
 class WakeWordListener:
     """Background wake loop with aliases, acknowledgement and conversational follow-up."""
 
@@ -131,10 +141,12 @@ class WakeWordListener:
         return not bool(thread and thread.is_alive())
 
     def _command_from_heard(self, heard: str) -> tuple[bool, str]:
-        original = str(heard or '').strip(); normalized = _normalize_wake_text(original)
+        original = str(heard or '').strip()
         for alias in sorted(self.wake_aliases, key=len, reverse=True):
-            index = normalized.find(alias)
-            if index >= 0: return True, normalized[index + len(alias):].strip()
+            match = _wake_alias_match(original, alias)
+            if match is not None:
+                command = original[match.end():].lstrip(' ,.:;!-—–').strip()
+                return True, command
         return (False, original) if self.conversation_active else (False, '')
 
     def _loop(self, stop_event: threading.Event) -> None:
