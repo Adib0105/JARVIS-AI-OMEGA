@@ -13,6 +13,12 @@ from uuid import uuid4
 
 T = TypeVar('T')
 
+# Blocking provider SDKs cannot always be force-cancelled safely. Bound the number
+# of daemon calls that may remain alive after caller-side timeout/cancellation so
+# repeated network failures cannot create unbounded background threads.
+_PROVIDER_WORKER_LIMIT = 8
+_PROVIDER_WORKER_SLOTS = threading.BoundedSemaphore(_PROVIDER_WORKER_LIMIT)
+
 
 class RequestCancelledError(RuntimeError):
     """Raised when the operator cancels the active AI request."""
@@ -99,6 +105,25 @@ def transport_timeout_seconds(request_timeout: float) -> float:
     return min(request_deadline_seconds(request_timeout), 30.0)
 
 
+def _acquire_provider_worker_slot(budget: float, active: RequestBudget | None) -> None:
+    """Acquire bounded provider capacity without hiding cancellation/deadline state."""
+    capacity_wait = min(max(float(budget), 0.01), 0.25)
+    if active is None:
+        if not _PROVIDER_WORKER_SLOTS.acquire(timeout=capacity_wait):
+            raise TimeoutError('AI provider request capacity is exhausted by still-running provider calls.')
+        return
+
+    deadline = time.monotonic() + capacity_wait
+    while True:
+        remaining = min(deadline - time.monotonic(), active.remaining())
+        if remaining <= 0:
+            raise TimeoutError('AI provider request capacity is exhausted by still-running provider calls.')
+        if _PROVIDER_WORKER_SLOTS.acquire(timeout=min(0.05, remaining)):
+            return
+        if time.monotonic() >= deadline:
+            raise TimeoutError('AI provider request capacity is exhausted by still-running provider calls.')
+
+
 def call_with_deadline(call: Callable[[], T], timeout: float, *, operation: str = 'AI provider request') -> T:
     """Run a blocking SDK call behind a strict wall-clock deadline.
 
@@ -106,7 +131,8 @@ def call_with_deadline(call: Callable[[], T], timeout: float, *, operation: str 
     guard guarantees the caller regains control even if retries or a trickling HTTP
     response keep the underlying synchronous SDK call alive beyond that timeout.
     The worker is daemonized so a pathological transport cannot block application
-    shutdown.
+    shutdown. A bounded worker gate prevents repeated timed-out SDK calls from
+    accumulating an unbounded number of daemon threads.
     """
     active = current_request_budget()
     requested_budget = request_deadline_seconds(timeout)
@@ -118,19 +144,29 @@ def call_with_deadline(call: Callable[[], T], timeout: float, *, operation: str 
     result: queue.Queue[tuple[bool, object]] = queue.Queue(maxsize=1)
     context = copy_context()
 
+    _acquire_provider_worker_slot(budget, active)
+
     def runner() -> None:
         try:
-            value = context.run(call)
-            item: tuple[bool, object] = (True, value)
-        except BaseException as exc:  # propagate the original provider exception
-            item = (False, exc)
-        try:
-            result.put_nowait(item)
-        except queue.Full:
-            pass
+            try:
+                value = context.run(call)
+                item: tuple[bool, object] = (True, value)
+            except BaseException as exc:  # propagate the original provider exception
+                item = (False, exc)
+            try:
+                result.put_nowait(item)
+            except queue.Full:
+                pass
+        finally:
+            _PROVIDER_WORKER_SLOTS.release()
 
     thread = threading.Thread(target=runner, name='jarvis-provider-request', daemon=True)
-    thread.start()
+    try:
+        thread.start()
+    except BaseException:
+        _PROVIDER_WORKER_SLOTS.release()
+        raise
+
     if active is None:
         try:
             ok, value = result.get(timeout=budget)

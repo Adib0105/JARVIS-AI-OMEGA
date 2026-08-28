@@ -104,7 +104,13 @@ def record_and_transcribe(
 
 
 class WakeWordListener:
-    """Explicit wake-word loop with a short opt-in conversational follow-up window."""
+    """Explicit wake-word loop with a short opt-in conversational follow-up window.
+
+    Every listener generation owns a distinct stop event. A fast stop/start can
+    therefore never clear the previous worker's stop signal and accidentally
+    resurrect two concurrent wake loops. Shutdown also performs a bounded best-
+    effort join without pretending a blocking external speech request is cancellable.
+    """
 
     def __init__(
         self,
@@ -131,11 +137,15 @@ class WakeWordListener:
         self.continuous_seconds = max(0.0, min(float(configured_continuous), 60.0))
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._thread_lock = threading.RLock()
         self._conversation_until = 0.0
 
     @property
     def running(self) -> bool:
-        return bool(self._thread and self._thread.is_alive() and not self._stop.is_set())
+        with self._thread_lock:
+            thread = self._thread
+            stop_event = self._stop
+        return bool(thread and thread.is_alive() and not stop_event.is_set())
 
     @property
     def conversation_active(self) -> bool:
@@ -144,14 +154,35 @@ class WakeWordListener:
     def start(self) -> None:
         if self.running:
             return
-        self._stop.clear()
-        self._conversation_until = 0.0
-        self._thread = threading.Thread(target=self._loop, daemon=True, name='jarvis-wake-word')
-        self._thread.start()
+        stop_event = threading.Event()
+        thread = threading.Thread(
+            target=self._loop,
+            args=(stop_event,),
+            daemon=True,
+            name='jarvis-wake-word',
+        )
+        with self._thread_lock:
+            # Do not reuse/clear an old event. An older blocked generation keeps its
+            # own permanently-set signal and exits when its current call returns.
+            self._stop = stop_event
+            self._thread = thread
+            self._conversation_until = 0.0
+        thread.start()
 
-    def stop(self) -> None:
-        self._stop.set()
-        self._conversation_until = 0.0
+    def stop(self, *, wait: bool = True, timeout: float = 0.75) -> bool:
+        with self._thread_lock:
+            stop_event = self._stop
+            thread = self._thread
+            stop_event.set()
+            self._conversation_until = 0.0
+        if (
+            wait
+            and thread is not None
+            and thread.is_alive()
+            and threading.current_thread() is not thread
+        ):
+            thread.join(timeout=max(0.0, min(float(timeout), 3.0)))
+        return not bool(thread and thread.is_alive())
 
     def _command_from_heard(self, heard: str) -> tuple[bool, str]:
         normalized = str(heard or '').strip()
@@ -163,15 +194,17 @@ class WakeWordListener:
             return False, normalized
         return False, ''
 
-    def _loop(self) -> None:
+    def _loop(self, stop_event: threading.Event) -> None:
         self.on_state('wake-idle')
-        while not self._stop.is_set():
+        while not stop_event.is_set():
             try:
                 heard = record_and_transcribe(
                     self.chunk_seconds,
                     self.language,
                     barge_in=False,
                 )
+                if stop_event.is_set():
+                    break
                 woke, command = self._command_from_heard(heard)
                 if not woke and not command:
                     continue
@@ -179,8 +212,10 @@ class WakeWordListener:
                 if woke:
                     request_voice_interrupt()
                 self.on_state('listening')
-                if woke and not command and not self._stop.is_set():
+                if woke and not command and not stop_event.is_set():
                     command = record_and_transcribe(5.0, self.language, barge_in=False)
+                if stop_event.is_set():
+                    break
                 if command:
                     self.on_command(command)
                     if self.continuous_seconds > 0:
@@ -189,14 +224,21 @@ class WakeWordListener:
                     else:
                         self.on_state('wake-idle')
             except MicrophoneUnavailable as exc:
-                self.on_error(str(exc))
+                if not stop_event.is_set():
+                    self.on_error(str(exc))
                 break
             except Exception as exc:
+                if stop_event.is_set():
+                    break
                 # Recognition misses are normal in continuous mode; avoid a hot error loop.
                 self.on_error(str(exc))
-                time.sleep(0.8)
-                self.on_state('conversation' if self.conversation_active else 'wake-idle')
-        self.on_state('idle')
+                stop_event.wait(0.8)
+                if not stop_event.is_set():
+                    self.on_state('conversation' if self.conversation_active else 'wake-idle')
+        with self._thread_lock:
+            is_current = self._stop is stop_event
+        if is_current:
+            self.on_state('idle')
 
 
 __all__ = [
