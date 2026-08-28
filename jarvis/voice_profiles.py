@@ -24,15 +24,15 @@ VOICE_STYLES: dict[str, VoiceStyle] = {
 
 _URGENT = {
     'urgent', 'immediately', 'danger', 'warning', 'critical', 'emergency', 'alert', 'now',
-    'turant', 'jaldi', 'khatra', 'savdhan', 'warning', 'failed', 'failure', 'blocked',
+    'turant', 'jaldi', 'khatra', 'savdhan', 'failed', 'failure', 'blocked',
 }
 _CONCERNED = {
     'sorry', 'careful', 'concern', 'concerned', 'problem', 'issue', 'unwell', 'hurt', 'sad',
-    'dhyan', 'pareshan', 'problem', 'galat', 'nahi hua', 'failed',
+    'dhyan', 'pareshan', 'galat', 'nahi hua', 'failed',
 }
 _HAPPY = {
     'great', 'good news', 'success', 'successful', 'done', 'complete', 'completed', 'awesome',
-    'excellent', 'congratulations', 'perfect', 'ready', 'badhiya', 'mast', 'ho gaya', 'hogaya',
+    'excellent', 'congratulations', 'perfect', 'badhiya', 'mast', 'ho gaya', 'hogaya',
 }
 _PROFESSIONAL = {
     'report', 'analysis', 'summary', 'status', 'result', 'schedule', 'meeting', 'project',
@@ -65,44 +65,55 @@ def voice_style(emotion: str | None, text: str = '') -> VoiceStyle:
     return VOICE_STYLES.get(selected, VOICE_STYLES['neutral'])
 
 
+def _split_oversized(segment: str, max_chars: int) -> list[str]:
+    """Split one oversized sentence at clauses, then words, without losing text."""
+    segment = segment.strip()
+    if not segment:
+        return []
+    if len(segment) <= max_chars:
+        return [segment]
+
+    clauses = [part.strip() for part in re.split(r'(?<=[,;:])\s+', segment) if part.strip()]
+    if len(clauses) == 1:
+        clauses = [segment]
+
+    chunks: list[str] = []
+    for clause in clauses:
+        if len(clause) <= max_chars:
+            chunks.append(clause)
+            continue
+        buffer = ''
+        for word in clause.split():
+            candidate = f'{buffer} {word}'.strip()
+            if buffer and len(candidate) > max_chars:
+                chunks.append(buffer)
+                buffer = word
+            else:
+                buffer = candidate
+        if buffer:
+            chunks.append(buffer)
+    return chunks
+
+
 def speech_chunks(text: str, max_chars: int = 260) -> list[str]:
-    """Split speech at natural boundaries for lower latency and easier interruption."""
+    """Split speech at sentence boundaries for low latency and reliable barge-in.
+
+    A sentence is a natural interruption boundary even when the whole answer is
+    shorter than ``max_chars``. Only an oversized sentence is split further at
+    clauses/words. This avoids re-buffering several complete sentences into one
+    long TTS request while still keeping individual requests bounded.
+    """
     spoken = re.sub(r'\s+', ' ', str(text or '')).strip()
     if not spoken:
         return []
-    max_chars = max(80, min(int(max_chars), 600))
+    max_chars = max(40, min(int(max_chars), 600))
     sentences = [part.strip() for part in re.split(r'(?<=[.!?।])\s+', spoken) if part.strip()]
+    if not sentences:
+        sentences = [spoken]
+
     chunks: list[str] = []
-    current = ''
-    for sentence in sentences or [spoken]:
-        parts = [sentence]
-        if len(sentence) > max_chars:
-            parts = [part.strip() for part in re.split(r'(?<=[,;:])\s+', sentence) if part.strip()]
-        for part in parts:
-            if len(part) > max_chars:
-                words = part.split()
-                buffer = ''
-                for word in words:
-                    candidate = f'{buffer} {word}'.strip()
-                    if buffer and len(candidate) > max_chars:
-                        chunks.append(buffer)
-                        buffer = word
-                    else:
-                        buffer = candidate
-                if buffer:
-                    if current:
-                        chunks.append(current)
-                        current = ''
-                    chunks.append(buffer)
-                continue
-            candidate = f'{current} {part}'.strip()
-            if current and len(candidate) > max_chars:
-                chunks.append(current)
-                current = part
-            else:
-                current = candidate
-    if current:
-        chunks.append(current)
+    for sentence in sentences:
+        chunks.extend(_split_oversized(sentence, max_chars))
     return chunks
 
 
