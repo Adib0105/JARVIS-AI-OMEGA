@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import queue
+import signal
+import subprocess
+import tempfile
 import threading
+import time
+from pathlib import Path
 from typing import Callable
 
 from .config import settings
@@ -62,6 +68,21 @@ def _rebrand_chat_history(app) -> None:
         pass
 
 
+def _read_test_output_tail(path: Path | None, max_bytes: int = 65536, max_chars: int = 12000) -> str:
+    """Read only the tail of a test log so very noisy suites cannot pressure the GUI."""
+    if path is None or not path.is_file():
+        return ''
+    try:
+        with path.open('rb') as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - max(4096, int(max_bytes))), os.SEEK_SET)
+            data = handle.read(max(4096, int(max_bytes)))
+        return data.decode('utf-8', errors='replace')[-max(1000, int(max_chars)):].strip()
+    except Exception as exc:
+        return f'[Could not read test log: {type(exc).__name__}: {exc}]'
+
+
 def run_adaptive_gui() -> None:
     """Launch desktop, voice controls and Command Center through composition."""
     import importlib.util
@@ -92,6 +113,16 @@ def run_adaptive_gui() -> None:
     class AdaptiveJarvisDesktop(base_desktop):
         def __init__(self, root_widget) -> None:
             super().__init__(root_widget)
+            self._test_process: subprocess.Popen | None = None
+            self._test_output_handle = None
+            self._test_output_path: Path | None = None
+            self._test_started_at = 0.0
+            self._test_timeout = 0
+            self._test_interpreter = ''
+            self._test_stop_reason = ''
+            self._test_stop_requested_at = 0.0
+            self._test_auth_queue: queue.Queue = queue.Queue(maxsize=1)
+
             # Tk child widgets can consume Ctrl+O before the root binding sees it.
             # Bind the focused input/chat widgets directly and return "break" from
             # the handler so one keypress always opens exactly one picker.
@@ -251,6 +282,219 @@ def run_adaptive_gui() -> None:
             win.lift()
             win.focus_force()
 
+        def _code_tests(self) -> None:
+            """Run tests fully outside the Tk/UI process and poll them without blocking."""
+            if self.busy:
+                return
+            folder = gui_module.filedialog.askdirectory(
+                parent=self.root,
+                title='Select approved Python project folder with tests/',
+            )
+            if not folder:
+                return
+
+            args = {'project_dir': folder, 'timeout': 180}
+            self._set_busy(True, 'AUTHORIZING TESTS', gui_module.GOLD, 'thinking')
+            self._test_auth_queue = queue.Queue(maxsize=1)
+
+            def authorize() -> None:
+                try:
+                    outcome = self.jarvis.tools.permissions.check('run_project_tests', args)
+                    item = (bool(outcome.allowed), str(outcome.reason))
+                except Exception as exc:
+                    item = (False, f'{type(exc).__name__}: {exc}')
+                try:
+                    self._test_auth_queue.put_nowait(item)
+                except queue.Full:
+                    pass
+
+            threading.Thread(target=authorize, daemon=True, name='jarvis-test-authorize').start()
+            self.root.after(60, lambda: self._poll_test_authorization(folder, 180))
+
+        def _poll_test_authorization(self, folder: str, timeout: int) -> None:
+            try:
+                allowed, reason = self._test_auth_queue.get_nowait()
+            except queue.Empty:
+                if self.busy and self._test_process is None:
+                    self.root.after(60, lambda: self._poll_test_authorization(folder, timeout))
+                return
+
+            if not allowed:
+                self._set_busy(False)
+                self._append('SYSTEM', f'CODE TESTS NOT STARTED: {reason}')
+                return
+            self._launch_code_test_process(folder, timeout)
+
+        def _launch_code_test_process(self, folder: str, timeout: int) -> None:
+            output_handle = None
+            output_path: Path | None = None
+            try:
+                spec = self.jarvis.tools.coding.prepare_unit_tests(folder, timeout)
+                output_handle = tempfile.NamedTemporaryFile(
+                    mode='w+b', prefix='jarvis-code-tests-', suffix='.log', delete=False
+                )
+                output_path = Path(output_handle.name)
+                env = os.environ.copy()
+                env['PYTHONUNBUFFERED'] = '1'
+                env['PYTHONIOENCODING'] = 'utf-8'
+
+                creationflags = 0
+                if os.name == 'nt':
+                    creationflags |= getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+                    creationflags |= getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+                    # Heavy suites must never starve the desktop event loop.
+                    creationflags |= getattr(subprocess, 'BELOW_NORMAL_PRIORITY_CLASS', 0)
+
+                process = subprocess.Popen(
+                    spec['command'],
+                    cwd=spec['cwd'],
+                    stdin=subprocess.DEVNULL,
+                    stdout=output_handle,
+                    stderr=subprocess.STDOUT,
+                    shell=False,
+                    env=env,
+                    creationflags=creationflags,
+                    start_new_session=(os.name != 'nt'),
+                )
+            except Exception as exc:
+                try:
+                    if output_handle is not None:
+                        output_handle.close()
+                except Exception:
+                    pass
+                try:
+                    if output_path is not None:
+                        output_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                self._set_busy(False)
+                self._append('SYSTEM', f'CODE TESTS FAILED TO START: {type(exc).__name__}: {exc}')
+                return
+
+            self._test_process = process
+            self._test_output_handle = output_handle
+            self._test_output_path = output_path
+            self._test_started_at = time.monotonic()
+            self._test_timeout = int(spec['timeout'])
+            self._test_interpreter = str(spec['interpreter'])
+            self._test_stop_reason = ''
+            self._test_stop_requested_at = 0.0
+            self.status.configure(text='● TESTING 0s', fg=gui_module.GOLD)
+            self.root.after(120, self._poll_code_test_process)
+
+        def _poll_code_test_process(self) -> None:
+            process = self._test_process
+            if process is None:
+                return
+
+            returncode = process.poll()
+            elapsed = max(0.0, time.monotonic() - self._test_started_at)
+            if returncode is None:
+                if not self._test_stop_reason and elapsed >= float(self._test_timeout):
+                    self._request_code_test_stop('TIMED OUT')
+                elif self._test_stop_reason and self._test_stop_requested_at:
+                    if time.monotonic() - self._test_stop_requested_at >= 2.5:
+                        try:
+                            process.kill()
+                        except Exception:
+                            pass
+
+                if self._test_stop_reason:
+                    label = f'{self._test_stop_reason} - STOPPING'
+                    color = gui_module.RED
+                else:
+                    label = f'TESTING {int(elapsed)}s / {self._test_timeout}s'
+                    color = gui_module.GOLD
+                self.status.configure(text=f'● {label}', fg=color)
+                self.root.after(180, self._poll_code_test_process)
+                return
+
+            self._finish_code_test_process(int(returncode))
+
+        def _request_code_test_stop(self, reason: str) -> None:
+            process = self._test_process
+            if process is None or process.poll() is not None:
+                return
+            if not self._test_stop_reason:
+                self._test_stop_reason = str(reason or 'CANCELLED')
+                self._test_stop_requested_at = time.monotonic()
+
+            stopped = False
+            if os.name == 'nt':
+                try:
+                    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+                    subprocess.Popen(
+                        ['taskkill.exe', '/PID', str(process.pid), '/T', '/F'],
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        shell=False,
+                        creationflags=flags,
+                    )
+                    stopped = True
+                except Exception:
+                    stopped = False
+            else:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                    stopped = True
+                except Exception:
+                    stopped = False
+            if not stopped:
+                try:
+                    process.terminate()
+                except Exception:
+                    pass
+
+        def _finish_code_test_process(self, returncode: int) -> None:
+            try:
+                if self._test_output_handle is not None:
+                    self._test_output_handle.flush()
+                    self._test_output_handle.close()
+            except Exception:
+                pass
+
+            output = _read_test_output_tail(self._test_output_path)
+            stop_reason = self._test_stop_reason
+            interpreter = self._test_interpreter or 'Python'
+            elapsed = max(0.0, time.monotonic() - self._test_started_at)
+
+            try:
+                if self._test_output_path is not None:
+                    self._test_output_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+            self._test_process = None
+            self._test_output_handle = None
+            self._test_output_path = None
+            self._test_started_at = 0.0
+            self._test_timeout = 0
+            self._test_interpreter = ''
+            self._test_stop_reason = ''
+            self._test_stop_requested_at = 0.0
+            self._set_busy(False)
+
+            if stop_reason == 'TIMED OUT':
+                summary = f'CODE TESTS TIMED OUT after {elapsed:.1f}s\nInterpreter: {interpreter}'
+            elif stop_reason:
+                summary = f'CODE TESTS {stop_reason}\nInterpreter: {interpreter}'
+            else:
+                state = 'PASSED' if int(returncode) == 0 else 'FAILED'
+                summary = f'CODE TESTS {state} in {elapsed:.1f}s\nInterpreter: {interpreter}'
+            if output:
+                summary += '\n\n' + output
+            self._append('SYSTEM', summary)
+            self._refresh_tasks()
+
+        def _cancel_request(self) -> None:
+            process = self._test_process
+            if process is not None and process.poll() is None:
+                self._request_code_test_stop('CANCELLED')
+                self.status.configure(text='● CANCELLING CODE TESTS', fg=gui_module.RED)
+                return
+            super()._cancel_request()
+
         def _run_tool_async(self, name: str, args: dict, label: str) -> None:
             """Run local tools without ever leaving the desktop stuck in busy state."""
             self._set_busy(True, label, gui_module.GOLD, 'thinking')
@@ -356,6 +600,12 @@ def run_adaptive_gui() -> None:
         def _diagnose_done(self, message: str) -> None:
             self._set_busy(False)
             self._append('SYSTEM', 'QUICK DIAGNOSE\n' + message)
+
+        def _close(self) -> None:
+            process = self._test_process
+            if process is not None and process.poll() is None:
+                self._request_code_test_stop('APP CLOSING')
+            super()._close()
 
     app = AdaptiveJarvisDesktop(root)
     root.title(f'JARVIS AI OMEGA {settings.app_version} // RELIABLE ARC DESKTOP AGENT')
