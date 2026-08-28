@@ -3,11 +3,35 @@ from __future__ import annotations
 import argparse
 import ctypes
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
 
 import edge_tts
+
+
+_STANDALONE_DASH_RE = re.compile(r'(?<!\w)(?:--+|[\u2013\u2014\u2212])(?!\w)')
+_BULLET_DASH_RE = re.compile(r'(^|\s)[\-\u2013\u2014]\s+(?=\S)')
+
+
+def normalize_for_playback(text: str) -> str:
+    """Turn display-oriented punctuation into natural spoken text.
+
+    TTS should not vocalize markdown separators such as ``--``/em dashes or
+    bullet dashes. Real hyphens inside words (for example ``AI-powered``) stay
+    intact. Decorative separators become a comma-sized prosody hint rather than
+    a token that the neural voice may pronounce as "dash".
+    """
+    spoken = str(text or '').replace('\r', ' ').replace('\n', ' ')
+    spoken = _BULLET_DASH_RE.sub(r'\1', spoken)
+    spoken = _STANDALONE_DASH_RE.sub(', ', spoken)
+    spoken = re.sub(r'\.{3,}', ', ', spoken)
+    spoken = re.sub(r'\s+([,.;:!?।])', r'\1', spoken)
+    spoken = re.sub(r'([,;:])\s*[,;:]+', r'\1 ', spoken)
+    spoken = re.sub(r',\s*,+', ', ', spoken)
+    spoken = re.sub(r'\s+', ' ', spoken).strip(' ,;:')
+    return spoken.strip()
 
 
 def _short_path(path: str) -> str:
@@ -61,7 +85,7 @@ def synthesize_and_play(
     volume: str,
     pitch: str,
 ) -> None:
-    spoken = str(text or '').strip()
+    spoken = normalize_for_playback(text)
     if not spoken:
         raise ValueError('TTS worker received empty text.')
     media_path = None
@@ -150,4 +174,7 @@ def run_edge_playback_worker(argv: list[str] | None = None) -> int:
         return 1
 
 
-__all__ = ['play_mp3_windows', 'run_edge_playback_worker', 'runtime_healthcheck', 'synthesize_and_play']
+__all__ = [
+    'normalize_for_playback', 'play_mp3_windows', 'run_edge_playback_worker',
+    'runtime_healthcheck', 'synthesize_and_play',
+]
