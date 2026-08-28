@@ -55,6 +55,49 @@ class MissionOrchestrator:
     """Persisted V7 mission state machine with bounded recovery and evidence."""
 
     MAX_REPLANS = 2
+    TERMINAL_STATES = frozenset({
+        MissionStatus.COMPLETED,
+        MissionStatus.PARTIAL,
+        MissionStatus.FAILED,
+        MissionStatus.CANCELLED,
+    })
+    LEGAL_TRANSITIONS = {
+        MissionStatus.CREATED: frozenset({
+            MissionStatus.PLANNING, MissionStatus.FAILED, MissionStatus.CANCELLED,
+        }),
+        MissionStatus.PLANNING: frozenset({
+            MissionStatus.EXECUTING, MissionStatus.PAUSED,
+            MissionStatus.FAILED, MissionStatus.CANCELLED,
+        }),
+        MissionStatus.AWAITING_PERMISSION: frozenset({
+            MissionStatus.EXECUTING, MissionStatus.PAUSED,
+            MissionStatus.FAILED, MissionStatus.CANCELLED,
+        }),
+        MissionStatus.EXECUTING: frozenset({
+            MissionStatus.VERIFYING, MissionStatus.RECOVERING,
+            MissionStatus.REPLANNING, MissionStatus.PAUSED,
+            MissionStatus.FAILED, MissionStatus.CANCELLED,
+        }),
+        MissionStatus.VERIFYING: frozenset({
+            MissionStatus.EXECUTING, MissionStatus.RECOVERING,
+            MissionStatus.REPLANNING, MissionStatus.PAUSED,
+            MissionStatus.COMPLETED, MissionStatus.PARTIAL,
+            MissionStatus.FAILED, MissionStatus.CANCELLED,
+        }),
+        MissionStatus.RECOVERING: frozenset({
+            MissionStatus.EXECUTING, MissionStatus.REPLANNING,
+            MissionStatus.PAUSED, MissionStatus.FAILED, MissionStatus.CANCELLED,
+        }),
+        MissionStatus.REPLANNING: frozenset({
+            MissionStatus.EXECUTING, MissionStatus.PAUSED,
+            MissionStatus.FAILED, MissionStatus.CANCELLED,
+        }),
+        MissionStatus.PAUSED: frozenset({
+            MissionStatus.EXECUTING, MissionStatus.VERIFYING,
+            MissionStatus.RECOVERING, MissionStatus.REPLANNING,
+            MissionStatus.FAILED, MissionStatus.CANCELLED,
+        }),
+    }
 
     def __init__(self, core, store: MissionStore | None = None) -> None:
         self.core = core
@@ -88,10 +131,8 @@ class MissionOrchestrator:
         if not control:
             return False
         control.pause()
-        mission = self.store.get(target)
-        if mission and mission.status not in {MissionStatus.COMPLETED, MissionStatus.FAILED, MissionStatus.CANCELLED}:
-            mission.touch(MissionStatus.PAUSED)
-            self.store.save(mission)
+        # The worker that owns the current mission snapshot acknowledges PAUSED.
+        # Persisting a second snapshot here would race its optimistic revision.
         self.store.add_event(target, 'control.pause_requested')
         return True
 
@@ -119,12 +160,16 @@ class MissionOrchestrator:
         progress: Callable[[str], None],
         detail: str = '',
     ) -> None:
+        current = mission.status
+        if status != current and status not in self.LEGAL_TRANSITIONS.get(current, frozenset()):
+            raise RuntimeError(
+                f'Illegal mission transition: {current.value} -> {status.value}'
+            )
         mission.touch(status)
-        self.store.save(mission)
         payload = {'status': status.value}
         if detail:
             payload['detail'] = detail[:1000]
-        self.store.add_event(mission.id, 'mission.state', payload)
+        self.store.save_with_event(mission, 'mission.state', payload)
         log_event('MISSION', 'mission.state', mission_id=mission.id, status=status.value, detail=detail[:500])
         progress(status.value.replace('_', ' ') + (f': {detail}' if detail else ''))
 
@@ -136,6 +181,24 @@ class MissionOrchestrator:
         clear = getattr(getattr(self.core, 'tools', None), 'clear_events', None)
         if callable(clear):
             clear()
+
+    def _await_control(
+        self,
+        mission: Mission,
+        control: MissionControl,
+        resume_status: MissionStatus,
+        progress: Callable[[str], None],
+    ) -> bool:
+        """Acknowledge pause/resume on the worker-owned mission revision."""
+        if control.cancelled:
+            return False
+        if control.paused:
+            if mission.status != MissionStatus.PAUSED:
+                self._transition(mission, MissionStatus.PAUSED, progress)
+            if not control.wait_if_paused(progress):
+                return False
+            self._transition(mission, resume_status, progress, 'Resumed by operator')
+        return not control.cancelled
 
     @staticmethod
     def _failure_from_verification(verification: VerificationResult) -> Failure:
@@ -162,7 +225,9 @@ class MissionOrchestrator:
 
         attempt = 0
         while True:
-            if control.cancelled or not control.wait_if_paused(progress):
+            if not self._await_control(
+                mission, control, MissionStatus.EXECUTING, progress
+            ):
                 step.status = StepStatus.CANCELLED
                 step.completed_at = utc_now()
                 self.store.save(mission)
@@ -170,6 +235,13 @@ class MissionOrchestrator:
 
             attempt += 1
             step.attempts = attempt
+            if mission.status == MissionStatus.RECOVERING:
+                self._transition(
+                    mission,
+                    MissionStatus.EXECUTING,
+                    progress,
+                    f'Step {step.index} retry {attempt}',
+                )
             self._clear_tool_events()
             prompt = (
                 'JARVIS OMEGA V7 MISSION STEP\n'
@@ -185,6 +257,17 @@ class MissionOrchestrator:
                 events = self._collect_tool_events()
                 step.result = result
                 step.tool_events = events
+                if not self._await_control(
+                    mission, control, MissionStatus.EXECUTING, progress
+                ):
+                    step.status = StepStatus.CANCELLED
+                    step.completed_at = utc_now()
+                    self.store.save(mission)
+                    return False, Failure(
+                        ErrorCategory.UNKNOWN_ERROR,
+                        'Mission cancelled.',
+                        retryable=False,
+                    )
                 step.status = StepStatus.VERIFYING
                 self._transition(mission, MissionStatus.VERIFYING, progress, f'Step {step.index}')
                 verification = self.verifier.verify_step(result, events)
@@ -359,7 +442,7 @@ class MissionOrchestrator:
             lines.append(f'Blocker: {mission.last_error}')
         if verification and verification.unverified_actions:
             lines.append('Unverified external actions: ' + ', '.join(sorted(set(verification.unverified_actions))))
-        if mission.status == MissionStatus.COMPLETED and verification and not verification.verified:
+        if mission.status == MissionStatus.PARTIAL and verification and not verification.verified:
             lines.append('Important: JARVIS is not claiming full verified success for the unverified actions above.')
         return '\n'.join(lines)
 
@@ -374,19 +457,16 @@ class MissionOrchestrator:
         with self._lock:
             self._controls[mission.id] = control
             self.current_mission_id = mission.id
-        self.store.save(mission)
-        self.store.add_event(mission.id, 'mission.created', {'goal': goal[:2000]})
+        self.store.save_with_event(mission, 'mission.created', {'goal': goal[:2000]})
         log_event('MISSION', 'mission.created', mission_id=mission.id, goal=goal[:500])
 
         try:
-            self._transition(mission, MissionStatus.UNDERSTANDING, progress)
-            if control.cancelled:
-                self._transition(mission, MissionStatus.CANCELLED, progress)
-                mission.final_report = self._build_report(mission)
-                self.store.save(mission)
-                return mission
-
-            self._transition(mission, MissionStatus.PLANNING, progress)
+            self._transition(
+                mission,
+                MissionStatus.PLANNING,
+                progress,
+                'Understanding the goal and producing a bounded plan',
+            )
             descriptions = self.core.plan_mission(goal)
             if not descriptions:
                 mission.last_error = 'Planner returned no executable steps.'
@@ -459,7 +539,12 @@ class MissionOrchestrator:
                     self._transition(mission, MissionStatus.FAILED, progress, mission.last_error)
                 else:
                     mission.last_error = ''
-                    self._transition(mission, MissionStatus.COMPLETED, progress, mission.final_verification.summary)
+                    final_status = (
+                        MissionStatus.COMPLETED
+                        if mission.final_verification.verified
+                        else MissionStatus.PARTIAL
+                    )
+                    self._transition(mission, final_status, progress, mission.final_verification.summary)
 
             mission.final_report = self._build_report(mission)
             self.store.save(mission)

@@ -8,8 +8,28 @@ from pathlib import Path, PurePosixPath
 
 IMMUTABLE_SECURITY_PREFIXES = (
     'jarvis/security/',
-    'jarvis/self_development/policies.py',
-    'jarvis/self_development/rollback.py',
+    'jarvis/self_development/',
+    'jarvis/agent/event_safety.py',
+    'jarvis/agent/tool_runtime.py',
+    'jarvis/computer_use/browser_security.py',
+    'jarvis/coding_tools.py',
+    'jarvis/config.py',
+    'jarvis/contracts.py',
+    'jarvis/git_tools.py',
+    'jarvis/local_files.py',
+    'jarvis/permissions.py',
+    'jarvis/tools.py',
+    'jarvis/web_tools.py',
+    '.github/workflows/',
+    'tests/evaluation/test_security_adversarial.py',
+    'tests/test_v75_audit_integrity.py',
+    'tests/test_v75_browser_v2.py',
+    'tests/test_v75_readiness.py',
+    'tests/test_v75_release.py',
+    'tests/test_v75_self_coding.py',
+    'tests/test_v75_self_development.py',
+    'tests/test_v75_self_development_leases.py',
+    'tests/test_v7_security.py',
 )
 
 PROTECTED_PRODUCTION_PREFIXES = (

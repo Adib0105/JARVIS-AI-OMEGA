@@ -11,18 +11,28 @@ def utc_now() -> str:
 
 
 class MissionStatus(str, Enum):
-    IDLE = 'IDLE'
-    UNDERSTANDING = 'UNDERSTANDING'
+    CREATED = 'CREATED'
     PLANNING = 'PLANNING'
-    WAITING_FOR_PERMISSION = 'WAITING_FOR_PERMISSION'
+    AWAITING_PERMISSION = 'AWAITING_PERMISSION'
     EXECUTING = 'EXECUTING'
     VERIFYING = 'VERIFYING'
     RECOVERING = 'RECOVERING'
     REPLANNING = 'REPLANNING'
     PAUSED = 'PAUSED'
     COMPLETED = 'COMPLETED'
+    PARTIAL = 'PARTIAL'
     FAILED = 'FAILED'
     CANCELLED = 'CANCELLED'
+
+    @classmethod
+    def from_persisted(cls, value: str | None) -> 'MissionStatus':
+        """Load current states while safely migrating pre-V7.5 state names."""
+        legacy = {
+            'IDLE': cls.CREATED.value,
+            'UNDERSTANDING': cls.PLANNING.value,
+            'WAITING_FOR_PERMISSION': cls.AWAITING_PERMISSION.value,
+        }
+        return cls(legacy.get(str(value or ''), str(value or cls.CREATED.value)))
 
 
 class StepStatus(str, Enum):
@@ -66,7 +76,7 @@ class Mission:
     goal: str
     session_id: str
     id: str = field(default_factory=lambda: f'MSN-{uuid4().hex[:10].upper()}')
-    status: MissionStatus = MissionStatus.IDLE
+    status: MissionStatus = MissionStatus.CREATED
     created_at: str = field(default_factory=utc_now)
     updated_at: str = field(default_factory=utc_now)
     plan: list[MissionStep] = field(default_factory=list)
@@ -80,6 +90,7 @@ class Mission:
     final_verification: VerificationResult | None = None
     final_report: str = ''
     last_error: str = ''
+    revision: int = 0
 
     def touch(self, status: MissionStatus | None = None) -> None:
         if status is not None:
@@ -111,7 +122,7 @@ class Mission:
             id=data.get('id') or f'MSN-{uuid4().hex[:10].upper()}',
             goal=data.get('goal', ''),
             session_id=data.get('session_id', ''),
-            status=MissionStatus(data.get('status', MissionStatus.IDLE.value)),
+            status=MissionStatus.from_persisted(data.get('status')),
             created_at=data.get('created_at', utc_now()),
             updated_at=data.get('updated_at', utc_now()),
             plan=plan,
@@ -125,4 +136,5 @@ class Mission:
             final_verification=final_verification,
             final_report=data.get('final_report', ''),
             last_error=data.get('last_error', ''),
+            revision=max(0, int(data.get('revision', 0))),
         )

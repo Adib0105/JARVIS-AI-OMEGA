@@ -1,5 +1,7 @@
 # JARVIS AI OMEGA V7 / V7.5 — Repository Audit
 
+> **Historical document (pre-V7.5 baseline).** This Phase 0 snapshot describes an earlier `v7-development` state and must not be used as current capability or release evidence. See [V7.5-PRODUCTION-AUDIT-2026-08-28.md](V7.5-PRODUCTION-AUDIT-2026-08-28.md) and [capability-inventory.json](capability-inventory.json) for the current audited state.
+
 **Branch audited:** `v7-development`  
 **Audit phase:** Phase 0 — Full Repository Audit  
 **Purpose:** Establish the actual current state before any V7.5/self-development work begins.

@@ -57,8 +57,32 @@ def _unsafe_ip(value: str) -> bool:
     )
 
 
+def resolve_public_addresses(host: str, port: int) -> tuple[str, ...]:
+    """Resolve once and reject mixed/private DNS answers before any connection."""
+    try:
+        rows = socket.getaddrinfo(
+            host,
+            port,
+            type=socket.SOCK_STREAM,
+        )
+    except socket.gaierror as exc:
+        raise ValueError(f'hostname resolution failed: {exc}') from exc
+    addresses = tuple(sorted({str(row[4][0]).split('%', 1)[0] for row in rows}))
+    if not addresses:
+        raise ValueError('hostname did not resolve to an address')
+    unsafe = [address for address in addresses if _unsafe_ip(address)]
+    if unsafe:
+        raise ValueError('hostname resolves to a non-public address')
+    return addresses
+
+
 def assess_public_url(url: str, *, resolve_dns: bool = False) -> BrowserTrustResult:
-    parsed = urlparse(str(url).strip())
+    raw = str(url).strip()
+    if len(raw) > 8192 or any(char in raw for char in ('\r', '\n', '\x00')):
+        return BrowserTrustResult(
+            False, '', '', 'BLOCKED', ('URL is malformed or exceeds the safety limit.',)
+        )
+    parsed = urlparse(raw)
     host = (parsed.hostname or '').strip().lower().rstrip('.')
     reasons: list[str] = []
     if parsed.scheme not in {'http', 'https'} or not host:
@@ -76,15 +100,17 @@ def assess_public_url(url: str, *, resolve_dns: bool = False) -> BrowserTrustRes
     if _unsafe_ip(host):
         reasons.append('private/loopback/link-local/reserved IP is not allowed in public browser-read mode')
 
+    try:
+        port = parsed.port or (443 if parsed.scheme == 'https' else 80)
+    except ValueError:
+        reasons.append('URL port is invalid')
+        port = 0
+
     if resolve_dns and not reasons:
         try:
-            addresses = {row[4][0] for row in socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == 'https' else 80))}
-            unsafe = sorted(address for address in addresses if _unsafe_ip(address))
-            if unsafe:
-                reasons.append('hostname resolves to a non-public address')
-        except socket.gaierror:
-            # DNS failure is not converted to a trust grant; the later fetch will fail.
-            pass
+            resolve_public_addresses(host, port)
+        except ValueError as exc:
+            reasons.append(str(exc))
 
     if reasons:
         return BrowserTrustResult(False, host, parsed.scheme, 'BLOCKED', tuple(reasons))

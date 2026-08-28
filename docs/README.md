@@ -2,7 +2,7 @@
 
 This directory is the source of truth for the V7/V7.5 engineering track.
 
-> `main` is the stable V6 line. `v7-development` contains V7/V7.5 engineering work until workstation validation and final release.
+> `main` is the current V7.5 engineering line. The product remains BETA until the documented live Windows, provider and installer gates pass; `v7-development` is retained only for legacy/in-flight work.
 
 ## Start here
 
@@ -11,6 +11,8 @@ This directory is the source of truth for the V7/V7.5 engineering track.
 | Install and run V7.5 | [V7-SETUP.md](V7-SETUP.md) |
 | Understand the architecture | [V7-ARCHITECTURE.md](V7-ARCHITECTURE.md) |
 | See current implementation status | [V7.5-STATUS.md](V7.5-STATUS.md) |
+| Read the production audit and blockers | [V7.5-PRODUCTION-AUDIT-2026-08-28.md](V7.5-PRODUCTION-AUDIT-2026-08-28.md) |
+| Inspect machine-readable capabilities | [capability-inventory.json](capability-inventory.json) |
 | Run tests and quality gates | [V7-TESTING.md](V7-TESTING.md) |
 | Fix common Windows/runtime issues | [V7-TROUBLESHOOTING.md](V7-TROUBLESHOOTING.md) |
 | Understand security boundaries | [V7-SECURITY.md](V7-SECURITY.md) |
@@ -58,4 +60,4 @@ Production self-modification remains disabled by default.
 
 ## Legacy documentation
 
-[V6-USER-GUIDE.md](V6-USER-GUIDE.md) is retained for the stable V6 branch and historical behavior. For current development, prefer V7/V7.5 documents above.
+[V6-USER-GUIDE.md](V6-USER-GUIDE.md) is retained only for historical behavior. For current development, use the V7/V7.5 documents above.

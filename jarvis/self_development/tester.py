@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import os
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -42,10 +45,16 @@ class SelfDevelopmentTester:
 
     def _run(self, name: str, args: list[str], cwd: Path) -> CheckResult:
         started = time.perf_counter()
+        env = os.environ.copy()
+        cache_key = hashlib.sha256(str(cwd.resolve()).encode('utf-8')).hexdigest()[:16]
+        cache_root = Path(tempfile.gettempdir()) / 'jarvis-selfdev-pycache' / cache_key
+        cache_root.mkdir(parents=True, exist_ok=True)
+        env['PYTHONPYCACHEPREFIX'] = str(cache_root)
         try:
             proc = subprocess.run(
                 [sys.executable, *args],
                 cwd=str(cwd.resolve()),
+                env=env,
                 text=True,
                 capture_output=True,
                 timeout=self.timeout,

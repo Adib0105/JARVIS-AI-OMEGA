@@ -47,8 +47,10 @@ OBSERVE
 Normal self-development automation cannot modify:
 
 - `jarvis/security/`
-- `jarvis/self_development/policies.py`
-- `jarvis/self_development/rollback.py`
+- the complete `jarvis/self_development/` control plane
+- browser/tool/file/Git/config/runtime trust boundaries
+- release-critical security/self-development tests
+- `.github/workflows/`
 - `.env` and secret files
 - `.git/`
 - runtime `data/`
@@ -85,10 +87,14 @@ The controlled release engine additionally requires:
 4. clean production worktree,
 5. unchanged expected production HEAD,
 6. fresh sandbox regression pass,
-7. current diff still equal to approved/reviewed files,
-8. immutable-core policy pass,
-9. fast-forward-only deployment,
-10. post-release full regression pass.
+7. all changed/untracked files are regular UTF-8 text within the size limit (no symlinks, path escapes, binary payloads or NUL bytes),
+8. current paths, modes, deletions and exact bytes match the SHA-256 fingerprint approved at review time,
+9. immutable-core policy pass,
+10. the fingerprint is rechecked after staging and immediately before commit,
+11. fast-forward-only deployment,
+12. post-release full regression pass.
+
+Untracked files are included in line/file counts and review diffs. Child compilation/tests put bytecode caches outside the worktree so review evidence is not contaminated by generated `.pyc` files.
 
 Rollback uses `git revert`, not destructive `reset --hard`, so history remains auditable.
 

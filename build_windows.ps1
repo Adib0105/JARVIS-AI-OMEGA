@@ -11,7 +11,14 @@ if (-not (Test-Path $Python)) {
     $Python = (Get-Command python -ErrorAction Stop).Source
 }
 
-Write-Host 'JARVIS AI OMEGA V7 // Windows Build' -ForegroundColor Cyan
+$Version = (& $Python -c "from jarvis.version import APP_VERSION; print(APP_VERSION)").Trim()
+$ProductName = (& $Python -c "from jarvis.version import PRODUCT_DISPLAY_NAME; print(PRODUCT_DISPLAY_NAME)").Trim()
+$ArtifactName = (& $Python -c "from jarvis.version import WINDOWS_ARTIFACT_BASENAME; print(WINDOWS_ARTIFACT_BASENAME)").Trim()
+if (-not $Version -or -not $ProductName -or -not $ArtifactName) {
+    throw 'Unable to load canonical version metadata from jarvis/version.py.'
+}
+
+Write-Host "$ProductName $Version // Windows Build" -ForegroundColor Cyan
 Write-Host "Python: $Python"
 
 & $Python -c "import PyInstaller" 2>$null
@@ -27,13 +34,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Regression tests failed; build stopped.' }
 
 if ($Clean) {
     Remove-Item -Recurse -Force (Join-Path $Root 'build') -ErrorAction SilentlyContinue
-    Remove-Item -Recurse -Force (Join-Path $Root 'dist\JARVIS-OMEGA-V7') -ErrorAction SilentlyContinue
+    Remove-Item -Recurse -Force (Join-Path $Root "dist\$ArtifactName") -ErrorAction SilentlyContinue
 }
 
 $Args = @(
     '-m', 'PyInstaller',
     '--noconfirm', '--clean', '--windowed',
-    '--name', 'JARVIS-OMEGA-V7',
+    '--name', $ArtifactName,
     '--collect-submodules', 'jarvis',
     '--collect-submodules', 'edge_tts',
     '--collect-submodules', 'speech_recognition',
@@ -42,8 +49,8 @@ $Args = @(
 & $Python @Args
 if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed.' }
 
-$Dist = Join-Path $Root 'dist\JARVIS-OMEGA-V7'
-$Exe = Join-Path $Dist 'JARVIS-OMEGA-V7.exe'
+$Dist = Join-Path $Root "dist\$ArtifactName"
+$Exe = Join-Path $Dist "$ArtifactName.exe"
 if (-not (Test-Path $Exe)) { throw "Expected executable was not created: $Exe" }
 
 # Public documentation/config template only. Never copy the operator's .env,

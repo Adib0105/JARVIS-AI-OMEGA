@@ -1,7 +1,7 @@
 # JARVIS AI OMEGA V7 / V7.5 — Architecture
 
-**Development branch:** `v7-development`  
-**Stable baseline:** V6 on `main`
+**Current engineering line:** V7.5 on `main`
+**Release classification:** BETA until live Windows and installer gates pass
 
 ## Design goal
 
@@ -38,7 +38,8 @@ A successful tool call is not automatically a verified successful outcome.
                                ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    MISSION ORCHESTRATOR                     │
-│ UNDERSTAND → PLAN → EXECUTE → VERIFY → RECOVER / REPLAN   │
+│ CREATED → PLANNING → EXECUTING → VERIFYING                │
+│ → RECOVERING / REPLANNING → terminal outcome              │
 └──────────────────────────────┬──────────────────────────────┘
                                │
                                ▼

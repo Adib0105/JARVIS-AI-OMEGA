@@ -23,12 +23,13 @@
 JARVIS AI OMEGA V7.5 is a Windows-first multimodal desktop AI agent designed around a strict runtime loop:
 
 ```text
-UNDERSTAND → PLAN → PERMISSION → EXECUTE → VERIFY → RECOVER / REPLAN
+CREATED → PLANNING → AWAITING_PERMISSION → EXECUTING → VERIFYING
+→ RECOVERING / REPLANNING → COMPLETED / PARTIAL / FAILED / CANCELLED
 ```
 
 It combines typed chat, voice, screen/image vision, local documents, memory/RAG, browser research, Windows computer use, coding/Git tools, productivity workflows, observability, evaluation and controlled self-development.
 
-> **Current branch strategy:** `main` now contains the promoted V7/V7.5 codebase. `v7-development` is retained as the engineering branch for future experimental work before promotion back into `main`.
+> **Current branch strategy:** `main` contains the V7.5 engineering line. Changes are developed on short-lived review branches and merged through pull requests; `v7-development` is retained only for legacy/in-flight work. The Windows desktop release remains **BETA** until the live workstation and installer gates in the release guide pass.
 
 ## Quick navigation
 
@@ -60,9 +61,10 @@ Capability truth is reported as:
 AVAILABLE | EXPERIMENTAL | DEGRADED | DISABLED | MISSING | BROKEN
 ```
 
-Action outcomes can be:
+Tool execution and verification outcomes are deliberately separate:
 
 ```text
+SUCCESS | PARTIAL | FAILED | DENIED | TIMEOUT | CANCELLED | UNVERIFIED
 VERIFIED | PARTIAL | FAILED | UNVERIFIED
 ```
 
@@ -175,9 +177,10 @@ Provider-Neutral AI + Model Router
       │
       ▼
 Mission Orchestrator
-UNDERSTAND → PLAN → PERMISSION → EXECUTE → VERIFY
-                             │             │
-                             │             └→ RECOVER / REPLAN
+CREATED → PLANNING → AWAITING_PERMISSION → EXECUTING → VERIFYING
+                                           │             │
+                                           │             └→ RECOVERING / REPLANNING
+                                           └→ COMPLETED / PARTIAL / FAILED / CANCELLED
                              ▼
 Capability Security Gate + Audit Integrity
       │
@@ -208,33 +211,33 @@ Detailed architecture: [docs/V7-ARCHITECTURE.md](docs/V7-ARCHITECTURE.md)
 
 | System | Status |
 |---|---|
-| Provider abstraction / model router | ✅ Implemented / CI verified |
-| Provider circuit breaker | ✅ Implemented / CI verified |
-| Mission state / recovery / verification | ✅ Implemented / CI verified |
-| Mission event privacy | ✅ Implemented / CI verified |
-| Layered memory / context | ✅ Implemented / CI verified |
-| Memory lifecycle V2 | ✅ Implemented / CI verified |
-| Capability security / audit | ✅ Implemented / CI verified |
-| Audit integrity chain | ✅ Implemented / CI verified |
-| Capability Registry | ✅ Implemented / CI verified |
-| Self Evaluation / Gap Detection | ✅ Implemented / CI verified |
-| Evaluation benchmarks | ✅ Implemented / CI verified |
-| Computer Use V2 UIA | ✅ Implemented / CI verified |
-| OCR fallback | ✅ Implemented / CI verified |
-| Browser V2 security | ✅ Implemented / CI verified |
-| Document provenance / dedupe | ✅ Implemented / CI verified |
-| Observability / health / cost | ✅ Implemented / CI verified |
-| Release Readiness Certifier | ✅ Implemented / CI verified |
-| Backup / restore | ✅ Implemented / CI verified |
-| Voice media controls | ✅ Implemented / CI verified |
+| Provider abstraction / model router | ✅ Implemented / deterministic tests |
+| Provider circuit breaker | ✅ Implemented / deterministic tests |
+| Mission state / recovery / verification | ✅ Implemented / deterministic tests |
+| Mission event privacy | ✅ Implemented / deterministic tests |
+| Layered memory / context | ✅ Implemented / deterministic tests |
+| Memory lifecycle V2 | ✅ Implemented / deterministic tests |
+| Capability security / audit | ✅ Implemented / deterministic tests |
+| Audit integrity chain | ✅ Implemented / deterministic tests |
+| Capability Registry | ✅ Implemented / deterministic tests |
+| Self Evaluation / Gap Detection | ✅ Implemented / deterministic tests |
+| Evaluation benchmarks | ✅ Implemented / deterministic tests |
+| Computer Use V2 UIA | ✅ Implemented / deterministic tests; Windows smoke pending |
+| OCR fallback | 🧪 Deterministic tests; real-screen smoke pending |
+| Browser V2 security | ✅ Implemented / deterministic tests |
+| Document provenance / dedupe | ✅ Implemented / deterministic tests |
+| Observability / health / cost | ✅ Implemented / deterministic tests |
+| Release Readiness Certifier | ✅ Implemented / deterministic tests |
+| Backup / restore | ✅ Implemented / deterministic tests |
+| Voice media controls | ✅ Implemented / deterministic tests; hardware smoke pending |
 | Agent Command Center | ✅ Integrated |
 | Self Development / Coding / Debugging | 🧪 Experimental / tested |
 | Offline development | 🧪 Optional / experimental |
 | Skill build / activation | 🧪 Experimental / tested |
 | Controlled release / rollback | 🧪 Experimental / tested |
-| Windows V7 PyInstaller build | ✅ CI package smoke |
+| Windows V7.5 PyInstaller build | ✅ PR CI run 642 built and passed secret-exclusion smoke |
 | Inno Setup installer | 🖥️ Local workstation validation required |
-| V7/V7.5 promotion to `main` | ✅ Completed |
+| V7.5 production release | 🟡 BETA; live Windows/install/provider gates pending |
 
 Full status: [docs/V7.5-STATUS.md](docs/V7.5-STATUS.md)
 
@@ -439,6 +442,8 @@ CI covers:
 - full unit / integration / security / evaluation discovery
 - compile validation
 - ResourceWarning failures
+- critical correctness lint and high-severity static security scan
+- pinned dependency vulnerability audit
 - Windows PyInstaller package smoke
 - package checks preventing `.env`, live SQLite data and Google OAuth private files from being bundled
 
@@ -471,7 +476,7 @@ Build application:
 Expected output:
 
 ```text
-dist/JARVIS-OMEGA-V7/JARVIS-OMEGA-V7.exe
+dist/JARVIS-OMEGA-V7.5/JARVIS-OMEGA-V7.5.exe
 ```
 
 Build the installer after installing Inno Setup 6:

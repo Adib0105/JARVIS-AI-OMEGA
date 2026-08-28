@@ -2,6 +2,26 @@
 
 All notable engineering changes to JARVIS AI OMEGA are documented here.
 
+## 7.5.0 production-hardening candidate — unreleased
+
+### Fixed
+
+- Fixed deferred Tk worker error callbacks that could reference Python's cleared exception variable and fail before showing the real error.
+- Replaced false mission completion for partially verified outcomes with a terminal `PARTIAL` state and excluded partial/cancelled outcomes from success metrics.
+- Added legal mission transitions, atomic state/event persistence and optimistic concurrency revisions to prevent stale processes overwriting newer mission state.
+- Closed Browser V2 DNS/redirect SSRF gaps with public DNS validation on every hop, validated-address connection pinning, bounded content handling and active-HTML stripping.
+- Closed self-development review/commit gaps for untracked files, symlinks, binary/oversized content and same-file-set time-of-check/time-of-use mutation.
+- Replaced the updater's generic URL opener with a fixed HTTPS GitHub API connection and canonical release-link validation.
+
+### Hardened / normalized
+
+- Protected the complete self-development control plane, adjacent runtime trust boundaries, release-critical tests and CI workflows from automated self-modification.
+- Added canonical tool outcomes and machine-readable security contracts for every exposed tool.
+- Added a committed capability inventory with implementation, entry point, dependency, permission, risk, evidence and limitation fields.
+- Centralized version/product/artifact names at `7.5.0`, moved builds/installers to V7.5 naming and removed the stale V7 installer definition.
+- Added bounded direct requirements, exact constraints, pinned audit tooling and CI gates for correctness lint, high-severity static security findings and dependency vulnerabilities.
+- Reconciled branch, release and historical-document claims. PR CI run 642 passed Linux/Windows/security/dependency/package gates; the candidate remains BETA pending real Windows/provider/hardware/installer evidence and branch protection.
+
 ## V7 / V7.5 engineering track — unreleased
 
 ### Reliability and architecture

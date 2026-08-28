@@ -22,6 +22,8 @@ Typical capabilities include:
 
 Unknown/unprofiled tools are denied by default.
 
+`ToolRegistry.security_contracts()` exposes one machine-readable contract for every registered tool. Each contract includes strict allowed inputs, capability ID, risk level, required permissions, allowed resources, side effects, approval requirement, verification requirement and audit requirement. Tests fail if an exposed tool lacks this metadata.
+
 ## Trusted Local Mode
 
 `TRUSTED_LOCAL_MODE=true` removes repetitive approval popups for ordinary LOW/MEDIUM allowlisted local actions such as opening an allowlisted app, browser search, approved file/document reads, code-tree inspection, tests and Git read operations.
@@ -47,6 +49,12 @@ It does **not** turn JARVIS into unrestricted local execution. High-risk keyboar
 
 V7 audit stores security-relevant metadata, hashes and redacted summaries rather than raw secrets/tool argument payloads. Observability is a separate higher-level telemetry layer and likewise must not store prompts, passwords, API keys or OAuth tokens.
 
-## Tool result verification
+## Tool result and verification states
 
-A successful tool return is not automatically proof of the real-world side effect. Mission/computer-use verification can classify evidence as VERIFIED, PARTIAL, FAILED or UNVERIFIED depending on what can independently be observed.
+A tool execution is recorded as:
+
+```text
+SUCCESS | PARTIAL | FAILED | DENIED | TIMEOUT | CANCELLED | UNVERIFIED
+```
+
+A successful execution is not automatically proof of the real-world side effect. Mission/computer-use verification separately classifies evidence as `VERIFIED`, `PARTIAL`, `FAILED` or `UNVERIFIED` depending on what can independently be observed.

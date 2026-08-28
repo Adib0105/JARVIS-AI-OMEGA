@@ -1,0 +1,858 @@
+{
+  "application_version": "7.5.0",
+  "capabilities": [
+    {
+      "dependencies": [
+        "sqlite3"
+      ],
+      "description": "Consistent SQLite backups, hash manifests, export/import, pre-restore checkpoints and integrity verification.",
+      "detail": "restore/import remain explicitly confirmed destructive transitions",
+      "entry_points": [
+        "jarvis/storage/backup.py"
+      ],
+      "evidence": [
+        "tests/test_v75_backup.py"
+      ],
+      "implementation_path": "jarvis/storage/backup.py",
+      "known_limitations": [
+        "restore/import remain explicitly confirmed destructive transitions"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571300+00:00",
+      "name": "Backup / Restore",
+      "permissions": [
+        "MEMORY_WRITE"
+      ],
+      "risk": "HIGH",
+      "risk_level": "HIGH",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_backup.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "webbrowser",
+        "DDGS for public reads/search"
+      ],
+      "description": "Browser navigation/read/search with public-address checks, prompt-injection scanning and untrusted-content handling.",
+      "detail": "",
+      "entry_points": [
+        "jarvis/computer_use/browser.py",
+        "jarvis/computer_use/browser_security.py",
+        "jarvis/automation.py"
+      ],
+      "evidence": [
+        "tests/test_v7_computer_use.py",
+        "tests/test_v75_browser_v2.py",
+        "tests/evaluation/test_security_adversarial.py"
+      ],
+      "implementation_path": "jarvis/computer_use/browser.py; jarvis/computer_use/browser_security.py; jarvis/automation.py",
+      "known_limitations": [],
+      "last_verified": "2026-08-28T07:31:36.570930+00:00",
+      "name": "Browser",
+      "permissions": [
+        "BROWSER_READ",
+        "BROWSER_CONTROL"
+      ],
+      "risk": "MEDIUM",
+      "risk_level": "MEDIUM",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v7_computer_use.py",
+        "tests/test_v75_browser_v2.py",
+        "tests/evaluation/test_security_adversarial.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [],
+      "description": "Runtime-derived inventory of actual JARVIS capabilities and status.",
+      "detail": "",
+      "entry_points": [
+        "jarvis/capability_registry.py"
+      ],
+      "evidence": [
+        "tests/test_v75_capability_registry.py"
+      ],
+      "implementation_path": "jarvis/capability_registry.py",
+      "known_limitations": [],
+      "last_verified": "2026-08-28T07:31:36.571238+00:00",
+      "name": "Capability Registry",
+      "permissions": [],
+      "risk": "LOW",
+      "risk_level": "LOW",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_capability_registry.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "openai-compatible SDK"
+      ],
+      "description": "Provider-neutral conversational reasoning and tool calling.",
+      "detail": "no configured hosted API key or local fallback model",
+      "entry_points": [
+        "jarvis/core_v7.py",
+        "jarvis/providers/"
+      ],
+      "evidence": [
+        "tests/test_v7_foundation.py",
+        "tests/test_runtime_guard.py"
+      ],
+      "implementation_path": "jarvis/core_v7.py; jarvis/providers/",
+      "known_limitations": [
+        "no configured hosted API key or local fallback model"
+      ],
+      "last_verified": "2026-08-28T07:31:36.570721+00:00",
+      "name": "Chat",
+      "permissions": [
+        "WEB_READ"
+      ],
+      "risk": "LOW",
+      "risk_level": "LOW",
+      "status": "DEGRADED",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v7_foundation.py",
+        "tests/test_runtime_guard.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "git executable for Git operations"
+      ],
+      "description": "Approved project inspection, safe editing, tests, Git diagnostics and bounded coding-agent workflows.",
+      "detail": "",
+      "entry_points": [
+        "jarvis/coding_tools.py",
+        "jarvis/git_tools.py",
+        "jarvis/coding_agent.py"
+      ],
+      "evidence": [
+        "tests/test_v6_coding.py",
+        "tests/test_v6_git_tools.py",
+        "tests/test_v75_coding_agent.py"
+      ],
+      "implementation_path": "jarvis/coding_tools.py; jarvis/git_tools.py; jarvis/coding_agent.py",
+      "known_limitations": [],
+      "last_verified": "2026-08-28T07:31:36.570937+00:00",
+      "name": "Coding",
+      "permissions": [
+        "CODE_READ",
+        "CODE_WRITE",
+        "CODE_TEST",
+        "GIT_READ"
+      ],
+      "risk": "HIGH",
+      "risk_level": "HIGH",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v6_coding.py",
+        "tests/test_v6_git_tools.py",
+        "tests/test_v75_coding_agent.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "pywinauto (semantic UIA)",
+        "pyautogui (actions)",
+        "optional pytesseract/Tesseract OCR"
+      ],
+      "description": "UIA-first semantic targeting with stricter OCR fallback, no-guess policy and post-action evidence.",
+      "detail": "Windows UIA/action execution needs Windows; semantic/OCR logic remains testable",
+      "entry_points": [
+        "jarvis/computer_use/"
+      ],
+      "evidence": [
+        "tests/test_v7_computer_use.py",
+        "tests/test_v75_computer_use_integration.py",
+        "tests/test_v75_visual_fallback.py"
+      ],
+      "implementation_path": "jarvis/computer_use/",
+      "known_limitations": [
+        "Windows UIA/action execution needs Windows; semantic/OCR logic remains testable"
+      ],
+      "last_verified": "2026-08-28T07:31:36.570921+00:00",
+      "name": "Computer Use",
+      "permissions": [
+        "APP_CONTROL",
+        "SCREEN_CONTROL",
+        "KEYBOARD_CONTROL",
+        "MOUSE_CONTROL"
+      ],
+      "risk": "HIGH",
+      "risk_level": "HIGH",
+      "status": "DEGRADED",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v7_computer_use.py",
+        "tests/test_v75_computer_use_integration.py",
+        "tests/test_v75_visual_fallback.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "Git",
+        "Self Development",
+        "regression suite"
+      ],
+      "description": "APPROVED-only, clean-HEAD, fast-forward production deployment with pre/post regression gates.",
+      "detail": "release engine is implemented/tested; PRODUCTION_SELF_MODIFICATION is OFF by default",
+      "entry_points": [
+        "jarvis/self_development/release.py",
+        "jarvis/ui_release_extension.py"
+      ],
+      "evidence": [
+        "tests/test_v75_release.py"
+      ],
+      "implementation_path": "jarvis/self_development/release.py; jarvis/ui_release_extension.py",
+      "known_limitations": [
+        "release engine is implemented/tested; PRODUCTION_SELF_MODIFICATION is OFF by default"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571400+00:00",
+      "name": "Controlled Release",
+      "permissions": [
+        "CODE_WRITE"
+      ],
+      "risk": "CRITICAL",
+      "risk_level": "CRITICAL",
+      "status": "EXPERIMENTAL",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_release.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "pypdf",
+        "python-docx",
+        "openpyxl"
+      ],
+      "description": "PDF, DOCX, XLSX/XLSM, CSV, TXT/Markdown extraction plus hash-based dedupe/provenance indexing.",
+      "detail": "full advertised document set requires all document dependencies",
+      "entry_points": [
+        "jarvis/documents.py",
+        "jarvis/memory_v7.py"
+      ],
+      "evidence": [
+        "tests/test_v6_documents.py",
+        "tests/test_v7_memory.py"
+      ],
+      "implementation_path": "jarvis/documents.py; jarvis/memory_v7.py",
+      "known_limitations": [
+        "full advertised document set requires all document dependencies"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571070+00:00",
+      "name": "Documents",
+      "permissions": [
+        "DOCUMENT_READ",
+        "FILE_READ"
+      ],
+      "risk": "MEDIUM",
+      "risk_level": "MEDIUM",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v6_documents.py",
+        "tests/test_v7_memory.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "sqlite3"
+      ],
+      "description": "Stores deterministic before/after task, tool, verification, recovery, safety, memory, computer-use and browser metrics.",
+      "detail": "",
+      "entry_points": [
+        "jarvis/evaluation/benchmark.py"
+      ],
+      "evidence": [
+        "tests/evaluation/test_self_improvement_benchmark.py"
+      ],
+      "implementation_path": "jarvis/evaluation/benchmark.py",
+      "known_limitations": [],
+      "last_verified": "2026-08-28T07:31:36.571277+00:00",
+      "name": "Evaluation Benchmarks",
+      "permissions": [],
+      "risk": "LOW",
+      "risk_level": "LOW",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/evaluation/test_self_improvement_benchmark.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "Self Evaluation",
+        "Capability Registry"
+      ],
+      "description": "Detects missing/degraded capabilities and repeated evidence-backed failures.",
+      "detail": "",
+      "entry_points": [
+        "jarvis/evaluation/gaps.py"
+      ],
+      "evidence": [
+        "tests/test_v75_gap_detector.py"
+      ],
+      "implementation_path": "jarvis/evaluation/gaps.py",
+      "known_limitations": [],
+      "last_verified": "2026-08-28T07:31:36.571250+00:00",
+      "name": "Gap Detection",
+      "permissions": [],
+      "risk": "LOW",
+      "risk_level": "LOW",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_gap_detector.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "Google OAuth client",
+        "google-api-python-client"
+      ],
+      "description": "Optional Gmail and Google Calendar integration through OAuth.",
+      "detail": "Google Workspace integration disabled by configuration",
+      "entry_points": [
+        "jarvis/google_workspace.py"
+      ],
+      "evidence": [
+        "tests/test_v6_google.py"
+      ],
+      "implementation_path": "jarvis/google_workspace.py",
+      "known_limitations": [
+        "Google Workspace integration disabled by configuration"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571226+00:00",
+      "name": "Google Workspace",
+      "permissions": [
+        "EMAIL_READ",
+        "EMAIL_SEND",
+        "CALENDAR_READ",
+        "CALENDAR_WRITE"
+      ],
+      "risk": "HIGH",
+      "risk_level": "HIGH",
+      "status": "DISABLED",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v6_google.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "psutil",
+        "Capability Registry"
+      ],
+      "description": "Runtime health checks for database, capabilities and local system dependencies.",
+      "detail": "",
+      "entry_points": [
+        "jarvis/observability/health.py"
+      ],
+      "evidence": [
+        "tests/test_v75_observability.py"
+      ],
+      "implementation_path": "jarvis/observability/health.py",
+      "known_limitations": [],
+      "last_verified": "2026-08-28T07:31:36.571291+00:00",
+      "name": "Health System",
+      "permissions": [],
+      "risk": "LOW",
+      "risk_level": "LOW",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_observability.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "local OpenAI-compatible server",
+        "configured local model"
+      ],
+      "description": "Provider-neutral local OpenAI-compatible fallback and optional offline-development reasoning.",
+      "detail": "adapter exists but no local model is configured",
+      "entry_points": [
+        "jarvis/providers/local_provider.py",
+        "jarvis/self_development/offline.py"
+      ],
+      "evidence": [
+        "tests/test_v7_foundation.py",
+        "tests/test_v75_offline.py"
+      ],
+      "implementation_path": "jarvis/providers/local_provider.py; jarvis/self_development/offline.py",
+      "known_limitations": [
+        "adapter exists but no local model is configured"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571232+00:00",
+      "name": "Local AI",
+      "permissions": [],
+      "risk": "MEDIUM",
+      "risk_level": "MEDIUM",
+      "status": "MISSING",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v7_foundation.py",
+        "tests/test_v75_offline.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "sqlite3"
+      ],
+      "description": "Working, episodic, semantic and procedural memory with hybrid retrieval.",
+      "detail": "",
+      "entry_points": [
+        "jarvis/memory.py",
+        "jarvis/memory_v7.py",
+        "jarvis/retrieval.py"
+      ],
+      "evidence": [
+        "tests/test_memory.py",
+        "tests/test_v7_memory.py"
+      ],
+      "implementation_path": "jarvis/memory.py; jarvis/memory_v7.py; jarvis/retrieval.py",
+      "known_limitations": [],
+      "last_verified": "2026-08-28T07:31:36.570736+00:00",
+      "name": "Memory",
+      "permissions": [
+        "MEMORY_READ",
+        "MEMORY_WRITE"
+      ],
+      "risk": "MEDIUM",
+      "risk_level": "MEDIUM",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_memory.py",
+        "tests/test_v7_memory.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "sqlite3",
+        "V7 layered memory"
+      ],
+      "description": "Reinforcement, contradiction detection, superseding and stale-confidence decay.",
+      "detail": "additive status lifecycle preserves existing V7 memory data",
+      "entry_points": [
+        "jarvis/memory_lifecycle.py"
+      ],
+      "evidence": [
+        "tests/test_v75_memory_lifecycle.py"
+      ],
+      "implementation_path": "jarvis/memory_lifecycle.py",
+      "known_limitations": [
+        "additive status lifecycle preserves existing V7 memory data"
+      ],
+      "last_verified": "2026-08-28T07:31:36.570762+00:00",
+      "name": "Memory Lifecycle",
+      "permissions": [
+        "MEMORY_READ",
+        "MEMORY_WRITE"
+      ],
+      "risk": "MEDIUM",
+      "risk_level": "MEDIUM",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_memory_lifecycle.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "sounddevice",
+        "SpeechRecognition",
+        "working microphone device"
+      ],
+      "description": "Push-to-talk and optional wake-word speech input.",
+      "detail": "physical microphone availability is verified only when recording is attempted",
+      "entry_points": [
+        "jarvis/microphone.py"
+      ],
+      "evidence": [],
+      "implementation_path": "jarvis/microphone.py",
+      "known_limitations": [
+        "physical microphone availability is verified only when recording is attempted"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571215+00:00",
+      "name": "Microphone",
+      "permissions": [],
+      "risk": "MEDIUM",
+      "risk_level": "MEDIUM",
+      "status": "DEGRADED",
+      "success_rate": null,
+      "tests": [],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "sqlite3"
+      ],
+      "description": "Persisted mission orchestration with verification, retry, recovery and replanning.",
+      "detail": "",
+      "entry_points": [
+        "jarvis/agent/"
+      ],
+      "evidence": [
+        "tests/test_v7_missions.py"
+      ],
+      "implementation_path": "jarvis/agent/",
+      "known_limitations": [],
+      "last_verified": "2026-08-28T07:31:36.570768+00:00",
+      "name": "Missions",
+      "permissions": [
+        "capability-dependent"
+      ],
+      "risk": "MEDIUM",
+      "risk_level": "MEDIUM",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v7_missions.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "sqlite3",
+        "psutil"
+      ],
+      "description": "Structured model/mission/system telemetry, latency/fallback counters and provider-reported-only cost tracking.",
+      "detail": "cost is N/A when the provider does not explicitly report it",
+      "entry_points": [
+        "jarvis/observability/manager.py"
+      ],
+      "evidence": [
+        "tests/test_v75_observability.py"
+      ],
+      "implementation_path": "jarvis/observability/manager.py",
+      "known_limitations": [
+        "cost is N/A when the provider does not explicitly report it"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571284+00:00",
+      "name": "Observability",
+      "permissions": [],
+      "risk": "LOW",
+      "risk_level": "LOW",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_observability.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "Git",
+        "Controlled Release"
+      ],
+      "description": "Known-good checkpoints plus history-preserving Git revert and regression verification.",
+      "detail": "controlled rollback is implemented/tested; automatic rollback is configuration-gated",
+      "entry_points": [
+        "jarvis/self_development/rollback.py",
+        "jarvis/self_development/release.py"
+      ],
+      "evidence": [
+        "tests/test_v75_self_development.py",
+        "tests/test_v75_release.py"
+      ],
+      "implementation_path": "jarvis/self_development/rollback.py; jarvis/self_development/release.py",
+      "known_limitations": [
+        "controlled rollback is implemented/tested; automatic rollback is configuration-gated"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571406+00:00",
+      "name": "Rollback",
+      "permissions": [
+        "CODE_WRITE"
+      ],
+      "risk": "CRITICAL",
+      "risk_level": "CRITICAL",
+      "status": "EXPERIMENTAL",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_self_development.py",
+        "tests/test_v75_release.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "Self Development",
+        "reasoning provider",
+        "Git"
+      ],
+      "description": "Bounded JSON-only code generation and repair inside an isolated Git worktree.",
+      "detail": "sandbox generation/repair is tested; production modification is not automatic",
+      "entry_points": [
+        "jarvis/self_development/coding.py"
+      ],
+      "evidence": [
+        "tests/test_v75_self_coding.py"
+      ],
+      "implementation_path": "jarvis/self_development/coding.py",
+      "known_limitations": [
+        "sandbox generation/repair is tested; production modification is not automatic"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571364+00:00",
+      "name": "Self Coding",
+      "permissions": [
+        "CODE_WRITE"
+      ],
+      "risk": "CRITICAL",
+      "risk_level": "CRITICAL",
+      "status": "EXPERIMENTAL",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_self_coding.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "Self Coding",
+        "regression tester"
+      ],
+      "description": "Bounded failure classification and limited repair loop for sandbox-generated changes.",
+      "detail": "max repair attempts=3",
+      "entry_points": [
+        "jarvis/self_development/debugger.py"
+      ],
+      "evidence": [
+        "tests/test_v75_self_coding.py"
+      ],
+      "implementation_path": "jarvis/self_development/debugger.py",
+      "known_limitations": [
+        "max repair attempts=3"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571382+00:00",
+      "name": "Self Debugging",
+      "permissions": [
+        "CODE_WRITE"
+      ],
+      "risk": "HIGH",
+      "risk_level": "HIGH",
+      "status": "EXPERIMENTAL",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_self_coding.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "Git",
+        "sandbox",
+        "Self Evaluation",
+        "rollback checkpointing"
+      ],
+      "description": "Controlled sandboxed improvement discovery/build/test/evaluate/diff/approval pipeline.",
+      "detail": "sandbox proposal/build/test/evaluate/diff/approval pipeline is integrated; production release remains locked by default",
+      "entry_points": [
+        "jarvis/self_development/"
+      ],
+      "evidence": [
+        "tests/test_v75_self_development.py"
+      ],
+      "implementation_path": "jarvis/self_development/",
+      "known_limitations": [
+        "sandbox proposal/build/test/evaluate/diff/approval pipeline is integrated; production release remains locked by default"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571346+00:00",
+      "name": "Self Development",
+      "permissions": [
+        "CODE_WRITE"
+      ],
+      "risk": "CRITICAL",
+      "risk_level": "CRITICAL",
+      "status": "EXPERIMENTAL",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_self_development.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "sqlite3",
+        "mission history",
+        "audit evidence"
+      ],
+      "description": "Evidence-based mission/tool/verification/recovery performance measurement with history.",
+      "detail": "unsupported metrics remain N/A rather than fabricated percentages",
+      "entry_points": [
+        "jarvis/evaluation/engine.py"
+      ],
+      "evidence": [
+        "tests/test_v75_evaluation.py"
+      ],
+      "implementation_path": "jarvis/evaluation/engine.py",
+      "known_limitations": [
+        "unsupported metrics remain N/A rather than fabricated percentages"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571245+00:00",
+      "name": "Self Evaluation",
+      "permissions": [],
+      "risk": "LOW",
+      "risk_level": "LOW",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_evaluation.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "Self Development",
+        "controlled release",
+        "Git"
+      ],
+      "description": "Gap-to-skill manifest, isolated build/test pipeline and activation only after verified deployment/evaluation.",
+      "detail": "build/activation gates are implemented; generated skills remain inactive until operator-approved deployment and evaluation pass",
+      "entry_points": [
+        "jarvis/skills/",
+        "jarvis/skill_runtime_extension.py",
+        "jarvis/ui_skill_extension.py"
+      ],
+      "evidence": [
+        "tests/test_v75_skills.py",
+        "tests/test_v75_skill_activation.py",
+        "tests/test_v75_skill_runtime_extension.py"
+      ],
+      "implementation_path": "jarvis/skills/; jarvis/skill_runtime_extension.py; jarvis/ui_skill_extension.py",
+      "known_limitations": [
+        "build/activation gates are implemented; generated skills remain inactive until operator-approved deployment and evaluation pass"
+      ],
+      "last_verified": "2026-08-28T07:31:36.571339+00:00",
+      "name": "Skill Generation",
+      "permissions": [
+        "CODE_WRITE"
+      ],
+      "risk": "CRITICAL",
+      "risk_level": "CRITICAL",
+      "status": "EXPERIMENTAL",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_skills.py",
+        "tests/test_v75_skill_activation.py",
+        "tests/test_v75_skill_runtime_extension.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "Pillow",
+        "vision-capable AI model"
+      ],
+      "description": "Image attachments and permission-gated screen analysis.",
+      "detail": "image pipeline present; provider/model vision support is required at runtime",
+      "entry_points": [
+        "jarvis/attachments.py",
+        "jarvis/vision.py"
+      ],
+      "evidence": [
+        "tests/test_attachments.py",
+        "tests/test_vision.py"
+      ],
+      "implementation_path": "jarvis/attachments.py; jarvis/vision.py",
+      "known_limitations": [
+        "image pipeline present; provider/model vision support is required at runtime"
+      ],
+      "last_verified": "2026-08-28T07:31:36.570730+00:00",
+      "name": "Vision",
+      "permissions": [
+        "SCREEN_READ"
+      ],
+      "risk": "MEDIUM",
+      "risk_level": "MEDIUM",
+      "status": "DEGRADED",
+      "success_rate": null,
+      "tests": [
+        "tests/test_attachments.py",
+        "tests/test_vision.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "edge-tts or pyttsx3"
+      ],
+      "description": "Hindi/Hinglish/English spoken output with play/pause/stop/speed and shutdown-safe playback.",
+      "detail": "",
+      "entry_points": [
+        "jarvis/voice.py",
+        "jarvis/voice_ui.py"
+      ],
+      "evidence": [
+        "tests/test_voice.py",
+        "tests/test_voice_premium.py"
+      ],
+      "implementation_path": "jarvis/voice.py; jarvis/voice_ui.py",
+      "known_limitations": [],
+      "last_verified": "2026-08-28T07:31:36.571116+00:00",
+      "name": "Voice",
+      "permissions": [],
+      "risk": "LOW",
+      "risk_level": "LOW",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_voice.py",
+        "tests/test_voice_premium.py"
+      ],
+      "version": "1.0"
+    },
+    {
+      "dependencies": [
+        "audit evidence",
+        "sqlite3"
+      ],
+      "description": "Detects repeated audited workflows and persists reusable automation proposals without silent activation.",
+      "detail": "",
+      "entry_points": [
+        "jarvis/skills/workflow.py"
+      ],
+      "evidence": [
+        "tests/test_v75_skills.py"
+      ],
+      "implementation_path": "jarvis/skills/workflow.py",
+      "known_limitations": [],
+      "last_verified": "2026-08-28T07:31:36.571305+00:00",
+      "name": "Workflow Learning",
+      "permissions": [],
+      "risk": "MEDIUM",
+      "risk_level": "MEDIUM",
+      "status": "AVAILABLE",
+      "success_rate": null,
+      "tests": [
+        "tests/test_v75_skills.py"
+      ],
+      "version": "1.0"
+    }
+  ],
+  "generated_on": "2026-08-28",
+  "schema_version": "1.0",
+  "source": "jarvis.capability_registry.CapabilityRegistry"
+}

@@ -103,7 +103,15 @@ class SelfEvaluationEngine:
 
     @staticmethod
     def _terminal_missions(missions: list) -> list:
-        return [item for item in missions if item.status in {MissionStatus.COMPLETED, MissionStatus.FAILED}]
+        return [
+            item for item in missions
+            if item.status in {
+                MissionStatus.COMPLETED,
+                MissionStatus.PARTIAL,
+                MissionStatus.FAILED,
+                MissionStatus.CANCELLED,
+            }
+        ]
 
     @staticmethod
     def _tool_rows(rows: list[dict], names: set[str]) -> list[dict]:
@@ -111,7 +119,12 @@ class SelfEvaluationEngine:
 
     @staticmethod
     def _execution_metric(name: str, rows: list[dict], detail: str) -> EvaluationMetric:
-        measurable = [row for row in rows if row.get('execution_status') in {'SUCCESS', 'FAILED'}]
+        measurable = [
+            row for row in rows
+            if row.get('execution_status') in {
+                'SUCCESS', 'PARTIAL', 'FAILED', 'TIMEOUT', 'CANCELLED', 'UNVERIFIED',
+            }
+        ]
         successes = sum(1 for row in measurable if row.get('execution_status') == 'SUCCESS')
         return _ratio(name, successes, len(measurable), detail)
 
@@ -125,10 +138,10 @@ class SelfEvaluationEngine:
         terminal = self._terminal_missions(missions)
 
         completed = sum(1 for item in terminal if item.status == MissionStatus.COMPLETED)
-        failed = sum(1 for item in terminal if item.status == MissionStatus.FAILED)
+        unsuccessful = sum(1 for item in terminal if item.status != MissionStatus.COMPLETED)
         mission_success = _ratio(
-            'mission_success_rate', completed, completed + failed,
-            'Completed missions divided by completed + failed missions; cancellations are excluded.',
+            'mission_success_rate', completed, completed + unsuccessful,
+            'Completed missions divided by all terminal outcomes; partial, failed, and cancelled missions are not successes.',
         )
 
         final_verifications = [item.final_verification for item in terminal if item.final_verification is not None]
@@ -157,15 +170,23 @@ class SelfEvaluationEngine:
         )
 
         audit_rows = self.audit.list_entries(limit=audit_limit)
-        executable = [row for row in audit_rows if row.get('execution_status') in {'SUCCESS', 'FAILED'}]
+        executable = [
+            row for row in audit_rows
+            if row.get('execution_status') in {
+                'SUCCESS', 'PARTIAL', 'FAILED', 'TIMEOUT', 'CANCELLED', 'UNVERIFIED',
+            }
+        ]
         tool_success = self._execution_metric(
             'tool_success_rate', audit_rows,
             'Successful tool executions divided by SUCCESS + FAILED executions; permission denials are tracked separately.',
         )
-        tool_failures = sum(1 for row in executable if row.get('execution_status') == 'FAILED')
+        tool_failures = sum(
+            1 for row in executable
+            if row.get('execution_status') in {'FAILED', 'TIMEOUT', 'CANCELLED'}
+        )
         error_rate = _ratio(
             'tool_error_rate', tool_failures, len(executable),
-            'Failed tool executions divided by SUCCESS + FAILED tool executions.',
+            'Failed, timed-out, or cancelled tool executions divided by all non-denied execution outcomes.',
         )
 
         denied = sum(1 for row in audit_rows if row.get('execution_status') == 'DENIED')

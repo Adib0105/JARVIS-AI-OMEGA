@@ -7,6 +7,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .version import APP_VERSION, PRODUCT_DISPLAY_NAME
+
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[1]
 load_dotenv(ROOT / '.env')
 
@@ -42,13 +44,13 @@ def _path(name: str, default: Path) -> Path:
 
 @dataclass(frozen=True)
 class Settings:
-    app_version: str = '7.0.0'
+    app_version: str = APP_VERSION
     provider: str = os.getenv('AI_PROVIDER', 'openrouter').strip().lower()
     openrouter_api_key: str = os.getenv('OPENROUTER_API_KEY', '')
     openrouter_model: str = os.getenv('OPENROUTER_MODEL', 'openrouter/free').strip()
     openrouter_base_url: str = os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1').strip()
     openrouter_app_url: str = os.getenv('OPENROUTER_APP_URL', 'https://github.com/Adib0105/JARVIS-AI-OMEGA').strip()
-    openrouter_app_title: str = os.getenv('OPENROUTER_APP_TITLE', 'JARVIS AI OMEGA V7').strip()
+    openrouter_app_title: str = os.getenv('OPENROUTER_APP_TITLE', PRODUCT_DISPLAY_NAME).strip()
     openai_api_key: str = os.getenv('OPENAI_API_KEY', '')
     openai_model: str = os.getenv('OPENAI_MODEL', 'gpt-5.6').strip()
     reasoning_effort: str = os.getenv('REASONING_EFFORT', 'xhigh').strip()

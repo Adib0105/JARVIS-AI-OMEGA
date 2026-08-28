@@ -10,6 +10,25 @@ permissions:
   contents: read
 
 jobs:
+  quality-security:
+    name: critical-quality-and-security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install locked runtime and audit tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Critical Python correctness lint
+        run: ruff check . --select E9,F63,F7,F82
+      - name: High-severity static security scan
+        run: bandit -r jarvis *.py -lll
+      - name: Dependency vulnerability audit
+        run: pip-audit -r requirements-audit.txt --progress-spinner off
+
   test:
     name: linux-regression (${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -92,7 +111,7 @@ jobs:
 
   windows-package-smoke:
     name: windows-package-smoke (3.14)
-    needs: windows-regression
+    needs: [quality-security, windows-regression]
     runs-on: windows-latest
     env:
       OPENROUTER_API_KEY: test-key-not-used
@@ -114,14 +133,17 @@ jobs:
           .\.venv\Scripts\python.exe -m pip install --upgrade pip
           .\.venv\Scripts\python.exe -m pip install -r requirements.txt
           .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
-      - name: Build V7 Windows application
+      - name: Install Windows runtime dependencies
+        shell: pwsh
+        run: .\.venv\Scripts\python.exe -m pip install -r requirements-windows.txt
+      - name: Build V7.5 Windows application
         shell: pwsh
         run: .\build_windows.ps1
       - name: Verify package and secret exclusion
         shell: pwsh
         run: |
-          $dist = '.\dist\JARVIS-OMEGA-V7'
-          $exe = Join-Path $dist 'JARVIS-OMEGA-V7.exe'
+          $dist = '.\dist\JARVIS-OMEGA-V7.5'
+          $exe = Join-Path $dist 'JARVIS-OMEGA-V7.5.exe'
           if (-not (Test-Path $exe)) { throw "Packaged EXE missing: $exe" }
           $forbidden = Get-ChildItem $dist -Recurse -File | Where-Object {
             $_.Name -eq '.env' -or
@@ -137,6 +159,6 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: JARVIS-OMEGA-V7-windows-smoke
-          path: dist/JARVIS-OMEGA-V7
+          name: JARVIS-OMEGA-V7.5-windows-smoke
+          path: dist/JARVIS-OMEGA-V7.5
           retention-days: 3

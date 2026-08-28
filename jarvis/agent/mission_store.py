@@ -10,6 +10,10 @@ from ..config import settings
 from ..storage.sqlite_utils import connect_sqlite
 
 
+class ConcurrentMissionUpdateError(RuntimeError):
+    """A stale mission snapshot attempted to overwrite newer persisted state."""
+
+
 class MissionStore:
     """Backward-compatible additive V7 mission storage.
 
@@ -35,8 +39,22 @@ class MissionStore:
                 status TEXT NOT NULL,
                 state_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                revision INTEGER NOT NULL DEFAULT 0
             )''')
+            columns = {
+                str(row['name']) for row in conn.execute('PRAGMA table_info(v7_missions)').fetchall()
+            }
+            if 'revision' not in columns:
+                conn.execute(
+                    'ALTER TABLE v7_missions ADD COLUMN revision INTEGER NOT NULL DEFAULT 0'
+                )
+            conn.execute("UPDATE v7_missions SET status='CREATED' WHERE status='IDLE'")
+            conn.execute("UPDATE v7_missions SET status='PLANNING' WHERE status='UNDERSTANDING'")
+            conn.execute(
+                "UPDATE v7_missions SET status='AWAITING_PERMISSION' "
+                "WHERE status='WAITING_FOR_PERMISSION'"
+            )
             conn.execute('''CREATE INDEX IF NOT EXISTS idx_v7_missions_session
                             ON v7_missions(session_id, updated_at)''')
             conn.execute('''CREATE TABLE IF NOT EXISTS v7_mission_events (
@@ -50,25 +68,90 @@ class MissionStore:
                             ON v7_mission_events(mission_id, id)''')
             conn.commit()
 
-    def save(self, mission: Mission) -> None:
+    @staticmethod
+    def _state_payload(mission: Mission) -> str:
+        return json.dumps(mission.to_dict(), ensure_ascii=False, default=str)
+
+    def _save_in_transaction(self, conn: sqlite3.Connection, mission: Mission) -> None:
         mission.touch()
-        payload = json.dumps(mission.to_dict(), ensure_ascii=False, default=str)
-        with self._lock, self._connect() as conn:
+        existing = conn.execute(
+            'SELECT revision FROM v7_missions WHERE id=?', (mission.id,)
+        ).fetchone()
+        if existing is None:
+            mission.revision = 0
             conn.execute(
-                '''INSERT INTO v7_missions(id, session_id, goal, status, state_json, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(id) DO UPDATE SET
-                     session_id=excluded.session_id,
-                     goal=excluded.goal,
-                     status=excluded.status,
-                     state_json=excluded.state_json,
-                     updated_at=excluded.updated_at''',
+                '''INSERT INTO v7_missions(
+                       id, session_id, goal, status, state_json, created_at, updated_at, revision
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
                 (
                     mission.id, mission.session_id, mission.goal, mission.status.value,
-                    payload, mission.created_at, mission.updated_at,
+                    self._state_payload(mission), mission.created_at, mission.updated_at,
+                    mission.revision,
                 ),
             )
-            conn.commit()
+            return
+
+        persisted_revision = int(existing['revision'])
+        if mission.revision != persisted_revision:
+            raise ConcurrentMissionUpdateError(
+                f'Mission {mission.id} revision {mission.revision} is stale; '
+                f'current revision is {persisted_revision}.'
+            )
+        previous_revision = mission.revision
+        mission.revision = previous_revision + 1
+        cursor = conn.execute(
+            '''UPDATE v7_missions SET
+                   session_id=?, goal=?, status=?, state_json=?, updated_at=?, revision=?
+               WHERE id=? AND revision=?''',
+            (
+                mission.session_id, mission.goal, mission.status.value,
+                self._state_payload(mission), mission.updated_at, mission.revision,
+                mission.id, previous_revision,
+            ),
+        )
+        if cursor.rowcount != 1:
+            mission.revision = previous_revision
+            raise ConcurrentMissionUpdateError(
+                f'Mission {mission.id} changed during the update; retry from a fresh snapshot.'
+            )
+
+    def save(self, mission: Mission) -> None:
+        previous_revision = mission.revision
+        try:
+            with self._lock, self._connect() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                self._save_in_transaction(conn, mission)
+                conn.commit()
+        except Exception:
+            mission.revision = previous_revision
+            raise
+
+    def save_with_event(
+        self,
+        mission: Mission,
+        event_type: str,
+        payload: dict | None = None,
+    ) -> None:
+        """Persist mission state and its audit event in one SQLite transaction."""
+        previous_revision = mission.revision
+        try:
+            with self._lock, self._connect() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                self._save_in_transaction(conn, mission)
+                conn.execute(
+                    'INSERT INTO v7_mission_events(mission_id, event_type, payload_json, created_at) '
+                    'VALUES (?, ?, ?, ?)',
+                    (
+                        mission.id,
+                        event_type,
+                        json.dumps(payload or {}, ensure_ascii=False, default=str),
+                        utc_now(),
+                    ),
+                )
+                conn.commit()
+        except Exception:
+            mission.revision = previous_revision
+            raise
 
     def add_event(self, mission_id: str, event_type: str, payload: dict | None = None) -> None:
         with self._lock, self._connect() as conn:
@@ -80,10 +163,14 @@ class MissionStore:
 
     def get(self, mission_id: str) -> Mission | None:
         with self._lock, self._connect() as conn:
-            row = conn.execute('SELECT state_json FROM v7_missions WHERE id=?', (mission_id,)).fetchone()
+            row = conn.execute(
+                'SELECT state_json, revision FROM v7_missions WHERE id=?', (mission_id,)
+            ).fetchone()
         if not row:
             return None
-        return Mission.from_dict(json.loads(row['state_json']))
+        mission = Mission.from_dict(json.loads(row['state_json']))
+        mission.revision = int(row['revision'])
+        return mission
 
     def list_recent(self, limit: int = 20) -> list[dict]:
         with self._lock, self._connect() as conn:

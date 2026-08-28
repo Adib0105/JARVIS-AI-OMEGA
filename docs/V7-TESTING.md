@@ -19,6 +19,9 @@ Windows PowerShell:
 .\.venv\Scripts\python.exe self_check_v75.py
 .\.venv\Scripts\python.exe -m compileall -f -q .
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\ruff.exe check . --select E9,F63,F7,F82
+.\.venv\Scripts\bandit.exe -r jarvis *.py -lll
+.\.venv\Scripts\pip-audit.exe -r requirements-audit.txt --progress-spinner off
 ```
 
 Run the full suite after touching shared runtime, security, memory, computer-use, self-development or storage code.
@@ -33,7 +36,7 @@ The V7.5 workflow targets:
 - Linux Python 3.14
 - Windows Python 3.14
 
-Regression jobs run forced compilation plus full unittest discovery.
+Regression jobs run forced compilation plus full unittest discovery. A separate quality/security job runs critical correctness lint, a high-severity static security gate and a vulnerability audit over pinned dependencies.
 
 `ResourceWarning` is promoted to an error so leaked files/SQLite handles cannot be ignored.
 
@@ -43,7 +46,7 @@ After Windows regression passes, CI performs a PyInstaller smoke build.
 
 The gate verifies that:
 
-- `JARVIS-OMEGA-V7.exe` is produced;
+- `JARVIS-OMEGA-V7.5.exe` is produced;
 - the distribution does not intentionally bundle `.env`;
 - live `.db`, `.sqlite` or `.sqlite3` runtime data is excluded;
 - Google OAuth credential/token files are excluded.
@@ -101,6 +104,9 @@ The repository includes coverage for:
 - OCR fallback integration
 - browser URL trust policy
 - private/local target rejection
+- DNS answers and every redirect hop are public-only
+- validated-address connection pinning and host-bound TLS
+- active HTML element stripping and response size/content-type limits
 - prompt-injection isolation
 - untrusted webpage content handling
 
@@ -113,6 +119,8 @@ The repository includes coverage for:
 - proposal persistence
 - sandbox path isolation
 - immutable-core protection
+- untracked/symlink/binary/oversize sandbox-file rejection
+- exact review-to-commit content fingerprinting
 - bounded self-coding / repair
 - offline-development truthfulness
 - before/after benchmark binding
@@ -181,6 +189,28 @@ Tests should fail safely for attempts involving:
 - Trusted Local Mode high-risk bypass
 
 Security failures block release readiness.
+
+## 2026-08-28 local audit evidence
+
+On Linux with Python 3.12.13:
+
+- full discovery: 215 tests passed;
+- forced/isolated bytecode compilation: passed;
+- Ruff critical rules `E9,F63,F7,F82`: passed;
+- Bandit high-severity gate: passed (11 medium-confidence SQL-construction findings were manually reviewed; values remain parameterized and dynamic fragments come only from fixed internal allowlists);
+- `pip-audit -r requirements.txt`: no known vulnerabilities found in the core runtime set at audit time; the combined Windows/Google/build audit is enforced in CI and pending for this branch;
+- pinned requirements dry run: passed.
+
+This is local evidence, not a substitute for the Linux matrix, Windows regression, PyInstaller smoke or physical workstation gates.
+
+PR CI run 642 subsequently passed:
+
+- Linux regression on Python 3.11, 3.12, 3.13 and 3.14;
+- Windows regression on Python 3.14;
+- critical Ruff, high-severity Bandit and the combined core/Windows/Google/build dependency audit;
+- isolated V7.5 PyInstaller build, package secret/private-data exclusion and smoke-artifact upload.
+
+CI package success still does not prove Inno Setup installation, launch, upgrade/uninstall behavior or real hardware/provider/account workflows.
 
 ## Workstation smoke testing
 

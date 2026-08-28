@@ -212,9 +212,11 @@ class SelfDevelopmentEngine:
             files, lines = self.sandbox.git.diff_stats(worktree)
             check = self.policy.validate_change_set(files, lines)
             diff = self.sandbox.git.diff(worktree)
+            fingerprint = self.sandbox.git.snapshot_fingerprint(worktree, files)
             code_changed = any(path.endswith(('.py', '.js', '.ts', '.tsx', '.jsx', '.ps1', '.bat', '.sh')) for path in files)
             tests_changed = any(path.replace('\\', '/').startswith('tests/') for path in files)
             reasons = list(check.reasons)
+            reasons.extend(self.sandbox.git.validate_materialized_files(worktree, files))
             if not files:
                 reasons.append('No sandbox changes exist.')
             if code_changed and not tests_changed:
@@ -230,6 +232,7 @@ class SelfDevelopmentEngine:
                 'review_reasons': reasons,
                 'tests_changed': tests_changed,
                 'code_changed': code_changed,
+                'review_diff_sha256': fingerprint,
             }
             proposal.evaluation_summary = evaluation.as_dict()
             proposal.diff_summary = diff[:200000]

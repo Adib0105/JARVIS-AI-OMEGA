@@ -1,8 +1,11 @@
 import importlib.util
+import json
 import unittest
+from pathlib import Path
 
 from jarvis.capability_registry import CapabilityRegistry, CapabilityStatus
 from jarvis.core import JarvisOmega
+from jarvis.version import APP_VERSION
 
 
 class V75CapabilityRegistryTests(unittest.TestCase):
@@ -28,6 +31,41 @@ class V75CapabilityRegistryTests(unittest.TestCase):
         self.assertIsInstance(item.tests, tuple)
         self.assertTrue(item.last_verified)
         self.assertTrue(item.implementation_path)
+        payload = item.as_dict()
+        required = {
+            'name', 'version', 'status', 'implementation_path', 'entry_points',
+            'dependencies', 'permissions', 'risk_level', 'tests', 'last_verified',
+            'evidence', 'known_limitations',
+        }
+        self.assertTrue(required.issubset(payload))
+
+    def test_all_test_evidence_paths_exist(self):
+        root = Path(__file__).resolve().parents[1]
+        missing = []
+        for item in CapabilityRegistry().snapshot(refresh=False):
+            for path in item['tests']:
+                if not (root / path).is_file():
+                    missing.append(f"{item['name']}: {path}")
+        self.assertEqual(missing, [])
+
+    def test_committed_inventory_matches_runtime_schema(self):
+        root = Path(__file__).resolve().parents[1]
+        payload = json.loads((root / 'docs' / 'capability-inventory.json').read_text(encoding='utf-8'))
+        runtime = CapabilityRegistry().snapshot(refresh=False)
+        required = {
+            'name', 'version', 'status', 'implementation_path', 'entry_points',
+            'dependencies', 'permissions', 'risk_level', 'tests', 'last_verified',
+            'evidence', 'known_limitations',
+        }
+        self.assertEqual(payload['application_version'], APP_VERSION)
+        self.assertEqual(
+            {item['name'] for item in payload['capabilities']},
+            {item['name'] for item in runtime},
+        )
+        self.assertTrue(payload['capabilities'])
+        for item in payload['capabilities']:
+            self.assertTrue(required.issubset(item))
+            self.assertIn(item['status'], {status.value for status in CapabilityStatus})
 
     def test_registry_does_not_fake_self_development(self):
         registry = CapabilityRegistry()
