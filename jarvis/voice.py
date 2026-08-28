@@ -9,10 +9,12 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Iterable
 
 from .config import settings
 from .logging_utils import log_event
+from .microphone import set_voice_interrupt_handler
+from .voice_profiles import adjust_percent, adjust_pitch, detect_emotion, speech_chunks, voice_style
 
 
 _MARKDOWN_RE = re.compile(r"[`*_>#~\[\]{}|]+")
@@ -38,10 +40,11 @@ _SENTINEL = object()
 class _SpeechItem:
     text: str
     request_id: str | None = None
+    emotion: str = 'auto'
 
 
 def clean_for_speech(text: str) -> str:
-    text = _CODE_BLOCK_RE.sub(' Code block speech me skip kiya gaya. ', text)
+    text = _CODE_BLOCK_RE.sub(' Code block speech me skip kiya gaya. ', str(text or ''))
     text = _LINK_RE.sub(r'\1', text)
     text = _MARKDOWN_RE.sub('', text)
     text = re.sub(r'https?://\S+', ' link ', text)
@@ -50,9 +53,9 @@ def clean_for_speech(text: str) -> str:
 
 
 def detect_speech_mode(text: str) -> str:
-    if len(_DEVANAGARI_RE.findall(text)) >= 3:
+    if len(_DEVANAGARI_RE.findall(str(text or ''))) >= 3:
         return 'hindi'
-    words = {w.lower() for w in _WORD_RE.findall(text)}
+    words = {w.lower() for w in _WORD_RE.findall(str(text or ''))}
     return 'hinglish' if len(words & _HINGLISH_HINTS) >= 2 else 'english'
 
 
@@ -66,7 +69,7 @@ def choose_voice(text: str) -> str:
 
 
 def edge_voice_candidates(text: str) -> list[str]:
-    """Return the configured voice followed by one distinct reliable fallback."""
+    """Return the language-matched Indian voice followed by a distinct fallback."""
     voices = [choose_voice(text), settings.voice_fallback]
     return [voice for index, voice in enumerate(voices) if voice and voice not in voices[:index]]
 
@@ -85,16 +88,13 @@ def edge_rate_for_speed(base_rate: str, speed: float) -> str:
 
 
 class VoiceOutput:
-    """Interruptible neural TTS controller for the V7 ARC HUD.
+    """Interruptible, emotional Indian neural TTS controller.
 
-    Media controls are runtime-only by design:
-    - stop() interrupts the current speech and clears queued speech.
-    - pause()/resume() pause by interrupting and replaying the current utterance
-      from its beginning when resumed. This is reliable across Edge playback and
-      the pyttsx3 fallback without depending on a specific audio player backend.
-    - play() resumes a paused utterance or replays the last utterance after STOP.
-    - speed changes restart the current utterance at the new rate.
-    - shutdown() terminates current playback before the desktop window exits.
+    The primary online path uses Edge neural voices and falls back to a second
+    configured voice, then the packaged/offline pyttsx3 worker. Long answers can
+    be sentence-chunked for lower first-audio latency and easier interruption.
+    Emotion changes rate/pitch/volume conservatively; it does not add synthetic
+    sound effects or pretend that a provider supports capabilities it does not.
     """
 
     MIN_SPEED = 0.6
@@ -117,8 +117,12 @@ class VoiceOutput:
         self._interrupt_reason: str | None = None
         self._current_text: str | None = None
         self._last_text: str | None = None
+        self._current_emotion = 'calm'
+        self._current_style = voice_style('calm')
         self._process: subprocess.Popen | None = None
         self._offline_engine = None
+        if settings.voice_barge_in:
+            set_voice_interrupt_handler(self.interrupt_for_input)
         if self.enabled:
             self._thread = threading.Thread(target=self._worker, daemon=True, name='jarvis-tts')
             self._thread.start()
@@ -142,6 +146,26 @@ class VoiceOutput:
     def speed_label(self) -> str:
         return f'{self.speed:.1f}x'
 
+    @property
+    def emotion(self) -> str:
+        with self._lock:
+            return self._current_emotion
+
+    @property
+    def profile_snapshot(self) -> dict[str, object]:
+        style = self._active_style('')
+        return {
+            'profile': settings.voice_profile,
+            'emotion': self.emotion,
+            'voice_english': settings.voice_english,
+            'voice_hindi': settings.voice_hindi,
+            'voice_hinglish': settings.voice_hinglish,
+            'fallback': settings.voice_fallback,
+            'streaming': settings.voice_streaming_enabled,
+            'barge_in': settings.voice_barge_in,
+            'speed_multiplier': style.speed_multiplier,
+        }
+
     def _emit(self, state: str) -> None:
         with self._lock:
             self._state = state
@@ -150,20 +174,62 @@ class VoiceOutput:
         except Exception:
             pass
 
-    def speak(self, text: str, *, request_id: str | None = None) -> None:
+    def _select_emotion(self, text: str, emotion: str | None) -> str:
+        selected = str(emotion or 'auto').strip().lower()
+        if not settings.voice_emotion_enabled:
+            return 'neutral'
+        return detect_emotion(text) if selected in {'', 'auto'} else selected
+
+    def _active_style(self, text: str):
+        style = getattr(self, '_current_style', None)
+        if style is not None:
+            return style
+        return voice_style('neutral', text)
+
+    def speak(
+        self,
+        text: str,
+        *,
+        request_id: str | None = None,
+        emotion: str | None = 'auto',
+        stream: bool | None = None,
+    ) -> None:
         if not self.enabled or self.muted:
             return
         spoken = clean_for_speech(text)
         if not spoken:
             return
+        selected_emotion = self._select_emotion(spoken, emotion)
+        use_streaming = settings.voice_streaming_enabled if stream is None else bool(stream)
+        pieces = speech_chunks(spoken, settings.voice_chunk_chars) if use_streaming else [spoken]
         with self._lock:
             if self._shutdown:
                 return
             self._last_text = spoken
-        self._queue.put(_SpeechItem(spoken, request_id))
+        for piece in pieces:
+            self._queue.put(_SpeechItem(piece, request_id, selected_emotion))
+
+    def speak_stream(
+        self,
+        chunks: Iterable[str],
+        *,
+        request_id: str | None = None,
+        emotion: str | None = 'auto',
+    ) -> None:
+        """Accept text chunks from a streaming model without requiring full-response buffering."""
+        for chunk in chunks:
+            spoken = clean_for_speech(chunk)
+            if spoken:
+                self.speak(spoken, request_id=request_id, emotion=emotion, stream=False)
+
+    def interrupt_for_input(self) -> None:
+        """Barge-in hook: microphone/wake word can immediately yield the floor to the user."""
+        with self._lock:
+            active = bool(self._current_text) or self._paused or not self._queue.empty()
+        if active:
+            self.stop()
 
     def play(self) -> bool:
-        """Resume paused speech, or replay the last utterance after STOP."""
         with self._condition:
             if self._shutdown or not self.enabled or self.muted:
                 return False
@@ -176,7 +242,7 @@ class VoiceOutput:
                 return True
             last = self._last_text
         if last:
-            self._queue.put(_SpeechItem(last))
+            self.speak(last)
             return True
         return False
 
@@ -218,7 +284,6 @@ class VoiceOutput:
                 return
 
     def stop(self) -> None:
-        """Immediate media STOP. Worker remains alive for future speech."""
         with self._condition:
             self._cancel_epoch += 1
             self._paused = False
@@ -271,14 +336,13 @@ class VoiceOutput:
 
     def test(self, mode: str = 'hinglish') -> None:
         samples = {
-            'hindi': 'नमस्ते आदिब। मैं जार्विस ओमेगा वर्जन सेवन हूँ। सिस्टम ऑनलाइन है।',
-            'english': 'Hello Adib. JARVIS OMEGA version seven is online. All core systems are ready.',
-            'hinglish': 'Adib bhai, JARVIS OMEGA version seven online hai. ARC core ready hai.',
+            'hindi': f'नमस्ते। मैं जार्विस ओमेगा {settings.app_version} हूँ। सिस्टम ऑनलाइन है और मैं आपकी मदद के लिए तैयार हूँ।',
+            'english': f'Hello. JARVIS OMEGA {settings.app_version} is online. All core systems are ready.',
+            'hinglish': f'JARVIS OMEGA {settings.app_version} online hai. Main ready hoon, bataiye kya karna hai.',
         }
-        self.speak(samples.get(mode, samples['hinglish']))
+        self.speak(samples.get(mode, samples['hinglish']), emotion='happy')
 
     def shutdown(self, wait: bool = True) -> None:
-        """Stop audio and terminate the TTS worker; call before destroying the UI."""
         with self._condition:
             if self._shutdown:
                 return
@@ -295,6 +359,8 @@ class VoiceOutput:
         self._queue.put(_SENTINEL)
         if wait and self._thread and self._thread.is_alive() and threading.current_thread() is not self._thread:
             self._thread.join(timeout=3.0)
+        if settings.voice_barge_in:
+            set_voice_interrupt_handler(None)
         self._emit('idle')
 
     @staticmethod
@@ -342,6 +408,16 @@ class VoiceOutput:
                 error = ''
         log_event('ERROR', event, failed=True, error=error or 'worker exited non-zero', **fields)
 
+    def _edge_parameters(self, text: str) -> tuple[str, str, str]:
+        style = self._active_style(text)
+        rate = edge_rate_for_speed(
+            settings.edge_voice_rate,
+            self.speed * float(style.speed_multiplier),
+        )
+        volume = adjust_percent(settings.edge_voice_volume, style.volume_percent, minimum=-50, maximum=100)
+        pitch = adjust_pitch(settings.edge_voice_pitch, style.pitch_hz)
+        return rate, volume, pitch
+
     def _speak_edge_voice(self, text: str, voice: str, timeout: float) -> str:
         path = None
         process = None
@@ -349,14 +425,15 @@ class VoiceOutput:
             with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.txt', delete=False) as handle:
                 handle.write(text)
                 path = handle.name
+            rate, volume, pitch = self._edge_parameters(text)
             command = [
                 sys.executable,
                 '-m',
                 'edge_playback',
                 '--voice', voice,
-                f'--rate={edge_rate_for_speed(settings.edge_voice_rate, self.speed)}',
-                f'--volume={settings.edge_voice_volume}',
-                f'--pitch={settings.edge_voice_pitch}',
+                f'--rate={rate}',
+                f'--volume={volume}',
+                f'--pitch={pitch}',
                 '--file', path,
             ]
             creationflags = 0
@@ -423,9 +500,10 @@ class VoiceOutput:
                 command = [sys.executable, '--offline-tts-playback']
             else:
                 command = [sys.executable, '-m', 'jarvis.offline_tts_worker']
+            style = self._active_style(text)
             command += [
                 '--file', path,
-                '--rate', str(int(max(80, min(360, settings.voice_rate * self.speed)))),
+                '--rate', str(int(max(80, min(360, settings.voice_rate * self.speed * style.speed_multiplier)))),
                 '--volume', str(settings.voice_volume),
             ]
             creationflags = 0
@@ -501,11 +579,15 @@ class VoiceOutput:
             speech = item if isinstance(item, _SpeechItem) else _SpeechItem(str(item))
             text = speech.text
             request_id = speech.request_id
+            selected_emotion = self._select_emotion(text, speech.emotion)
+            style = voice_style(selected_emotion, text)
             with self._condition:
                 if self._shutdown:
                     break
                 epoch = self._cancel_epoch
                 self._current_text = text
+                self._current_emotion = selected_emotion
+                self._current_style = style
                 self._interrupt_reason = None
 
             while True:
@@ -518,10 +600,15 @@ class VoiceOutput:
 
                 self._emit('speaking')
                 speech_started = time.perf_counter()
-                log_event('INFO', 'tts_started', request_id=request_id or '', input_characters=len(text))
+                log_event(
+                    'INFO', 'tts_started', request_id=request_id or '', input_characters=len(text),
+                    speech_mode=detect_speech_mode(text), emotion=selected_emotion,
+                    voice_profile=settings.voice_profile,
+                )
                 result = self._play_text(text)
                 log_event(
                     'INFO', 'tts_finished', request_id=request_id or '', result=result,
+                    emotion=selected_emotion,
                     elapsed_ms=round((time.perf_counter() - speech_started) * 1000, 3),
                 )
 
@@ -537,11 +624,12 @@ class VoiceOutput:
                     self._emit('paused')
                     continue
                 if reason == 'restart':
-                    # Speed changed while speaking: replay current utterance at new speed.
                     time.sleep(0.03)
                     continue
                 if result == 'failed':
                     self._emit('error')
+                elif result == 'completed' and style.pause_after_ms > 0:
+                    time.sleep(style.pause_after_ms / 1000.0)
                 break
 
             with self._condition:
@@ -553,3 +641,9 @@ class VoiceOutput:
                 self._emit('idle')
 
         self._emit('idle')
+
+
+__all__ = [
+    'VoiceOutput', 'choose_voice', 'clean_for_speech', 'detect_speech_mode',
+    'edge_rate_for_speed', 'edge_voice_candidates',
+]
