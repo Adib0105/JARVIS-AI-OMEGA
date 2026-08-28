@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import re
 import runpy
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -22,6 +25,24 @@ class WindowsReleaseScriptTests(unittest.TestCase):
         self.assertIn(f"StringStruct('FileVersion', '{WINDOWS_FILE_VERSION}')", rendered)
         self.assertIn(f"StringStruct('ProductVersion', '{APP_VERSION}')", rendered)
         self.assertIn("StringStruct('OriginalFilename', 'JARVIS-OMEGA.exe')", rendered)
+
+    def test_version_resource_generator_runs_from_outside_repository(self):
+        script = ROOT / 'scripts' / 'generate_windows_version_info.py'
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / 'generated-version.txt'
+            completed = subprocess.run(
+                [sys.executable, str(script), str(output)],
+                cwd=tmp,
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertTrue(output.is_file())
+            rendered = output.read_text(encoding='utf-8')
+        self.assertIn(f"StringStruct('ProductVersion', '{APP_VERSION}')", rendered)
+        self.assertIn(f"StringStruct('FileVersion', '{WINDOWS_FILE_VERSION}')", rendered)
 
     def test_windows_build_embeds_and_verifies_version_resource(self):
         build = (ROOT / 'build_windows.ps1').read_text(encoding='utf-8')
