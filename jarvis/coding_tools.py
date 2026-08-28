@@ -102,7 +102,13 @@ class CodingWorkspace:
             'or install Python 3 and make it available on PATH. JARVIS will not use its packaged EXE as Python.'
         )
 
-    def run_unit_tests(self, project_dir: str, timeout: int = 120) -> dict:
+    def prepare_unit_tests(self, project_dir: str, timeout: int = 120) -> dict:
+        """Validate a project and return an allowlisted test-launch specification.
+
+        The desktop uses this specification with ``subprocess.Popen`` and Tk polling
+        so the GUI never waits on the test process. The normal tool path can still
+        execute the same specification synchronously when called by an agent.
+        """
         root = self._safe(project_dir)
         if not root.is_dir():
             raise NotADirectoryError(root)
@@ -111,20 +117,30 @@ class CodingWorkspace:
             raise FileNotFoundError('A tests/ folder is required for this allowlisted test action.')
 
         python_command = self._test_python_command(root)
+        bounded_timeout = max(10, min(int(timeout), 300))
         command = [*python_command, '-m', 'unittest', 'discover', '-s', 'tests', '-v']
+        return {
+            'cwd': str(root),
+            'command': command,
+            'interpreter': ' '.join(python_command),
+            'timeout': bounded_timeout,
+        }
+
+    def run_unit_tests(self, project_dir: str, timeout: int = 120) -> dict:
+        spec = self.prepare_unit_tests(project_dir, timeout)
         proc = subprocess.run(
-            command,
-            cwd=root,
+            spec['command'],
+            cwd=spec['cwd'],
             capture_output=True,
             text=True,
             encoding='utf-8',
             errors='replace',
-            timeout=max(10, min(int(timeout), 300)),
+            timeout=spec['timeout'],
             shell=False,
         )
         output = (proc.stdout + '\n' + proc.stderr).strip()
         return {
             'returncode': proc.returncode,
             'output': output[-30000:],
-            'interpreter': ' '.join(python_command),
+            'interpreter': spec['interpreter'],
         }
