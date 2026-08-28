@@ -135,10 +135,6 @@ def main() -> int:
     if '--tts-worker-healthcheck' in sys.argv:
         return tts_worker_healthcheck()
 
-    # VoiceOutput historically launches ``sys.executable -m edge_playback`` so it
-    # can interrupt playback. In a PyInstaller build sys.executable is this JARVIS
-    # EXE, not python.exe. Route that child invocation before bootstrap/UI imports
-    # so it performs TTS work and exits instead of opening a second desktop window.
     if _is_edge_playback_worker_invocation():
         from jarvis.tts_worker import run_edge_playback_worker
 
@@ -156,9 +152,18 @@ def main() -> int:
     if '--tts-runtime-healthcheck' in sys.argv:
         return packaged_tts_healthcheck()
 
-    # Bootstrap must happen before importing modules that materialize global
-    # Settings/JarvisOmega. A fresh packaged install therefore reaches a proper
-    # setup UI instead of failing strict AI configuration validation at import/startup.
+    background = '--background' in sys.argv
+
+    # Resolve the active local account BEFORE Settings/JarvisOmega are imported so
+    # USER_NAME and per-profile memory/audit paths are isolated correctly.
+    from jarvis.accounts import run_account_gate
+
+    profile = run_account_gate(background=background)
+    if profile is None:
+        return 0
+
+    # Provider bootstrap remains device-level configuration, while memory/export
+    # state is profile-specific through environment values selected above.
     from jarvis.first_run import run_first_run_setup
 
     if not run_first_run_setup():
@@ -168,7 +173,7 @@ def main() -> int:
     from jarvis.runtime_guard import run_adaptive_gui
 
     install_exception_hook()
-    run_adaptive_gui()
+    run_adaptive_gui(background=background)
     return 0
 
 
