@@ -33,6 +33,7 @@ class AutoUpdaterContracts(unittest.TestCase):
             'checksum': {'name': 'SHA256.txt', 'url': 'https://example.invalid/SHA256.txt'},
         }
         def fake_download(url, destination, **_kwargs):
+            destination.parent.mkdir(parents=True, exist_ok=True)
             if str(url).endswith('SHA256.txt'):
                 destination.write_text(f'{digest}  {name}\n', encoding='utf-8')
             else:
