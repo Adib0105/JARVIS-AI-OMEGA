@@ -38,7 +38,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Inno Setup build failed.' }
 $Installer = Join-Path $Root "dist\installer\JARVIS-AI-OMEGA-Setup-$Version.exe"
 if (-not (Test-Path $Installer)) { throw "Expected installer was not created: $Installer" }
 $Hash = Get-FileHash $Installer -Algorithm SHA256
-$Hash.Hash | Set-Content (Join-Path $Root 'dist\installer\SHA256.txt')
+$InstallerName = Split-Path -Leaf $Installer
+$ChecksumLine = "$($Hash.Hash.ToLowerInvariant())  $InstallerName"
+$ChecksumLine | Set-Content (Join-Path $Root 'dist\installer\SHA256.txt') -Encoding ascii
 Write-Host "Installer ready: $Installer" -ForegroundColor Green
 Write-Host "Version: $Version ($WindowsVersion)" -ForegroundColor Green
 Write-Host "SHA-256: $($Hash.Hash)" -ForegroundColor Green
