@@ -4,7 +4,7 @@ import re
 
 # Single application release authority. Runtime configuration, diagnostics,
 # packaging and installer metadata must derive from this value.
-APP_VERSION = '8.0.0-rc1'
+APP_VERSION = '8.0.0-rc2'
 
 _VERSION_RE = re.compile(r'^(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)(?:-rc(?P<rc>\d+))?$')
 
