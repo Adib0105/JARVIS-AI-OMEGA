@@ -8,13 +8,16 @@ from ctypes import wintypes
 
 HOTKEY_JARVIS_ID = 0x4A41
 HOTKEY_EMOJI_ID = 0x4A45
+HOTKEY_PRIVACY_ID = 0x4A50
 MOD_ALT = 0x0001
 MOD_CONTROL = 0x0002
 VK_J = 0x4A
 VK_E = 0x45
+VK_P = 0x50
 WM_HOTKEY = 0x0312
 SW_RESTORE = 9
 SW_SHOW = 5
+SW_MINIMIZE = 6
 
 
 def _find_jarvis_window() -> int:
@@ -54,6 +57,17 @@ def show_jarvis_window() -> bool:
     return True
 
 
+def hide_jarvis_window() -> bool:
+    """Privacy shortcut: instantly minimize the existing JARVIS window."""
+    if os.name != 'nt':
+        return False
+    hwnd = _find_jarvis_window()
+    if not hwnd:
+        return False
+    ctypes.windll.user32.ShowWindow(hwnd, SW_MINIMIZE)
+    return True
+
+
 def open_windows_emoji_panel() -> bool:
     """Open Windows' Unicode emoji picker (Win+.), which WhatsApp/Web can render."""
     if os.name != 'nt':
@@ -75,6 +89,7 @@ def _hotkey_loop(stop_event: threading.Event) -> None:
     user32 = ctypes.windll.user32
     registered_jarvis = bool(user32.RegisterHotKey(None, HOTKEY_JARVIS_ID, MOD_CONTROL | MOD_ALT, VK_J))
     registered_emoji = bool(user32.RegisterHotKey(None, HOTKEY_EMOJI_ID, MOD_CONTROL | MOD_ALT, VK_E))
+    registered_privacy = bool(user32.RegisterHotKey(None, HOTKEY_PRIVACY_ID, MOD_CONTROL | MOD_ALT, VK_P))
     msg = wintypes.MSG()
     try:
         while not stop_event.is_set():
@@ -84,6 +99,8 @@ def _hotkey_loop(stop_event: threading.Event) -> None:
                         show_jarvis_window()
                     elif msg.wParam == HOTKEY_EMOJI_ID:
                         open_windows_emoji_panel()
+                    elif msg.wParam == HOTKEY_PRIVACY_ID:
+                        hide_jarvis_window()
                 user32.TranslateMessage(ctypes.byref(msg))
                 user32.DispatchMessageW(ctypes.byref(msg))
             time.sleep(0.04)
@@ -92,17 +109,16 @@ def _hotkey_loop(stop_event: threading.Event) -> None:
             user32.UnregisterHotKey(None, HOTKEY_JARVIS_ID)
         if registered_emoji:
             user32.UnregisterHotKey(None, HOTKEY_EMOJI_ID)
+        if registered_privacy:
+            user32.UnregisterHotKey(None, HOTKEY_PRIVACY_ID)
 
 
 def start_global_hotkeys() -> threading.Event:
-    """Enable desktop emoji support and global Ctrl+Alt+J / Ctrl+Alt+E hotkeys."""
-    # Install before run_adaptive_gui constructs JarvisDesktop so both the composer
-    # and chat body use the native Unicode emoji font and expose the in-app picker.
+    """Enable emoji support plus global JARVIS restore, emoji and privacy hotkeys."""
     try:
         from .emoji_support import install_emoji_support
         install_emoji_support()
     except Exception:
-        # Emoji enhancement must never prevent the assistant itself from starting.
         pass
 
     stop_event = threading.Event()
@@ -119,7 +135,9 @@ def start_global_hotkeys() -> threading.Event:
 __all__ = [
     'HOTKEY_JARVIS_ID',
     'HOTKEY_EMOJI_ID',
+    'HOTKEY_PRIVACY_ID',
     'open_windows_emoji_panel',
     'show_jarvis_window',
+    'hide_jarvis_window',
     'start_global_hotkeys',
 ]
