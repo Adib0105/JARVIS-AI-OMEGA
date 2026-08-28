@@ -9,10 +9,13 @@ from .config import settings
 from .providers.deadline import RequestCancelledError
 
 
+# Free model slugs can be withdrawn or moved without notice. Default to the
+# OpenRouter free router so each request is routed among models that are actually
+# available at request time. Operators may still pin a deliberate override.
 STABLE_FREE_TEXT_MODEL = os.getenv(
     'OPENROUTER_STABLE_TEXT_MODEL',
-    'openai/gpt-oss-20b:free',
-).strip()
+    'openrouter/free',
+).strip() or 'openrouter/free'
 
 _CREATOR_PATTERNS = (
     'kisne banaya', 'kisne bnaya', 'kaun banaya', 'kaun bnaya', 'creator kaun',
