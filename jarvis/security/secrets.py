@@ -22,6 +22,8 @@ _PATTERNS: tuple[tuple[str, re.Pattern, str], ...] = (
     ('recovery_code', re.compile(r'(?i)\b(?:recovery|backup)\s+code\s*[:=]\s*[A-Za-z0-9 -]{6,}'), 'Recovery/backup code'),
 )
 
+_REDACTION_MARKER = '[REDACTED_CREDENTIAL]'
+
 
 def detect_secrets(text: str) -> list[SecretFinding]:
     value = str(text or '')
@@ -30,6 +32,23 @@ def detect_secrets(text: str) -> list[SecretFinding]:
         if pattern.search(value):
             findings.append(SecretFinding(kind, description))
     return findings
+
+
+def redact_secrets(text: str) -> tuple[str, list[SecretFinding]]:
+    """Remove credential-like values while preserving the rest of a document.
+
+    Notes, explicit memories, todos and reminders still fail closed via
+    ``ensure_safe_for_persistent_memory``. Document ingestion can use this helper
+    so one credential-looking assignment does not make an otherwise useful PDF or
+    resume impossible to learn, while the matched secret itself is never persisted.
+    """
+    redacted = str(text or '')
+    findings: list[SecretFinding] = []
+    for kind, pattern, description in _PATTERNS:
+        if pattern.search(redacted):
+            findings.append(SecretFinding(kind, description))
+            redacted = pattern.sub(_REDACTION_MARKER, redacted)
+    return redacted, findings
 
 
 def contains_secret(text: str) -> bool:
@@ -44,3 +63,9 @@ def ensure_safe_for_persistent_memory(text: str) -> None:
             f'Refusing to store secret-like content in persistent JARVIS memory ({names}). '
             'Keep passwords, API keys, OAuth tokens and recovery codes out of notes/memory.'
         )
+
+
+__all__ = [
+    'SecretFinding', 'contains_secret', 'detect_secrets',
+    'ensure_safe_for_persistent_memory', 'redact_secrets',
+]
