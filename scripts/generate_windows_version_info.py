@@ -1,7 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
+
+# This script is invoked directly by the Windows release pipeline. When Python runs a
+# file by path, sys.path[0] is the script directory (scripts/), not necessarily the
+# repository root. Add the root derived from this file's location before importing
+# canonical application metadata so the generator works from any current directory.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from jarvis.version import APP_VERSION, WINDOWS_FILE_VERSION
 
