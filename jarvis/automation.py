@@ -50,6 +50,7 @@ def press_key(key: str) -> str:
         'enter', 'tab', 'esc', 'escape', 'space', 'backspace', 'delete', 'home', 'end',
         'pageup', 'pagedown', 'up', 'down', 'left', 'right', 'f5', 'f11',
         'volumeup', 'volumedown', 'volumemute',
+        'playpause', 'nexttrack', 'prevtrack',
     }
     if key not in allowed:
         raise PermissionError(f"Key '{key}' is not allowlisted.")
@@ -63,7 +64,8 @@ def hotkey(keys: list[str]) -> str:
         raise ValueError('Hotkey requires 2 to 4 keys.')
     allowed = {
         'ctrl', 'shift', 'alt', 'win', 'enter', 'tab', 'esc', 'space', 'a', 'c', 'f', 'l',
-        'n', 'p', 'r', 's', 't', 'v', 'w', 'x', 'z', 'f5', 'f11',
+        'n', 'p', 'r', 's', 't', 'v', 'w', 'x', 'z', 'f4', 'f5', 'f11',
+        'up', 'down', 'left', 'right',
     }
     if any(k not in allowed for k in clean):
         raise PermissionError('One or more hotkey keys are not allowlisted.')
