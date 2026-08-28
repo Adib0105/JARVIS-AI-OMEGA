@@ -1,4 +1,4 @@
-# JARVIS AI OMEGA 8.0.0-rc1 — Release Candidate
+# JARVIS AI OMEGA 8.0.0-rc2 — Release Candidate
 
 JARVIS AI OMEGA is a Windows-first desktop AI agent built around an evidence-driven execution loop:
 
@@ -55,7 +55,7 @@ from jarvis.version import APP_VERSION
 Current release candidate:
 
 ```text
-8.0.0-rc1
+8.0.0-rc2
 ```
 
 Do not add another hard-coded application version in runtime configuration, diagnostics, packaging metadata, installer scripts or CI. Windows numeric file-version metadata is derived from the canonical release version.
@@ -206,7 +206,7 @@ After installing Inno Setup 6.7.1, build the installer:
 The installer script reads the canonical release version automatically. For this candidate the expected filename is:
 
 ```text
-dist/installer/JARVIS-AI-OMEGA-Setup-8.0.0-rc1.exe
+dist/installer/JARVIS-AI-OMEGA-Setup-8.0.0-rc2.exe
 ```
 
 `dist/installer/SHA256.txt` is generated as installer digest evidence.
@@ -290,7 +290,7 @@ A failed security check, failed test, regression, invalid benchmark binding or m
 - [Release guide](docs/V7-RELEASE.md)
 - [Troubleshooting](docs/V7-TROUBLESHOOTING.md)
 
-Some documentation filenames retain historical V7/V7.5 naming for compatibility/history. Those labels are not independent application-version authorities; the current application release version is `8.0.0-rc1` from `jarvis.version`.
+Some documentation filenames retain historical V7/V7.5 naming for compatibility/history. Those labels are not independent application-version authorities; the current application release version is `8.0.0-rc2` from `jarvis.version`.
 
 ## Release rule
 
