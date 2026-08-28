@@ -49,6 +49,7 @@ def press_key(key: str) -> str:
     allowed = {
         'enter', 'tab', 'esc', 'escape', 'space', 'backspace', 'delete', 'home', 'end',
         'pageup', 'pagedown', 'up', 'down', 'left', 'right', 'f5', 'f11',
+        'volumeup', 'volumedown', 'volumemute',
     }
     if key not in allowed:
         raise PermissionError(f"Key '{key}' is not allowlisted.")
