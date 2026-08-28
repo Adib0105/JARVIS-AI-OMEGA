@@ -39,12 +39,10 @@ class EmotionalVoiceTests(unittest.TestCase):
         self.assertEqual(detect_emotion('Project status report and release review.'), 'professional')
         self.assertEqual(detect_emotion('I am here and ready to help.'), 'happy')
 
-    def test_streaming_chunks_pack_adjacent_sentences_into_continuous_utterances(self):
+    def test_historical_small_chunk_setting_no_longer_splits_normal_reply(self):
         text = 'First sentence is ready. Second sentence is also ready. Third sentence is here.'
         chunks = speech_chunks(text, max_chars=80)
-        self.assertEqual(' '.join(chunks), text)
-        self.assertTrue(all(len(chunk) <= 80 for chunk in chunks))
-        self.assertLess(len(chunks), 3)
+        self.assertEqual(chunks, [text])
 
     def test_short_multi_sentence_reply_is_not_split_line_by_line(self):
         text = (
@@ -55,13 +53,21 @@ class EmotionalVoiceTests(unittest.TestCase):
         chunks = speech_chunks(text, max_chars=260)
         self.assertEqual(chunks, [text])
 
-    def test_long_reply_remains_bounded_for_interruptible_playback(self):
-        sentence = 'This sentence carries enough detail to exercise bounded neural speech playback safely.'
-        text = ' '.join([sentence] * 8)
+    def test_multi_paragraph_sized_reply_stays_single_continuous_utterance(self):
+        sentence = 'This sentence carries enough detail to exercise continuous neural speech playback safely.'
+        text = ' '.join([sentence] * 35)
+        self.assertLess(len(text), 5000)
+        chunks = speech_chunks(text, max_chars=260)
+        self.assertEqual(chunks, [text])
+
+    def test_genuinely_huge_reply_is_still_bounded(self):
+        sentence = 'This is a deliberately long sentence for bounded neural speech synthesis and interruption testing.'
+        text = ' '.join([sentence] * 90)
+        self.assertGreater(len(text), 6000)
         chunks = speech_chunks(text, max_chars=260)
         self.assertGreaterEqual(len(chunks), 2)
         self.assertEqual(' '.join(chunks), text)
-        self.assertTrue(all(len(chunk) <= 260 for chunk in chunks))
+        self.assertTrue(all(len(chunk) <= 5000 for chunk in chunks))
 
     def test_speak_queues_one_continuous_item_for_normal_multi_sentence_answer(self):
         voice = self._bare_voice()
