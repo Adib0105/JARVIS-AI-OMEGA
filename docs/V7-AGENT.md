@@ -7,11 +7,11 @@ The V7 mission engine turns a user goal into an auditable, recoverable sequence 
 The target behavior is:
 
 ```text
-UNDERSTAND → PLAN → PERMISSION → EXECUTE → VERIFY
-                              │             │
-                              │             └→ RECOVER / REPLAN
-                              ▼
-                         SAFE EVIDENCE
+CREATED → PLANNING → AWAITING_PERMISSION → EXECUTING → VERIFYING
+                                           │             │
+                                           │             └→ RECOVERING / REPLANNING
+                                           ▼
+                         COMPLETED / PARTIAL / FAILED / CANCELLED
 ```
 
 A mission should not report success merely because a tool returned without raising an exception.
@@ -21,21 +21,21 @@ A mission should not report success merely because a tool returned without raisi
 Mission state is persisted in additive SQLite storage. Core states include:
 
 ```text
-IDLE
-UNDERSTANDING
+CREATED
 PLANNING
-WAITING_FOR_PERMISSION
+AWAITING_PERMISSION
 EXECUTING
 VERIFYING
 RECOVERING
 REPLANNING
 PAUSED
 COMPLETED
+PARTIAL
 FAILED
 CANCELLED
 ```
 
-State transitions and safe event summaries are recorded without exposing private chain-of-thought.
+Only explicitly legal transitions are accepted. State and its event are stored in one transaction, and an optimistic revision prevents a stale process from overwriting newer mission state. Legacy persisted state names are migrated on load without deleting mission history. Safe event summaries are recorded without exposing private chain-of-thought.
 
 ## Mission data
 

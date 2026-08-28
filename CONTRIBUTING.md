@@ -6,10 +6,11 @@ The project values **reliability, verification, safety, clear evidence and focus
 
 ## Branch strategy
 
-- `main` — stable V6 baseline until the final V7 release decision
-- `v7-development` — active V7/V7.5 engineering
+- `main` — current V7.5 engineering line
+- short-lived review branches — normal contribution path
+- `v7-development` — legacy/in-flight engineering only
 
-New V7/V7.5 work should target `v7-development` unless a maintainer explicitly asks for something else.
+New work should be based on current `main` and submitted through a focused pull request.
 
 ## Before you start
 
@@ -24,8 +25,9 @@ Windows setup:
 
 ```powershell
 git fetch origin
-git switch v7-development
-git pull origin v7-development
+git switch main
+git pull origin main
+git switch -c feature/<short-name>
 Set-ExecutionPolicy -Scope Process Bypass
 .\setup_windows.ps1
 ```
@@ -39,6 +41,9 @@ Before opening a pull request:
 ```powershell
 .\.venv\Scripts\python.exe -m compileall -f -q .
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\ruff.exe check . --select E9,F63,F7,F82
+.\.venv\Scripts\bandit.exe -r jarvis *.py -lll
+.\.venv\Scripts\pip-audit.exe -r requirements-audit.txt --progress-spinner off
 ```
 
 When useful, also run:

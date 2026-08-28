@@ -8,6 +8,7 @@ import unicodedata
 from typing import Callable
 
 from .config import settings
+from .version import PRODUCT_DISPLAY_NAME, PRODUCT_SERIES
 
 
 STABLE_FREE_TEXT_MODEL = os.getenv(
@@ -32,7 +33,7 @@ def local_identity_answer(text: str) -> str | None:
     creator = settings.creator_name or 'Adib Azam'
     assistant = settings.assistant_name or 'JARVIS OMEGA'
     wants_capabilities = any(pattern in lower for pattern in _CAPABILITY_PATTERNS)
-    base = f'{creator} ne mujhe banaya hai. Main {assistant} V7 hoon.'
+    base = f'{creator} ne mujhe banaya hai. Main {assistant} {PRODUCT_SERIES} hoon.'
     if not wants_capabilities:
         return base
     return (
@@ -171,7 +172,7 @@ def _rebrand_widget_tree(widget) -> None:
     try:
         text = widget.cget('text')
         if isinstance(text, str) and 'V6' in text:
-            widget.configure(text=text.replace('V6', 'V7'))
+            widget.configure(text=text.replace('V6', PRODUCT_SERIES))
     except Exception:
         pass
     try:
@@ -194,7 +195,7 @@ def _rebrand_chat_history(app) -> None:
             if not index:
                 break
             chat.delete(index, f'{index}+2c')
-            chat.insert(index, 'V7')
+            chat.insert(index, PRODUCT_SERIES)
             start = f'{index}+2c'
         chat.configure(state=previous_state)
     except Exception:
@@ -218,7 +219,7 @@ def _install_security_gui_hooks(gui_module) -> None:
                 else:
                     from tkinter import messagebox
                     allowed = messagebox.askyesno(
-                        'JARVIS V7 // Permission Gate',
+                        f'{PRODUCT_DISPLAY_NAME} // Permission Gate',
                         f'Allow this local action?\n\nTool: {tool}\n\nArguments:\n{args}\n\nOnly approve if this matches your request.'
                     )
                     result['decision'] = ApprovalDecision.ALLOW_ONCE.value if allowed else ApprovalDecision.DENY.value
@@ -276,7 +277,7 @@ def run_adaptive_gui() -> None:
 
     _install_security_gui_hooks(gui_module)
     app = gui_module.JarvisDesktop(root)
-    root.title('JARVIS AI OMEGA V7 // RELIABLE ARC DESKTOP AGENT')
+    root.title(f'{PRODUCT_DISPLAY_NAME} // RELIABLE ARC DESKTOP AGENT')
     _rebrand_widget_tree(root)
     _rebrand_chat_history(app)
     root.bind('<Control-Shift-A>', lambda _event: __import__('jarvis.security.audit_ui', fromlist=['show_audit_viewer']).show_audit_viewer(root, getattr(getattr(app.jarvis, 'tools', None), 'audit', None)))

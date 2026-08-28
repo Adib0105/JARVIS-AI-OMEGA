@@ -4,8 +4,9 @@ This roadmap tracks engineering reality, not marketing promises.
 
 ## Branches
 
-- `main` — stable V6 baseline until final V7 release
-- `v7-development` — V7/V7.5 engineering and release-candidate work
+- `main` — current V7.5 engineering line
+- short-lived review branches — normal path for fixes and hardening
+- `v7-development` — retained legacy/in-flight engineering branch
 
 ## Completed / verified foundations
 
@@ -54,9 +55,9 @@ Discover → Propose → Sandbox → Build → Test → Security/Evaluation
 
 No unrestricted autonomous production rewriting is planned.
 
-## Release-candidate work remaining
+## Production release work remaining
 
-Before V7 becomes the stable `main` line:
+Before V7.5 can move beyond BETA:
 
 1. run full workstation smoke tests on the operator Windows machine;
 2. validate real microphone/voice behavior;
@@ -66,8 +67,8 @@ Before V7 becomes the stable `main` line:
 6. validate optional Gmail/Calendar only if included in the release claim;
 7. compile and test the Inno Setup installer locally;
 8. perform install/launch/uninstall smoke testing;
-9. sync status/changelog/release notes;
-10. make the final merge/tag/release decision.
+9. require branch protection and green required checks on `main`;
+10. sync status/changelog/release notes and make the final tag/release decision.
 
 ## Post-V7 ideas
 

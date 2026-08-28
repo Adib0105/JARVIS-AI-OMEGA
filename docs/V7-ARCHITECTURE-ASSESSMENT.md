@@ -1,5 +1,7 @@
 # JARVIS AI OMEGA V7 — Architecture Assessment & Implementation Plan
 
+> **Historical migration plan.** Branch, version and gap statements below describe the original V6→V7 planning baseline, not the current V7.5 implementation. Current evidence lives in [V7.5-PRODUCTION-AUDIT-2026-08-28.md](V7.5-PRODUCTION-AUDIT-2026-08-28.md).
+
 **Branch:** `v7-development`  
 **Baseline:** V6 main at `ee0ba1a46caa777590015e2630a42f125d5cb7fd`  
 **Target version:** `7.0.0`

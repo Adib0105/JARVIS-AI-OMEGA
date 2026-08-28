@@ -63,8 +63,26 @@ class ControlledReleaseEngine:
             policy = self.development.policy.validate_change_set(files, lines)
             if not policy.allowed:
                 raise PermissionError('Release policy rejected current sandbox diff: ' + '; '.join(policy.reasons))
+            materialized_reasons = self.development.sandbox.git.validate_materialized_files(
+                worktree, files
+            )
+            if materialized_reasons:
+                raise PermissionError(
+                    'Release policy rejected current sandbox files: '
+                    + '; '.join(materialized_reasons)
+                )
             if set(files) != set(proposal.changed_files):
                 raise RuntimeError('Sandbox diff changed after approval; re-review is required before release.')
+            approved_fingerprint = str(
+                (proposal.policy_summary or {}).get('review_diff_sha256') or ''
+            )
+            current_fingerprint = self.development.sandbox.git.snapshot_fingerprint(
+                worktree, files
+            )
+            if not approved_fingerprint or current_fingerprint != approved_fingerprint:
+                raise RuntimeError(
+                    'Sandbox content changed after approval; exact diff re-review is required.'
+                )
 
             checkpoint = self.development.rollback.get(proposal.id)
             if checkpoint is None:
@@ -78,6 +96,7 @@ class ControlledReleaseEngine:
                 proposal.branch,
                 files,
                 f'JARVIS self-improvement {proposal.id}: {proposal.title}',
+                expected_fingerprint=approved_fingerprint,
             )
             production_head = self.development.sandbox.git.fast_forward_production(
                 proposal.branch,

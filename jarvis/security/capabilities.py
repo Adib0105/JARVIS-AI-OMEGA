@@ -44,6 +44,29 @@ class ToolSecurityProfile:
     capabilities: frozenset[Capability]
     why: str
     side_effecting: bool = False
+    allowed_resources: tuple[str, ...] = ()
+    approval_requirement: str = 'CAPABILITY_POLICY'
+    verification_requirement: str = 'RESULT_VALIDATION'
+    audit_requirement: str = 'REQUIRED'
+
+    def contract_metadata(self) -> dict:
+        permissions = sorted(item.value for item in self.capabilities)
+        return {
+            'capability_id': (
+                permissions[0] if len(permissions) == 1 else
+                'MULTI_CAPABILITY' if permissions else 'UNKNOWN'
+            ),
+            'risk_level': self.risk.value,
+            'required_permissions': permissions,
+            'allowed_resources': list(self.allowed_resources or tuple(permissions)),
+            'side_effects': ['STATE_CHANGE'] if self.side_effecting else [],
+            'approval_requirement': self.approval_requirement,
+            'verification_requirement': (
+                'POST_ACTION_EVIDENCE' if self.side_effecting
+                else self.verification_requirement
+            ),
+            'audit_requirement': self.audit_requirement,
+        }
 
 
 LOW = RiskLevel.LOW

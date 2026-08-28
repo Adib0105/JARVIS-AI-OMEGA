@@ -1,13 +1,13 @@
 # JARVIS AI OMEGA V7.5 — Troubleshooting
 
-Use this guide after pulling the latest `v7-development` branch.
+Use this guide after pulling the latest `main` engineering line or the review branch you are testing.
 
 ## First diagnostic commands
 
 ```powershell
 git status
 git branch --show-current
-git pull origin v7-development
+git pull origin main
 .\.venv\Scripts\python.exe self_check.py
 .\.venv\Scripts\python.exe self_check_v75.py
 ```
@@ -72,7 +72,7 @@ If a key has been exposed publicly, revoke it and create a new one.
 V7 tracks active playback and should terminate it during shutdown. First update the branch and retest:
 
 ```powershell
-git pull origin v7-development
+git pull origin main
 .\run_desktop.bat
 ```
 

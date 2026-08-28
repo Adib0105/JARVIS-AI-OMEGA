@@ -45,10 +45,10 @@ class BrowserAgent:
 
     @staticmethod
     def trust(url: str) -> dict:
-        return assess_public_url(url).as_dict()
+        return assess_public_url(url, resolve_dns=True).as_dict()
 
     def open(self, url: str) -> dict:
-        trust = assess_public_url(url)
+        trust = assess_public_url(url, resolve_dns=True)
         if not trust.allowed:
             return {'ok': False, 'error': '; '.join(trust.reasons), 'trust': trust.as_dict()}
         before = _browser_processes()

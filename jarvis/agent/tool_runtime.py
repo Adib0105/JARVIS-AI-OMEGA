@@ -5,6 +5,7 @@ import json
 import threading
 import time
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Callable
 
 from ..config import settings
@@ -28,6 +29,18 @@ _PERSISTENT_TEXT_TOOLS = {
     'add_todo': ('title',),
     'add_reminder': ('text',),
 }
+
+
+class ToolExecutionStatus(str, Enum):
+    """Canonical, auditable outcome vocabulary for every tool invocation."""
+
+    SUCCESS = 'SUCCESS'
+    PARTIAL = 'PARTIAL'
+    FAILED = 'FAILED'
+    DENIED = 'DENIED'
+    TIMEOUT = 'TIMEOUT'
+    CANCELLED = 'CANCELLED'
+    UNVERIFIED = 'UNVERIFIED'
 
 
 class RecordingToolRegistry(ToolRegistry):
@@ -73,15 +86,25 @@ class RecordingToolRegistry(ToolRegistry):
         try:
             payload = json.loads(output)
         except Exception:
-            return 'FAILED', 'TOOL_ERROR'
+            return ToolExecutionStatus.FAILED.value, 'TOOL_ERROR'
         if isinstance(payload, dict) and payload.get('ok') is True:
-            return 'SUCCESS', None
+            declared = str(payload.get('execution_status', '')).upper()
+            verification = payload.get('verification')
+            if isinstance(verification, dict):
+                declared = str(verification.get('status', declared)).upper()
+            if declared in {ToolExecutionStatus.PARTIAL.value, ToolExecutionStatus.UNVERIFIED.value}:
+                return declared, None
+            return ToolExecutionStatus.SUCCESS.value, None
         error = str(payload.get('error', 'Tool failed.')) if isinstance(payload, dict) else 'Tool failed.'
         lower = error.lower()
-        if 'not approved' in lower or 'permission' in lower or 'denied' in lower or 'cancellation requested' in lower:
-            return 'DENIED', 'PERMISSION_ERROR'
+        if 'cancelled' in lower or 'canceled' in lower or 'cancellation requested' in lower:
+            return ToolExecutionStatus.CANCELLED.value, 'CANCELLED'
+        if 'timed out' in lower or 'timeout' in lower:
+            return ToolExecutionStatus.TIMEOUT.value, 'TIMEOUT'
+        if 'not approved' in lower or 'permission' in lower or 'denied' in lower:
+            return ToolExecutionStatus.DENIED.value, 'PERMISSION_ERROR'
         failure = classify_exception(RuntimeError(error), operation='tool')
-        return 'FAILED', failure.category.value
+        return ToolExecutionStatus.FAILED.value, failure.category.value
 
     @staticmethod
     def _verification_hints(name: str, args: dict) -> dict:

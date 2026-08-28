@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import difflib
+import hashlib
+import os
 import re
 import shutil
 import subprocess
@@ -80,27 +83,97 @@ class SelfDevelopmentGitManager:
         return destination
 
     def status_files(self, worktree: Path) -> list[str]:
-        result = self._run(['status', '--porcelain=v1'], cwd=worktree)
+        tracked = self._run(
+            ['diff', '--name-only', '-z', 'HEAD', '--'], cwd=worktree
+        )
+        untracked = self._run(
+            ['ls-files', '--others', '--exclude-standard', '-z'], cwd=worktree
+        )
+        if not tracked.ok or not untracked.ok:
+            raise RuntimeError(
+                tracked.stderr or untracked.stderr or 'Unable to inspect worktree status.'
+            )
+        return sorted({
+            item for item in (tracked.stdout + untracked.stdout).split('\x00') if item
+        })
+
+    def untracked_files(self, worktree: Path) -> list[str]:
+        result = self._run(
+            ['ls-files', '--others', '--exclude-standard', '-z'], cwd=worktree
+        )
         if not result.ok:
-            raise RuntimeError(result.stderr or 'Unable to inspect worktree status.')
-        output: list[str] = []
-        for line in result.stdout.splitlines():
-            if len(line) < 4:
+            raise RuntimeError(result.stderr or 'Unable to inspect untracked files.')
+        return sorted(item for item in result.stdout.split('\x00') if item)
+
+    def tracked_at_head(self, worktree: Path, path: str) -> bool:
+        result = self._run(['cat-file', '-e', f'HEAD:{path}'], cwd=worktree)
+        return result.ok
+
+    @staticmethod
+    def validate_materialized_files(worktree: Path, files: list[str]) -> list[str]:
+        """Reject links, special files, binary text or oversized generated files."""
+        root = worktree.resolve()
+        reasons: list[str] = []
+        for relative in files:
+            target = root / relative
+            if not target.exists() and not target.is_symlink():
+                continue  # reviewed deletion
+            if target.is_symlink():
+                reasons.append(f'{relative}: symbolic links are not allowed in generated changes')
                 continue
-            raw = line[3:].strip()
-            if ' -> ' in raw:
-                raw = raw.split(' -> ', 1)[1]
-            output.append(raw)
-        return sorted(set(output))
+            try:
+                resolved = target.resolve(strict=True)
+            except OSError as exc:
+                reasons.append(f'{relative}: cannot resolve changed file: {exc}')
+                continue
+            if root != resolved and root not in resolved.parents:
+                reasons.append(f'{relative}: changed file escaped the sandbox')
+                continue
+            if not resolved.is_file():
+                reasons.append(f'{relative}: only regular files may be generated')
+                continue
+            try:
+                size = resolved.stat().st_size
+                if size > 2_000_000:
+                    reasons.append(f'{relative}: generated file exceeds the 2 MB limit')
+                    continue
+                raw = resolved.read_bytes()
+                if b'\x00' in raw:
+                    reasons.append(f'{relative}: binary/NUL content is not allowed')
+                    continue
+                raw.decode('utf-8')
+            except (OSError, UnicodeDecodeError) as exc:
+                reasons.append(f'{relative}: changed file is not reviewable UTF-8 text: {exc}')
+        return reasons
 
     def diff(self, worktree: Path, *, max_chars: int = 200000) -> str:
-        result = self._run(['diff', '--no-ext-diff', '--'], cwd=worktree)
+        result = self._run(['diff', '--no-ext-diff', 'HEAD', '--'], cwd=worktree)
         if not result.ok:
             raise RuntimeError(result.stderr or 'Unable to create Git diff.')
-        return result.stdout[:max_chars]
+        output = result.stdout
+        root = worktree.resolve()
+        for relative in self.untracked_files(worktree):
+            target = root / relative
+            if target.is_symlink() or not target.is_file():
+                addition = f'\n--- /dev/null\n+++ b/{relative}\n[unreviewable non-regular file]\n'
+            else:
+                try:
+                    raw = target.read_bytes()
+                    text = raw.decode('utf-8')
+                    addition = ''.join(difflib.unified_diff(
+                        [], text.splitlines(keepends=True),
+                        fromfile='/dev/null', tofile=f'b/{relative}',
+                    ))
+                except (OSError, UnicodeDecodeError):
+                    addition = f'\n--- /dev/null\n+++ b/{relative}\n[unreviewable binary file]\n'
+            if len(output) + len(addition) > max_chars:
+                output += '\n[diff truncated at review limit]\n'
+                break
+            output += addition
+        return output[:max_chars]
 
     def diff_stats(self, worktree: Path) -> tuple[list[str], int]:
-        result = self._run(['diff', '--numstat', '--'], cwd=worktree)
+        result = self._run(['diff', '--numstat', 'HEAD', '--'], cwd=worktree)
         if not result.ok:
             raise RuntimeError(result.stderr or 'Unable to calculate Git diff stats.')
         files: list[str] = []
@@ -115,10 +188,51 @@ class SelfDevelopmentGitManager:
                 lines += int(added)
             if removed.isdigit():
                 lines += int(removed)
-        files.extend(self.status_files(worktree))
+        for path in self.untracked_files(worktree):
+            files.append(path)
+            target = worktree.resolve() / path
+            try:
+                raw = target.read_bytes()
+                lines += len(raw.splitlines())
+            except OSError:
+                # The materialized-file validator will reject it. Keep the path in
+                # the inventory so it cannot disappear from review evidence.
+                pass
         return sorted(set(files)), lines
 
-    def commit_worktree(self, worktree: Path, branch: str, files: list[str], message: str) -> str:
+    @staticmethod
+    def snapshot_fingerprint(worktree: Path, files: list[str]) -> str:
+        """Bind approval to exact paths, modes and bytes, including untracked files."""
+        root = worktree.resolve()
+        digest = hashlib.sha256()
+        for relative in sorted(set(files)):
+            target = root / relative
+            digest.update(relative.encode('utf-8', errors='surrogateescape'))
+            digest.update(b'\x00')
+            if target.is_symlink():
+                digest.update(b'SYMLINK\x00')
+                digest.update(os.readlink(target).encode('utf-8', errors='surrogateescape'))
+                continue
+            if not target.exists():
+                digest.update(b'DELETED\x00')
+                continue
+            stat = target.stat()
+            digest.update(f'FILE:{stat.st_mode & 0o777:o}\x00'.encode('ascii'))
+            with target.open('rb') as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+                    digest.update(chunk)
+            digest.update(b'\x00')
+        return digest.hexdigest()
+
+    def commit_worktree(
+        self,
+        worktree: Path,
+        branch: str,
+        files: list[str],
+        message: str,
+        *,
+        expected_fingerprint: str,
+    ) -> str:
         branch = self.validate_branch(branch)
         if self.current_branch(worktree) != branch:
             raise RuntimeError('Sandbox worktree is not on the expected improvement branch.')
@@ -128,6 +242,11 @@ class SelfDevelopmentGitManager:
         add = self._run(['add', '--', *files], cwd=worktree)
         if not add.ok:
             raise RuntimeError(add.stderr or 'Unable to stage reviewed improvement files.')
+        current_fingerprint = self.snapshot_fingerprint(worktree, files)
+        if current_fingerprint != expected_fingerprint:
+            raise RuntimeError(
+                'Sandbox content changed while staging; deployment stopped for re-review.'
+            )
         commit = self._run(['commit', '-m', message[:240]], cwd=worktree)
         if not commit.ok:
             raise RuntimeError(commit.stderr or commit.stdout or 'Unable to commit improvement branch.')

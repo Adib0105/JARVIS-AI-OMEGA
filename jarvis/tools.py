@@ -14,6 +14,7 @@ from .google_workspace import GoogleWorkspace
 from .local_files import LocalFiles
 from .memory import MemoryStore
 from .permissions import PermissionGate
+from .security.capabilities import profile_for
 from .system_tools import current_time, open_app, open_url, system_info, system_metrics
 from .web_tools import read_web_page, search_news, search_web
 
@@ -133,6 +134,26 @@ class ToolRegistry:
                 _fn('git_log', 'Read recent Git commit log in an approved local repository. Requires approval.', {'folder': s, 'count': {'type': 'integer', 'minimum': 1, 'maximum': 30}}, ['folder', 'count']),
             ]
         return tools
+
+    def security_contracts(self, include_local: bool = True) -> list[dict]:
+        """Return authoritative machine-readable input/security contracts."""
+        contracts = []
+        for schema in self.schemas(include_local=include_local):
+            tool_name = str(schema['name'])
+            parameters = dict(schema.get('parameters') or {})
+            profile = profile_for(tool_name)
+            contracts.append({
+                'name': tool_name,
+                **profile.contract_metadata(),
+                'allowed_inputs': {
+                    'properties': dict(parameters.get('properties') or {}),
+                    'required': list(parameters.get('required') or []),
+                    'additional_properties': bool(
+                        parameters.get('additionalProperties', False)
+                    ),
+                },
+            })
+        return contracts
 
     def _index_file(self, file_path: str) -> dict:
         text = self.files.read_text(file_path, 50000)

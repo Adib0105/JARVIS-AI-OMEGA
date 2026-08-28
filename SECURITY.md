@@ -8,10 +8,11 @@ Security is part of the architecture: permission checks, secret protection, audi
 
 | Branch | Status |
 |---|---|
-| `main` | Stable V6 baseline |
-| `v7-development` | Active V7/V7.5 engineering |
+| `main` | Current V7.5 engineering line; release status remains BETA until live gates pass |
+| review branches | Required path for security and production-hardening changes |
+| `v7-development` | Legacy/in-flight engineering branch |
 
-Security fixes for active V7/V7.5 work should normally target `v7-development` first unless a maintainer decides the stable line also needs a patch.
+Security fixes should normally arrive through a focused pull request into `main`, with deterministic regression evidence and an explicit statement of any live validation still pending.
 
 ## Reporting a vulnerability
 
@@ -73,7 +74,7 @@ Webpage/search content is always untrusted data.
 
 It must never replace system, developer or security policy. Browser V2 includes checks for common instruction-override, secret-extraction, command-execution and security-bypass prompt patterns.
 
-Public page-reading paths reject obvious local/private literal targets and embedded URL credentials where applicable.
+Protected page-reading paths reject local/private literal and DNS-resolved targets, embedded credentials, unsafe redirect hops, control characters, oversized responses and unsupported content types. The connection is pinned to the validated public address while TLS certificate/SNI validation remains bound to the original host.
 
 Examples of untrusted webpage instructions include attempts to:
 
@@ -109,11 +110,12 @@ Security rules:
 
 ## Self-development immutable core
 
-Normal automated self-development MUST NOT modify protected security-critical areas such as:
+Normal automated self-development MUST NOT modify protected trust-boundary areas such as:
 
 - `jarvis/security/`
-- self-development policy/guardrail controls
-- rollback/release protection logic
+- the complete `jarvis/self_development/` control plane
+- tool/runtime/browser/file/Git/config trust boundaries
+- release-critical security tests and CI workflows
 - `.env` / secret files
 - `.git/`
 - protected production/runtime data
@@ -158,7 +160,7 @@ AUTO_ROLLBACK_ENABLED=false
 
 Even an approved proposal cannot deploy by default.
 
-The experimental release engine additionally requires deliberate production-self-modification enablement, a clean unchanged production checkout, current tests, reviewed files, immutable-core policy and fast-forward-only deployment.
+The experimental release engine additionally requires deliberate production-self-modification enablement, a clean unchanged production checkout, current tests, exact byte-for-byte reviewed content, immutable-core policy and fast-forward-only deployment. Untracked files, symlinks, binary/non-UTF-8 payloads, oversized files and review-to-commit time-of-check/time-of-use changes are rejected.
 
 Rollback uses history-preserving Git revert plus regression verification rather than destructive `reset --hard` workflows.
 

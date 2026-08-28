@@ -37,7 +37,13 @@ class V75SelfDevelopmentTests(unittest.TestCase):
 
     def test_policy_blocks_security_core_and_secret_paths(self):
         policy = SelfDevelopmentPolicy()
-        for path in ('jarvis/security/policy.py', 'jarvis/self_development/rollback.py', '.env'):
+        for path in (
+            'jarvis/security/policy.py',
+            'jarvis/self_development/release.py',
+            '.github/workflows/ci.yml',
+            'tests/evaluation/test_security_adversarial.py',
+            '.env',
+        ):
             allowed, _ = policy.path_allowed(path)
             self.assertFalse(allowed, path)
         allowed, _ = policy.path_allowed('jarvis/documents.py')
@@ -111,6 +117,38 @@ class V75SelfDevelopmentTests(unittest.TestCase):
 
             # Approval is only a state transition. No production merge/deploy exists here.
             self.assertEqual((repo / 'hello.py').read_text(encoding='utf-8'), "def greet():\n    return 'old'\n")
+            engine.sandbox.destroy(proposal.id, delete_branch=True)
+
+    def test_untracked_file_content_and_lines_are_included_in_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = self._repo(root)
+            engine = SelfDevelopmentEngine(
+                root / 'state.db', repo_root=repo, workspace_root=root / 'workspace'
+            )
+            proposal = engine.proposal_from_gap({
+                'capability': 'Docs',
+                'title': 'Add generated notes',
+                'description': 'exercise untracked review evidence',
+                'recommended_action': 'add a bounded document',
+                'evidence': ['review-required'],
+            })
+            prepared = engine.prepare_sandbox(proposal.id)
+            worktree = Path(prepared.sandbox_path)
+            generated = worktree / 'docs' / 'generated.md'
+            generated.parent.mkdir()
+            generated.write_text('\n'.join(f'line {index}' for index in range(1301)), encoding='utf-8')
+
+            files, lines = engine.sandbox.git.diff_stats(worktree)
+            diff = engine.sandbox.git.diff(worktree)
+            self.assertIn('docs/generated.md', files)
+            self.assertGreater(lines, engine.policy.max_lines_changed)
+            self.assertIn('line 1300', diff)
+
+            self.assertEqual(engine.run_tests(proposal.id).status, ProposalStatus.TESTED)
+            reviewed = engine.review(proposal.id)
+            self.assertEqual(reviewed.status, ProposalStatus.FAILED)
+            self.assertTrue(any('line limit exceeded' in reason for reason in reviewed.policy_summary['review_reasons']))
             engine.sandbox.destroy(proposal.id, delete_branch=True)
 
 

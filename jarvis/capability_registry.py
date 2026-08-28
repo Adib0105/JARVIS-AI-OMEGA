@@ -27,16 +27,25 @@ class CapabilityRecord:
     status: CapabilityStatus
     dependencies: tuple[str, ...]
     permissions: tuple[str, ...]
-    risk: str
+    risk_level: str
     tests: tuple[str, ...]
     success_rate: float | None
     last_verified: str
     implementation_path: str
+    entry_points: tuple[str, ...]
+    evidence: tuple[str, ...]
+    known_limitations: tuple[str, ...]
     detail: str = ''
+
+    @property
+    def risk(self) -> str:
+        """Compatibility alias for existing UI callers."""
+        return self.risk_level
 
     def as_dict(self) -> dict:
         data = asdict(self)
         data['status'] = self.status.value
+        data['risk'] = self.risk_level
         return data
 
 
@@ -89,7 +98,15 @@ class CapabilityRegistry:
         implementation_path: str,
         detail: str = '',
         version: str = '1.0',
+        entry_points: tuple[str, ...] = (),
+        evidence: tuple[str, ...] = (),
+        known_limitations: tuple[str, ...] = (),
     ) -> CapabilityRecord:
+        derived_entry_points = entry_points or tuple(
+            item.strip() for item in implementation_path.split(';') if item.strip()
+        )
+        derived_evidence = evidence or tests
+        derived_limitations = known_limitations or ((detail,) if detail else ())
         return CapabilityRecord(
             name=name,
             version=version,
@@ -97,11 +114,14 @@ class CapabilityRegistry:
             status=status,
             dependencies=dependencies,
             permissions=permissions,
-            risk=risk,
+            risk_level=risk,
             tests=tests,
             success_rate=None,
             last_verified=_now(),
             implementation_path=implementation_path,
+            entry_points=derived_entry_points,
+            evidence=derived_evidence,
+            known_limitations=derived_limitations,
             detail=detail,
         )
 
@@ -200,7 +220,7 @@ class CapabilityRegistry:
             'Browser', 'Browser navigation/read/search with public-address checks, prompt-injection scanning and untrusted-content handling.',
             CapabilityStatus.AVAILABLE if settings.enable_desktop_automation else CapabilityStatus.DISABLED,
             dependencies=('webbrowser', 'DDGS for public reads/search'), permissions=('BROWSER_READ', 'BROWSER_CONTROL'), risk='MEDIUM',
-            tests=('tests/test_v7_computer_use.py', 'tests/test_v75_browser_security.py', 'tests/evaluation/test_adversarial_security.py'),
+            tests=('tests/test_v7_computer_use.py', 'tests/test_v75_browser_v2.py', 'tests/evaluation/test_security_adversarial.py'),
             implementation_path='jarvis/computer_use/browser.py; jarvis/computer_use/browser_security.py; jarvis/automation.py',
         )
 
@@ -236,7 +256,7 @@ class CapabilityRegistry:
         records['Voice'] = self._record(
             'Voice', 'Hindi/Hinglish/English spoken output with play/pause/stop/speed and shutdown-safe playback.', voice_status,
             dependencies=('edge-tts or pyttsx3',), permissions=(), risk='LOW',
-            tests=('tests/test_voice.py', 'tests/test_voice_controls.py'), implementation_path='jarvis/voice.py; jarvis/voice_ui.py',
+            tests=('tests/test_voice.py', 'tests/test_voice_premium.py'), implementation_path='jarvis/voice.py; jarvis/voice_ui.py',
         )
 
         mic_deps = _all_modules('sounddevice', 'speech_recognition')
@@ -274,7 +294,7 @@ class CapabilityRegistry:
             'Local AI', 'Provider-neutral local OpenAI-compatible fallback and optional offline-development reasoning.',
             CapabilityStatus.EXPERIMENTAL if local_configured else CapabilityStatus.MISSING,
             dependencies=('local OpenAI-compatible server', 'configured local model'), permissions=(), risk='MEDIUM',
-            tests=('tests/test_v7_foundation.py', 'tests/test_v75_offline_development.py'),
+            tests=('tests/test_v7_foundation.py', 'tests/test_v75_offline.py'),
             implementation_path='jarvis/providers/local_provider.py; jarvis/self_development/offline.py',
             detail='configured' if local_configured else 'adapter exists but no local model is configured',
         )

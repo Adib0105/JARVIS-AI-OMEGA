@@ -1,15 +1,16 @@
 # JARVIS AI OMEGA V7.5 — Release Guide
 
-This document defines the release path from `v7-development` to a stable V7 release.
+This document defines the path from the current V7.5 engineering line to a production release.
 
 ## Branch policy
 
 ```text
-main            stable V6 until V7 release decision
-v7-development  active V7/V7.5 engineering
+main                 current V7.5 engineering line
+short-lived branch   reviewed change / release candidate
+v7-development       legacy or in-flight engineering only
 ```
 
-Do not merge V7 into `main` just because a feature exists. Release requires code, integration, tests, security evidence and workstation validation.
+Do not create a tag or production release merely because code has reached `main`. Release requires code, integration, tests, security evidence and workstation validation.
 
 ## Release readiness checklist
 
@@ -39,8 +40,8 @@ Optional integrations such as Gmail/Calendar or a local model should be validate
 ## Development verification commands
 
 ```powershell
-git switch v7-development
-git pull origin v7-development
+git switch main
+git pull origin main
 .\.venv\Scripts\python.exe self_check.py
 .\.venv\Scripts\python.exe self_check_v75.py
 .\.venv\Scripts\python.exe -m compileall -f -q .
@@ -57,7 +58,7 @@ git pull origin v7-development
 Expected executable:
 
 ```text
-dist/JARVIS-OMEGA-V7/JARVIS-OMEGA-V7.exe
+dist/JARVIS-OMEGA-V7.5/JARVIS-OMEGA-V7.5.exe
 ```
 
 The distribution must not include:
@@ -129,9 +130,9 @@ Do not label an experimental feature as stable merely because its deterministic 
 Recommended release tags:
 
 ```text
-v7.0.0
-v7.0.1
-v7.1.0
+v7.5.0
+v7.5.1
+v7.6.0
 ```
 
 Use semantic versioning:
@@ -155,4 +156,4 @@ Each release should state:
 
 ## Final rule
 
-A green CI run is necessary but not sufficient for a Windows desktop release. Physical microphone behavior, screen permissions, provider availability and installed-app interaction require workstation smoke testing before `main` becomes the V7 stable line.
+A green CI run is necessary but not sufficient for a Windows desktop release. Physical microphone behavior, screen permissions, provider availability, packaged launch, installer behavior and installed-app interaction require workstation smoke testing before V7.5 can move beyond BETA.

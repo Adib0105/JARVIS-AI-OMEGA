@@ -4,10 +4,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from jarvis.memory import MemoryStore
 from jarvis.security.audit import AuditStore
 from jarvis.security.capabilities import Capability, TOOL_SECURITY, profile_for
 from jarvis.security.policy import ApprovalDecision, CapabilityPermissionGate
 from jarvis.security.secrets import contains_secret, ensure_safe_for_persistent_memory
+from jarvis.tools import ToolRegistry
 
 
 class V7SecurityTests(unittest.TestCase):
@@ -25,6 +27,25 @@ class V7SecurityTests(unittest.TestCase):
         }
         self.assertTrue(expected.issubset(set(TOOL_SECURITY)))
         self.assertTrue(all(profile_for(name).capabilities for name in expected))
+
+    def test_every_exposed_tool_has_complete_machine_readable_security_contract(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = ToolRegistry(MemoryStore(Path(tmp) / 'jarvis.db'))
+            required = {
+                'name', 'capability_id', 'risk_level', 'required_permissions',
+                'allowed_inputs', 'allowed_resources', 'side_effects',
+                'approval_requirement', 'verification_requirement',
+                'audit_requirement',
+            }
+            contracts = registry.security_contracts()
+            self.assertEqual(
+                {item['name'] for item in contracts},
+                {item['name'] for item in registry.schemas()},
+            )
+            for contract in contracts:
+                self.assertTrue(required.issubset(contract), contract['name'])
+                self.assertTrue(contract['required_permissions'], contract['name'])
+                self.assertEqual(contract['audit_requirement'], 'REQUIRED')
 
     def test_unknown_tool_is_denied_by_default(self):
         gate = CapabilityPermissionGate(lambda *_: ApprovalDecision.ALLOW_ONCE.value)

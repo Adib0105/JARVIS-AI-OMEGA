@@ -11,8 +11,8 @@ body:
     id: version
     attributes:
       label: Branch / commit
-      description: Example: v7-development / commit SHA
-      placeholder: v7-development / abc1234
+      description: Example: main or review branch / commit SHA
+      placeholder: main / abc1234
     validations:
       required: true
   - type: input
@@ -60,5 +60,5 @@ body:
       options:
         - label: I removed API keys, passwords, OAuth tokens, recovery codes and other secrets.
           required: true
-        - label: I checked the latest v7-development branch before reporting.
+        - label: I checked the latest main branch or the review branch containing the fix before reporting.
           required: true

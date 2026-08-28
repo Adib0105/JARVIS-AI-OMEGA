@@ -1,6 +1,6 @@
 # JARVIS AI OMEGA V7.5 — Setup Guide
 
-This guide covers a clean Windows development setup for the `v7-development` branch.
+This guide covers a clean Windows development setup from the current `main` engineering line.
 
 ## Requirements
 
@@ -20,16 +20,16 @@ Recommended:
 git clone https://github.com/Adib0105/JARVIS-AI-OMEGA.git
 cd JARVIS-AI-OMEGA
 git fetch origin
-git switch v7-development
-git pull origin v7-development
+git switch main
+git pull origin main
 ```
 
 If the repository already exists:
 
 ```powershell
 git status
-git switch v7-development
-git pull origin v7-development
+git switch main
+git pull origin main
 ```
 
 Do not overwrite local work before checking `git status`.
@@ -178,7 +178,7 @@ Build:
 Expected application path:
 
 ```text
-dist/JARVIS-OMEGA-V7/JARVIS-OMEGA-V7.exe
+dist/JARVIS-OMEGA-V7.5/JARVIS-OMEGA-V7.5.exe
 ```
 
 Private `.env`, live SQLite databases and Google OAuth credentials/tokens must not be bundled.
@@ -194,7 +194,7 @@ After installing Inno Setup 6:
 Installer definition:
 
 ```text
-installer/JARVIS-OMEGA-V7.iss
+installer/JARVIS-OMEGA-V7.5.iss
 ```
 
 ## Update workflow
@@ -202,8 +202,8 @@ installer/JARVIS-OMEGA-V7.iss
 Before testing a new development revision:
 
 ```powershell
-git switch v7-development
-git pull origin v7-development
+git switch main
+git pull origin main
 .\.venv\Scripts\python.exe self_check_v75.py
 ```
 

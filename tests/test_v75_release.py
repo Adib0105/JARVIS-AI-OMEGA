@@ -86,6 +86,29 @@ class V75ReleaseTests(unittest.TestCase):
                 self.assertIn('revert', log)
             dev.sandbox.destroy(proposal_id, delete_branch=True)
 
+    def test_release_rejects_same_file_set_when_content_changed_after_approval(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, dev, proposal_id = self._approved(Path(tmp))
+            proposal = dev.store.get(proposal_id)
+            worktree = Path(proposal.sandbox_path)
+            (worktree / 'hello.py').write_text(
+                "def greet():\n    return 'tampered-after-approval'\n",
+                encoding='utf-8',
+            )
+            (worktree / 'tests' / 'test_hello.py').write_text(
+                "import unittest\nfrom hello import greet\n"
+                "class T(unittest.TestCase):\n"
+                "    def test_greet(self): self.assertEqual(greet(), 'tampered-after-approval')\n",
+                encoding='utf-8',
+            )
+            release = ControlledReleaseEngine(dev)
+            fake = SimpleNamespace(production_self_modification=True, auto_rollback_enabled=False)
+            with patch('jarvis.self_development.release.settings', fake):
+                with self.assertRaisesRegex(RuntimeError, 'exact diff re-review'):
+                    release.deploy(proposal_id, explicit_user_approval=True)
+            self.assertIn("'old'", (repo / 'hello.py').read_text(encoding='utf-8'))
+            dev.sandbox.destroy(proposal_id, delete_branch=True)
+
 
 if __name__ == '__main__':
     unittest.main()
