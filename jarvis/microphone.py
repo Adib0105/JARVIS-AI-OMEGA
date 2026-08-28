@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import time
+from array import array
 from typing import Callable
 
 
@@ -53,6 +54,68 @@ def recognition_languages(language: str) -> tuple[str, ...]:
     return (selected,)
 
 
+def _pcm_rms(data: bytes) -> float:
+    """Return RMS energy for little-endian signed 16-bit mono PCM without NumPy."""
+    raw = bytes(data or b'')
+    if len(raw) < 2:
+        return 0.0
+    if len(raw) % 2:
+        raw = raw[:-1]
+    samples = array('h')
+    samples.frombytes(raw)
+    if not samples:
+        return 0.0
+    total = sum(int(sample) * int(sample) for sample in samples)
+    return (total / len(samples)) ** 0.5
+
+
+def _record_until_silence(stream, max_duration: float, sample_rate: int) -> tuple[bytes, bool, float]:
+    """Capture speech with a bounded max duration and stop after natural trailing silence.
+
+    The old implementation always blocked for the full configured duration even
+    when the user finished speaking early. This keeps a small pre-roll, adapts to
+    quiet ambient noise, and ends after about one second of trailing silence.
+    """
+    chunk_seconds = 0.20
+    chunk_frames = max(320, int(sample_rate * chunk_seconds))
+    max_chunks = max(1, int(max_duration / chunk_seconds + 0.999))
+    end_silence_seconds = 1.0
+    minimum_capture_seconds = 0.65
+
+    chunks: list[bytes] = []
+    ambient: list[float] = []
+    speech_seen = False
+    trailing_silence = 0.0
+    peak_rms = 0.0
+    threshold = 150.0
+
+    for index in range(max_chunks):
+        data, _overflowed = stream.read(chunk_frames)
+        raw = bytes(data)
+        chunks.append(raw)
+        rms = _pcm_rms(raw)
+        peak_rms = max(peak_rms, rms)
+
+        # Learn only genuinely quiet pre-speech chunks. If the user starts talking
+        # immediately we intentionally keep the conservative base threshold.
+        if not speech_seen and rms < 450.0 and len(ambient) < 5:
+            ambient.append(rms)
+            noise = sum(ambient) / len(ambient)
+            threshold = max(120.0, min(520.0, noise * 2.2 + 70.0))
+
+        if rms >= threshold:
+            speech_seen = True
+            trailing_silence = 0.0
+        elif speech_seen:
+            trailing_silence += chunk_seconds
+
+        elapsed = (index + 1) * chunk_seconds
+        if speech_seen and elapsed >= minimum_capture_seconds and trailing_silence >= end_silence_seconds:
+            break
+
+    return b''.join(chunks), speech_seen, peak_rms
+
+
 def record_and_transcribe(
     duration: float = 6.0,
     language: str = 'auto',
@@ -63,14 +126,15 @@ def record_and_transcribe(
     """Record mono PCM and transcribe Indian English/Hinglish/Hindi speech.
 
     Push-to-talk uses ``barge_in=True`` so starting a microphone request stops
-    current JARVIS speech immediately. Continuous wake-word sampling opts out and
-    interrupts only after the wake phrase is actually detected.
+    current JARVIS speech immediately. Capture is silence-aware: it can finish
+    before the maximum recording window once the user has stopped speaking.
+    Continuous wake-word sampling opts out of barge-in and interrupts only after
+    the wake phrase is actually detected.
     """
     if barge_in:
         request_voice_interrupt()
     sd, sr = _deps()
     duration = max(1.0, min(float(duration), 20.0))
-    frames = int(sample_rate * duration)
 
     try:
         with sd.RawInputStream(
@@ -79,16 +143,15 @@ def record_and_transcribe(
             dtype='int16',
             channels=1,
         ) as stream:
-            data, overflowed = stream.read(frames)
+            data, speech_seen, peak_rms = _record_until_silence(stream, duration, sample_rate)
     except Exception as exc:
         raise MicrophoneUnavailable(f'Microphone recording failed: {exc}') from exc
 
-    if overflowed:
-        # Overflow does not always make the clip unusable; continue and let recognition decide.
-        pass
+    if not data or peak_rms < 35.0:
+        raise RuntimeError('Microphone me clear voice signal nahi mila. Mic level/input device check karke dobara bolo.')
 
     recognizer = sr.Recognizer()
-    audio = sr.AudioData(bytes(data), sample_rate, 2)
+    audio = sr.AudioData(data, sample_rate, 2)
     unknown = None
     for selected_language in recognition_languages(language):
         try:
@@ -100,7 +163,10 @@ def record_and_transcribe(
             continue
         except sr.RequestError as exc:
             raise RuntimeError(f'Speech recognition service unavailable: {exc}') from exc
-    raise RuntimeError('Voice clear nahi samajh aayi. Dobara thoda clearly bolo.') from unknown
+
+    if not speech_seen:
+        raise RuntimeError('Voice signal bahut low/noisy thi. Mic ke paas normal awaaz me dobara bolo.') from unknown
+    raise RuntimeError('Voice clear nahi samajh aayi. Dobara normal speed me clearly bolo.') from unknown
 
 
 class WakeWordListener:
@@ -162,8 +228,6 @@ class WakeWordListener:
             name='jarvis-wake-word',
         )
         with self._thread_lock:
-            # Do not reuse/clear an old event. An older blocked generation keeps its
-            # own permanently-set signal and exits when its current call returns.
             self._stop = stop_event
             self._thread = thread
             self._conversation_until = 0.0
@@ -230,7 +294,6 @@ class WakeWordListener:
             except Exception as exc:
                 if stop_event.is_set():
                     break
-                # Recognition misses are normal in continuous mode; avoid a hot error loop.
                 self.on_error(str(exc))
                 stop_event.wait(0.8)
                 if not stop_event.is_set():
