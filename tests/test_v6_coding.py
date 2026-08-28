@@ -75,6 +75,25 @@ class V6CodingTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'real Python interpreter'):
                     workspace._test_python_command(root)
 
+    def test_prepare_unit_tests_returns_bounded_allowlisted_launch_spec(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'tests').mkdir()
+            (root / 'tests' / 'test_demo.py').write_text(
+                'import unittest\n\nclass Demo(unittest.TestCase):\n    def test_ok(self): self.assertTrue(True)\n',
+                encoding='utf-8',
+            )
+            workspace = self._workspace(root)
+            spec = workspace.prepare_unit_tests(str(root), timeout=999)
+
+            self.assertEqual(Path(spec['cwd']), root.resolve())
+            self.assertEqual(spec['timeout'], 300)
+            self.assertIn('-m', spec['command'])
+            self.assertIn('unittest', spec['command'])
+            self.assertIn('discover', spec['command'])
+            self.assertIn('tests', spec['command'])
+            self.assertEqual(spec['interpreter'], spec['command'][0])
+
 
 if __name__ == '__main__':
     unittest.main()
