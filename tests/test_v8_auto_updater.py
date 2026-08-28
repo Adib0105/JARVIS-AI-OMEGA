@@ -42,13 +42,15 @@ class AutoUpdaterContracts(unittest.TestCase):
             path = updater.download_update(release)
         self.assertEqual(path.read_bytes(), payload)
 
+    @unittest.skipIf(updater.os.name == 'nt', 'Non-Windows guard is covered by Windows launch contract.')
     def test_launch_update_is_windows_only(self):
+        # Do not monkeypatch os.name: pathlib/pytest also consume that global and
+        # can try to instantiate PosixPath on Windows during reporting/cleanup.
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / 'JARVIS-AI-OMEGA-Setup-8.0.1.exe'
             path.write_bytes(b'x')
-            with patch('jarvis.updater.os.name', 'posix'):
-                with self.assertRaisesRegex(RuntimeError, 'Windows only'):
-                    updater.launch_update(path)
+            with self.assertRaisesRegex(RuntimeError, 'Windows only'):
+                updater.launch_update(path)
 
 
 if __name__ == '__main__':
