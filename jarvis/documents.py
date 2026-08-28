@@ -3,9 +3,11 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import re
 from pathlib import Path
 
 from .local_files import LocalFiles
+from .security.secrets import redact_secrets
 
 
 DOCUMENT_EXTENSIONS = {'.pdf', '.docx', '.xlsx', '.xlsm', '.csv', '.txt', '.md'}
@@ -54,9 +56,25 @@ class DocumentReader:
             text = path.read_text(encoding='utf-8', errors='replace')[:cap]
             meta = {'type': suffix.lstrip('.'), 'characters': len(text)}
 
-        extracted = text[:cap]
+        raw_extracted = text[:cap]
+        extracted, secret_findings = redact_secrets(raw_extracted)
         extracted_sha256 = hashlib.sha256(extracted.encode('utf-8', errors='replace')).hexdigest()
         meta = dict(meta)
+        meta['characters'] = len(extracted)
+        if secret_findings:
+            meta['credential_redactions'] = len(secret_findings)
+            meta['credential_redaction_types'] = sorted({item.description for item in secret_findings})
+
+        meaningful = self._meaningful_text(extracted)
+        if suffix == '.pdf' and len(meaningful) < 80:
+            meta['limited_extraction'] = True
+            meta['warning'] = (
+                'Very little selectable text was found in this PDF. It may be scanned/image-based; '
+                'JARVIS learned only the text that could be extracted safely.'
+            )
+        else:
+            meta['limited_extraction'] = False
+
         meta.update({
             'content_sha256': content_sha256,
             'extracted_sha256': extracted_sha256,
@@ -72,6 +90,14 @@ class DocumentReader:
             'metadata': meta,
             'text': extracted,
         }
+
+    @staticmethod
+    def _meaningful_text(text: str) -> str:
+        # Ignore synthetic PDF page markers when judging whether a document really
+        # contained extractable text. A one-page scanned PDF otherwise appears to
+        # have ~16 characters only because of "--- PAGE 1 ---".
+        value = re.sub(r'---\s*PAGE\s+\d+\s*---', ' ', str(text or ''), flags=re.IGNORECASE)
+        return re.sub(r'\s+', ' ', value).strip()
 
     @staticmethod
     def _pdf(path: Path, cap: int) -> tuple[str, dict]:
