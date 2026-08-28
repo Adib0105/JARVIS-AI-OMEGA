@@ -1,6 +1,7 @@
 import unittest
 
 from jarvis.config import settings
+from jarvis.tts_worker import normalize_for_playback
 from jarvis.voice import clean_for_speech, detect_speech_mode, edge_rate_for_speed, edge_voice_candidates
 
 
@@ -17,6 +18,21 @@ class VoiceCleaningTests(unittest.TestCase):
 
     def test_emoji_removed_from_speech(self):
         self.assertEqual(clean_for_speech('Main theek hoon 😊 bhai'), 'Main theek hoon bhai')
+
+    def test_double_dash_is_not_sent_to_neural_voice(self):
+        spoken = normalize_for_playback('Chrome ready -- ab kaam shuru karte hain.')
+        self.assertNotIn('--', spoken)
+        self.assertEqual(spoken, 'Chrome ready, ab kaam shuru karte hain.')
+
+    def test_em_dash_is_not_sent_to_neural_voice(self):
+        spoken = normalize_for_playback('System ready — main sun rahi hoon.')
+        self.assertNotIn('—', spoken)
+        self.assertEqual(spoken, 'System ready, main sun rahi hoon.')
+
+    def test_bullet_dash_is_silent_but_word_hyphen_is_preserved(self):
+        spoken = normalize_for_playback('- Chrome - Edge AI-powered control')
+        self.assertFalse(spoken.startswith('-'))
+        self.assertIn('AI-powered', spoken)
 
     def test_devanagari_detects_hindi(self):
         self.assertEqual(detect_speech_mode("नमस्ते आदिब, आप कैसे हैं?"), "hindi")
