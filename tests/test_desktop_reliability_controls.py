@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import inspect
+import tempfile
 import unittest
+from pathlib import Path
 
-from jarvis.runtime_guard import run_adaptive_gui
+from jarvis.runtime_guard import _read_test_output_tail, run_adaptive_gui
 
 
 class DesktopReliabilityControlTests(unittest.TestCase):
@@ -35,6 +37,33 @@ class DesktopReliabilityControlTests(unittest.TestCase):
         self.assertIn("'sounddevice'", source)
         self.assertIn("'speech_recognition'", source)
         self.assertIn('Physical microphone/speaker quality is NOT VERIFIED', source)
+
+    def test_code_tests_are_popen_polled_instead_of_waited_inside_tk_process(self):
+        source = inspect.getsource(run_adaptive_gui)
+        self.assertIn('def _code_tests', source)
+        self.assertIn("permissions.check('run_project_tests'", source)
+        self.assertIn('prepare_unit_tests(folder, timeout)', source)
+        self.assertIn('subprocess.Popen(', source)
+        self.assertIn('self.root.after(120, self._poll_code_test_process)', source)
+        self.assertIn('def _poll_code_test_process', source)
+        self.assertIn("getattr(subprocess, 'BELOW_NORMAL_PRIORITY_CLASS', 0)", source)
+        self.assertIn('stdout=output_handle', source)
+        self.assertIn("self._request_code_test_stop('TIMED OUT')", source)
+
+    def test_cancel_button_terminates_active_code_test_tree(self):
+        source = inspect.getsource(run_adaptive_gui)
+        self.assertIn("['taskkill.exe', '/PID', str(process.pid), '/T', '/F']", source)
+        self.assertIn("self._request_code_test_stop('CANCELLED')", source)
+        self.assertIn('CANCELLING CODE TESTS', source)
+
+    def test_test_log_tail_is_bounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'tests.log'
+            path.write_text('x' * 100000 + '\nFINAL-LINE\n', encoding='utf-8')
+            tail = _read_test_output_tail(path, max_bytes=4096, max_chars=2000)
+            self.assertLessEqual(len(tail), 2000)
+            self.assertIn('FINAL-LINE', tail)
+            self.assertNotEqual(len(tail), 100000)
 
 
 if __name__ == '__main__':
