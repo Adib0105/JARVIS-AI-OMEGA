@@ -43,6 +43,14 @@ def voice_desktop_class(base_cls, gui_module):
 
         def __init__(self, root) -> None:
             super().__init__(root)
+            # Wake acknowledgement is profile-aware; creator identity remains a
+            # separate immutable product fact in the system prompt.
+            try:
+                self.wake_listener.on_wake = lambda: self.voice.speak(
+                    f'Hello {gui_module.settings.user_name}, main sun rahi hoon.'
+                )
+            except Exception:
+                pass
             root.bind('<Escape>', lambda _event: self._voice_stop())
             root.bind('<Control-space>', lambda _event: self._voice_play_pause())
             root.bind('<Control-minus>', lambda _event: self._voice_slower())
@@ -52,95 +60,38 @@ def voice_desktop_class(base_cls, gui_module):
 
         def _build_input_bar(self) -> None:
             super()._build_input_bar()
-
-            strip = tk.Frame(
-                self.root,
-                bg='#061725',
-                padx=14,
-                pady=4,
-                highlightbackground=gui_module.CYAN_DIM,
-                highlightthickness=1,
-            )
+            strip = tk.Frame(self.root, bg='#061725', padx=14, pady=4, highlightbackground=gui_module.CYAN_DIM, highlightthickness=1)
             strip.pack(side='bottom', fill='x')
-
             self.voice_player_status = tk.StringVar(value='VOICE: IDLE')
-            tk.Label(
-                strip,
-                textvariable=self.voice_player_status,
-                bg='#061725',
-                fg=gui_module.GREEN,
-                font=('Consolas', 8, 'bold'),
-            ).pack(side='left', padx=(0, 8))
-
-            self._button(strip, '− SPEED', self._voice_slower, gui_module.CYAN).pack(
-                side='left', padx=(0, 3)
-            )
-            self.voice_play_button = self._button(
-                strip, 'PLAY / PAUSE', self._voice_play_pause, gui_module.GREEN
-            )
-            self.voice_play_button.pack(side='left', padx=3)
-            self._button(strip, 'STOP', self._voice_stop, gui_module.RED).pack(
-                side='left', padx=3
-            )
-            self._button(strip, 'SPEED +', self._voice_faster, gui_module.CYAN).pack(
-                side='left', padx=3
-            )
-
-            self.voice_speed_label = tk.Label(
-                strip,
-                text=self.voice.speed_label,
-                bg='#0b2a3a',
-                fg=gui_module.GOLD,
-                padx=10,
-                pady=5,
-                font=('Consolas', 9, 'bold'),
-                cursor='hand2',
-            )
-            self.voice_speed_label.pack(side='left', padx=(5, 10))
-            self.voice_speed_label.bind('<Button-1>', lambda _event: self._voice_reset_speed())
-
-            tk.Label(
-                strip,
-                text='Esc Stop   •   Ctrl+Space Play/Pause   •   Ctrl− / Ctrl+ Speed',
-                bg='#061725',
-                fg=gui_module.MUTED,
-                font=('Segoe UI', 7),
-            ).pack(side='right')
+            tk.Label(strip, textvariable=self.voice_player_status, bg='#061725', fg=gui_module.GREEN, font=('Consolas', 8, 'bold')).pack(side='left', padx=(0, 8))
+            self._button(strip, '− SPEED', self._voice_slower, gui_module.CYAN).pack(side='left', padx=(0, 3))
+            self.voice_play_button = self._button(strip, 'PLAY / PAUSE', self._voice_play_pause, gui_module.GREEN); self.voice_play_button.pack(side='left', padx=3)
+            self._button(strip, 'STOP', self._voice_stop, gui_module.RED).pack(side='left', padx=3)
+            self._button(strip, 'SPEED +', self._voice_faster, gui_module.CYAN).pack(side='left', padx=3)
+            self.voice_speed_label = tk.Label(strip, text=self.voice.speed_label, bg='#0b2a3a', fg=gui_module.GOLD, padx=10, pady=5, font=('Consolas', 9, 'bold'), cursor='hand2')
+            self.voice_speed_label.pack(side='left', padx=(5, 10)); self.voice_speed_label.bind('<Button-1>', lambda _event: self._voice_reset_speed())
+            tk.Label(strip, text='Esc Stop   •   Ctrl+Space Play/Pause   •   Ctrl− / Ctrl+ Speed', bg='#061725', fg=gui_module.MUTED, font=('Segoe UI', 7)).pack(side='right')
 
         def _voice_state_changed(self, state: str) -> None:
             super()._voice_state_changed(state)
             try:
                 self.root.after(0, lambda s=state: self._update_voice_panel(s))
                 if state == 'error':
-                    self.root.after(
-                        0,
-                        lambda: self._append(
-                            'SYSTEM',
-                            'VOICE ERROR: speech synthesis/playback failed. Text response is still available; '
-                            'check Windows audio output/network and retry VOICE TEST.',
-                        ),
-                    )
+                    self.root.after(0, lambda: self._append('SYSTEM', 'VOICE ERROR: speech synthesis/playback failed. Text response is still available; check Windows audio output/network and retry VOICE TEST.'))
             except Exception:
                 pass
 
         def _toggle_voice(self) -> None:
-            super()._toggle_voice()
-            self._update_voice_panel()
+            super()._toggle_voice(); self._update_voice_panel()
 
         def _close(self) -> None:
+            try: self.wake_listener.stop()
+            except Exception: pass
+            try: self.voice.shutdown(wait=True)
+            except Exception: pass
             try:
-                self.wake_listener.stop()
-            except Exception:
-                pass
-            try:
-                self.voice.shutdown(wait=True)
-            except Exception:
-                pass
-            try:
-                if self.hud:
-                    self.hud.stop()
-            except Exception:
-                pass
+                if self.hud: self.hud.stop()
+            except Exception: pass
             self.root.destroy()
 
     VoiceEnabledDesktop.__name__ = f'VoiceEnabled{base_cls.__name__}'
@@ -148,7 +99,6 @@ def voice_desktop_class(base_cls, gui_module):
 
 
 def install_voice_ui() -> None:
-    """Backward-compatible no-op; voice UI is now composed by ``run_adaptive_gui``."""
     return None
 
 
