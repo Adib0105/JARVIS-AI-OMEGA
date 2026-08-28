@@ -30,10 +30,9 @@ class RuntimeGuardTests(unittest.TestCase):
     def test_detects_mixed_cjk_corruption(self):
         self.assertTrue(looks_garbled('Main help kar sakta hoon メ random 文 broken', 'kya kar sakte ho'))
 
-    def test_free_router_text_is_pinned(self):
+    def test_free_router_text_stays_on_live_free_router_by_default(self):
         model = preferred_text_model('openrouter/free', 'chat')
-        self.assertNotEqual(model, 'openrouter/free')
-        self.assertTrue(model.endswith(':free'))
+        self.assertEqual(model, 'openrouter/free')
 
     def test_vision_keeps_router_for_capability_filtering(self):
         self.assertEqual(preferred_text_model('openrouter/free', 'image'), 'openrouter/free')
