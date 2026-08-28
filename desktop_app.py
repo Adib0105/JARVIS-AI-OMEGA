@@ -169,11 +169,16 @@ def main() -> int:
     if not run_first_run_setup():
         return 0
 
+    from jarvis.global_hotkeys import start_global_hotkeys
     from jarvis.logging_utils import install_exception_hook
     from jarvis.runtime_guard import run_adaptive_gui
 
     install_exception_hook()
-    run_adaptive_gui(background=background)
+    hotkey_stop = start_global_hotkeys()
+    try:
+        run_adaptive_gui(background=background)
+    finally:
+        hotkey_stop.set()
     return 0
 
 
