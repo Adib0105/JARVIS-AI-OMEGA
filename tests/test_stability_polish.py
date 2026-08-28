@@ -98,15 +98,28 @@ class StabilityPolishTests(unittest.TestCase):
         self.assertNotIn('V6 CORE SETTINGS', text)
         self.assertNotIn('JARVIS OMEGA V6', text)
 
+    def test_voice_validation_accepts_continuous_synthesis_size_and_rejects_extremes(self):
+        configured = replace(settings, voice_chunk_chars=5000)
+        findings = {item.key: item for item in validate_settings(configured)}
+        self.assertEqual(findings['VOICE_CHUNK_CHARS'].level, ValidationLevel.PASS)
+
+        too_small = replace(settings, voice_chunk_chars=20)
+        findings = {item.key: item for item in validate_settings(too_small)}
+        self.assertEqual(findings['VOICE_CHUNK_CHARS'].level, ValidationLevel.FAIL)
+
+        too_large = replace(settings, voice_chunk_chars=6001)
+        findings = {item.key: item for item in validate_settings(too_large)}
+        self.assertEqual(findings['VOICE_CHUNK_CHARS'].level, ValidationLevel.FAIL)
+
     def test_voice_validation_rejects_out_of_range_runtime_timing(self):
         configured = replace(
             settings,
-            voice_chunk_chars=20,
+            voice_chunk_chars=5000,
             wake_chunk_seconds=1.0,
             voice_continuous_seconds=90.0,
         )
         findings = {item.key: item for item in validate_settings(configured)}
-        self.assertEqual(findings['VOICE_CHUNK_CHARS'].level, ValidationLevel.FAIL)
+        self.assertEqual(findings['VOICE_CHUNK_CHARS'].level, ValidationLevel.PASS)
         self.assertEqual(findings['WAKE_CHUNK_SECONDS'].level, ValidationLevel.FAIL)
         self.assertEqual(findings['VOICE_CONTINUOUS_SECONDS'].level, ValidationLevel.FAIL)
 
