@@ -44,6 +44,14 @@ _PROFESSIONAL = {
     'deployment', 'release', 'test', 'review', 'update', 'completed',
 }
 
+# Starting a fresh Edge synthesis/playback subprocess between small chunks is
+# audibly much slower than the neural voice's own punctuation prosody. Keep
+# ordinary answers in one synthesis request even when an older user .env still
+# contains the historical 260/520-character chunk value. A single subprocess is
+# still interruptible by VoiceOutput.stop()/barge-in.
+_MIN_CONTINUOUS_UTTERANCE_CHARS = 5000
+_MAX_CONTINUOUS_UTTERANCE_CHARS = 6000
+
 
 def detect_emotion(text: str) -> str:
     lowered = re.sub(r'\s+', ' ', str(text or '').lower()).strip()
@@ -118,19 +126,23 @@ def _split_oversized(segment: str, max_chars: int) -> list[str]:
 
 
 def speech_chunks(text: str, max_chars: int = 260) -> list[str]:
-    """Build continuous neural-TTS utterances using sentence boundaries.
+    """Build long, continuous neural-TTS utterances using natural boundaries.
 
-    Earlier versions emitted every sentence as its own TTS process. That made
-    speech audibly stop after each line while the next network synthesis/process
-    started. We now pack adjacent sentences into the same utterance until the
-    configured bound is reached. Punctuation remains inside the utterance, so the
-    neural voice provides its own natural micro-pauses without controller-added
-    silence. Only genuinely oversized sentences are split further.
+    Small sentence/chunk playback caused a new network synthesis process after
+    punctuation, which could create multi-second gaps. The effective chunk floor
+    is now 5000 characters, so ordinary replies are synthesized and played once.
+    Punctuation remains inside that single utterance and the neural voice supplies
+    its own natural micro-pauses. Only genuinely long responses are split, at
+    sentence/clause/word boundaries, to keep requests bounded.
     """
     spoken = re.sub(r'\s+', ' ', str(text or '')).strip()
     if not spoken:
         return []
-    max_chars = max(80, min(int(max_chars), 1200))
+    requested = int(max_chars)
+    max_chars = max(
+        _MIN_CONTINUOUS_UTTERANCE_CHARS,
+        min(requested, _MAX_CONTINUOUS_UTTERANCE_CHARS),
+    )
     sentences = [part.strip() for part in re.split(r'(?<=[.!?।])\s+', spoken) if part.strip()]
     if not sentences:
         sentences = [spoken]
