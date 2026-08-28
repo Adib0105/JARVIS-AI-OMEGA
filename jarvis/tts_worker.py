@@ -97,10 +97,20 @@ def runtime_healthcheck() -> dict[str, object]:
         'platform': sys.platform,
         'windows_native_audio': windows_native,
         'edge_tts_version': getattr(edge_tts, '__version__', 'unknown'),
+        'voice_profile': settings.voice_profile,
         'configured_voice': settings.voice_english,
+        'configured_hinglish_voice': settings.voice_hinglish,
+        'configured_hindi_voice': settings.voice_hindi,
         'fallback_voice': settings.voice_fallback,
         'voices_configured': voices_configured,
+        'emotion_enabled': settings.voice_emotion_enabled,
+        'streaming_enabled': settings.voice_streaming_enabled,
+        'barge_in_enabled': settings.voice_barge_in,
+        'wake_word_enabled': settings.enable_wake_word,
+        # Runtime/package availability is not evidence that a human actually
+        # heard the selected voice from a physical speaker.
         'audible_playback_verified': False,
+        'physical_microphone_verified': False,
     }
 
 
@@ -117,9 +127,9 @@ def _parser() -> argparse.ArgumentParser:
 def run_edge_playback_worker(argv: list[str] | None = None) -> int:
     """Frozen-safe replacement for ``python -m edge_playback``.
 
-    In a PyInstaller build ``sys.executable`` is JARVIS-OMEGA-V7.exe. The parent
-    voice controller still launches that executable so playback remains
-    interruptible, but desktop_app routes the child here before any GUI/bootstrap
+    In a PyInstaller build ``sys.executable`` is the packaged JARVIS-OMEGA.exe.
+    The parent voice controller launches that executable so playback stays
+    interruptible, while ``desktop_app`` routes the child here before GUI/bootstrap
     code can execute.
     """
     args, unknown = _parser().parse_known_args(list(argv or []))
