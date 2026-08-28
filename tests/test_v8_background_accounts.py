@@ -1,12 +1,24 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
-from jarvis.accounts import AccountStore, UserProfile, activate_profile_environment
+from PIL import Image
+
+import jarvis.accounts as accounts_module
+from jarvis.accounts import (
+    AccountStore,
+    UserProfile,
+    activate_profile_environment,
+    active_profile,
+    clear_active_profile,
+    remember_active_profile,
+)
 from jarvis.microphone import WakeWordListener
 from jarvis.system_tools import APP_URIS
 
@@ -54,6 +66,109 @@ class AccountStoreTests(unittest.TestCase):
         finally:
             os.environ.clear()
             os.environ.update(before)
+
+    def test_recovery_code_is_hashed_and_wrong_code_cannot_reset_password(self):
+        with tempfile.TemporaryDirectory() as td:
+            db = Path(td) / 'accounts.db'
+            store = AccountStore(db)
+            code = 'Recovery-Only-Secret'
+            store.create('recover01', 'Recover User', 'OldPassword123', code)
+
+            self.assertNotIn(code.encode('utf-8'), db.read_bytes())
+            self.assertFalse(store.reset_password('recover01', 'wrong-code', 'NewPassword123'))
+            self.assertIsNotNone(store.authenticate('recover01', 'OldPassword123'))
+            self.assertIsNone(store.authenticate('recover01', 'NewPassword123'))
+
+    def test_successful_password_reset_consumes_recovery_code(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = AccountStore(Path(td) / 'accounts.db')
+            store.create('recover02', 'Recover User', 'OldPassword123', 'One-Time-Code')
+
+            self.assertTrue(store.reset_password('recover02', 'One-Time-Code', 'NewPassword123'))
+            self.assertIsNone(store.authenticate('recover02', 'OldPassword123'))
+            self.assertIsNotNone(store.authenticate('recover02', 'NewPassword123'))
+            self.assertFalse(store.reset_password('recover02', 'One-Time-Code', 'AnotherPassword123'))
+
+    def test_recovery_code_rotation_and_missing_profile_are_explicit(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = AccountStore(Path(td) / 'accounts.db')
+            profile = store.create('recover03', 'Recover User', 'OldPassword123', 'Old-Recovery')
+
+            store.set_recovery_code(profile.id, 'New-Recovery')
+            self.assertFalse(store.reset_password('recover03', 'Old-Recovery', 'NewPassword123'))
+            self.assertTrue(store.reset_password('recover03', 'New-Recovery', 'NewPassword123'))
+            with self.assertRaisesRegex(ValueError, 'Account not found'):
+                store.set_recovery_code(999_999, 'Missing-Account')
+
+    def test_secret_lengths_are_bounded_before_password_derivation(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = AccountStore(Path(td) / 'accounts.db')
+            profile = store.create('bounded01', 'Bounded User', 'ValidPassword123')
+
+            self.assertIsNone(store.authenticate(profile.username, 'x' * 201))
+            with self.assertRaises(ValueError):
+                store.set_recovery_code(profile.id, 'x' * 201)
+            with self.assertRaises(ValueError):
+                store.reset_password(profile.username, 'valid-code', 'x' * 201)
+
+    def test_legacy_schema_migrates_recovery_columns_without_losing_account(self):
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / 'accounts.db'
+            with closing(sqlite3.connect(db_path)) as db:
+                db.execute('''CREATE TABLE accounts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT NOT NULL UNIQUE,
+                    display_name TEXT NOT NULL,
+                    password_salt BLOB NOT NULL,
+                    password_hash BLOB NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_login_at TEXT
+                )''')
+                salt = b'0123456789abcdef'
+                digest = AccountStore._derive('LegacyPassword123', salt)
+                db.execute(
+                    '''INSERT INTO accounts(
+                        username, display_name, password_salt, password_hash
+                    ) VALUES(?, ?, ?, ?)''',
+                    ('legacy01', 'Legacy User', salt, digest),
+                )
+                db.commit()
+
+            store = AccountStore(db_path)
+            profile = store.authenticate('legacy01', 'LegacyPassword123')
+            self.assertIsNotNone(profile)
+            store.set_recovery_code(profile.id, 'Migrated-Code')
+            self.assertTrue(store.reset_password('legacy01', 'Migrated-Code', 'NewPassword123'))
+
+    def test_active_profile_round_trip_and_clear(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            store = AccountStore(root / 'accounts.db')
+            profile = store.create('active01', 'Active User', 'ValidPassword123')
+            active_path = root / 'active_profile.json'
+
+            with patch.object(accounts_module, '_ACTIVE_PROFILE', active_path):
+                remember_active_profile(profile)
+                self.assertEqual(active_profile(store), profile)
+                clear_active_profile()
+                self.assertIsNone(active_profile(store))
+
+    def test_avatar_is_square_normalized_and_replaced_atomically(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            store = AccountStore(root / 'accounts.db')
+            profile = store.create('avatar01', 'Avatar User', 'ValidPassword123')
+            source = root / 'source.png'
+            Image.new('RGB', (640, 360), color=(10, 20, 30)).save(source)
+
+            with patch.object(accounts_module, 'PATHS') as paths:
+                paths.data_dir = root / 'data'
+                target = store.set_avatar(profile, source)
+
+            with Image.open(target) as avatar:
+                self.assertEqual(avatar.size, (256, 256))
+                self.assertEqual(avatar.format, 'PNG')
+            self.assertEqual(list(target.parent.glob('.avatar-*.png')), [])
 
 
 class BackgroundWakeTests(unittest.TestCase):

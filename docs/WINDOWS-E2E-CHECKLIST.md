@@ -1,4 +1,4 @@
-# JARVIS AI OMEGA 8.0.0-rc1 — Windows E2E Evidence Checklist
+# JARVIS AI OMEGA 8.0.0-rc2 — Windows E2E Evidence Checklist
 
 This checklist separates automated software/package evidence from real-device evidence. A CI smoke check never upgrades a physical-device or live-service item to verified.
 
@@ -127,7 +127,7 @@ Fill this section only after the exact release candidate has been exercised.
 
 ```text
 Commit SHA: NOT TESTED
-Application version: 8.0.0-rc1
+Application version: 8.0.0-rc2
 CI workflow run ID: NOT TESTED
 Installer filename: NOT TESTED
 Installer SHA-256: NOT TESTED

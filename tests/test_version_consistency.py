@@ -46,6 +46,11 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertNotIn('V7.5', first_line)
         self.assertNotIn('7.0.0', first_line)
 
+    def test_windows_e2e_checklist_matches_canonical_release(self):
+        checklist = (ROOT / 'docs' / 'WINDOWS-E2E-CHECKLIST.md').read_text(encoding='utf-8')
+        self.assertIn(APP_VERSION, checklist.splitlines()[0])
+        self.assertIn(f'Application version: {APP_VERSION}', checklist)
+
 
 if __name__ == '__main__':
     unittest.main()

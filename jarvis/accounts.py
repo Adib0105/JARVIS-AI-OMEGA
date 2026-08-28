@@ -6,8 +6,8 @@ import json
 import os
 import re
 import secrets
-import shutil
 import sqlite3
+import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +20,10 @@ _ACTIVE_PROFILE = PATHS.data_dir / 'active_profile.json'
 _NAME_RE = re.compile(r"^[A-Za-z][A-Za-z .'-]{1,48}$")
 _USERNAME_RE = re.compile(r'^[a-z0-9][a-z0-9_.-]{2,31}$')
 _PBKDF2_ROUNDS = 310_000
+_MIN_SECRET_LENGTH = 6
+_MAX_SECRET_LENGTH = 200
+_MAX_AVATAR_BYTES = 16 * 1024 * 1024
+_MAX_AVATAR_PIXELS = 40_000_000
 
 @dataclass(frozen=True)
 class UserProfile:
@@ -52,8 +56,10 @@ class AccountStore:
         try:
             yield db
         except Exception:
-            try: db.rollback()
-            except Exception: pass
+            try:
+                db.rollback()
+            except sqlite3.Error:
+                pass
             raise
         finally:
             db.close()
@@ -83,19 +89,34 @@ class AccountStore:
         return hashlib.pbkdf2_hmac('sha256', secret.encode('utf-8'), salt, _PBKDF2_ROUNDS)
 
     @staticmethod
+    def _validate_secret(secret: str, *, label: str) -> str:
+        if not isinstance(secret, str):
+            raise TypeError(f'{label} must be text.')
+        if len(secret) < _MIN_SECRET_LENGTH or len(secret) > _MAX_SECRET_LENGTH:
+            raise ValueError(f'{label} {_MIN_SECRET_LENGTH}-{_MAX_SECRET_LENGTH} characters ka hona chahiye.')
+        return secret
+
+    @classmethod
+    def _validate_recovery_code(cls, code: str) -> str:
+        if not isinstance(code, str):
+            raise TypeError('Recovery code must be text.')
+        normalized = code.strip()
+        if normalized:
+            cls._validate_secret(normalized, label='Recovery code')
+        return normalized
+
+    @staticmethod
     def _validate(username: str, display_name: str, password: str) -> tuple[str, str]:
         user = username.strip().lower(); name = ' '.join(display_name.strip().split())
         if not _USERNAME_RE.fullmatch(user): raise ValueError('Username 3-32 chars ka ho: letters, numbers, dot, dash ya underscore.')
         if not _NAME_RE.fullmatch(name): raise ValueError('Name 2-49 normal characters ka hona chahiye.')
-        if len(password) < 6: raise ValueError('Password kam se kam 6 characters ka hona chahiye.')
-        if len(password) > 200: raise ValueError('Password too long.')
+        AccountStore._validate_secret(password, label='Password')
         return user, name
 
     def create(self, username: str, display_name: str, password: str, recovery_code: str = '') -> UserProfile:
         user, name = self._validate(username, display_name, password)
         salt = secrets.token_bytes(16); digest = self._derive(password, salt)
-        recovery = recovery_code.strip()
-        if recovery and len(recovery) < 6: raise ValueError('Recovery PIN/code kam se kam 6 characters ka rakho.')
+        recovery = self._validate_recovery_code(recovery_code)
         rsalt = secrets.token_bytes(16) if recovery else None
         rhash = self._derive(recovery, rsalt) if recovery and rsalt else None
         try:
@@ -108,6 +129,8 @@ class AccountStore:
         return profile
 
     def authenticate(self, username: str, password: str) -> UserProfile | None:
+        if not isinstance(password, str) or len(password) > _MAX_SECRET_LENGTH:
+            return None
         user = username.strip().lower()
         with self._connection() as db:
             row = db.execute('SELECT * FROM accounts WHERE username=?', (user,)).fetchone()
@@ -126,21 +149,41 @@ class AccountStore:
         return int(row['n'])
 
     def set_recovery_code(self, profile_id: int, code: str) -> None:
-        code = code.strip()
-        if len(code) < 6: raise ValueError('Recovery PIN/code kam se kam 6 characters ka rakho.')
+        code = self._validate_recovery_code(code)
+        if not code:
+            raise ValueError('Recovery code cannot be empty.')
         salt = secrets.token_bytes(16); digest = self._derive(code, salt)
         with self._connection() as db:
-            db.execute('UPDATE accounts SET recovery_salt=?, recovery_hash=? WHERE id=?', (salt,digest,int(profile_id))); db.commit()
+            cursor = db.execute(
+                'UPDATE accounts SET recovery_salt=?, recovery_hash=? WHERE id=?',
+                (salt, digest, int(profile_id)),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError('Account not found.')
+            db.commit()
 
     def reset_password(self, username: str, recovery_code: str, new_password: str) -> bool:
-        if len(new_password) < 6 or len(new_password) > 200: raise ValueError('New password 6-200 characters ka hona chahiye.')
+        self._validate_secret(new_password, label='New password')
+        try:
+            recovery = self._validate_recovery_code(recovery_code)
+        except (TypeError, ValueError):
+            return False
+        if not recovery:
+            return False
         with self._connection() as db:
             row = db.execute('SELECT * FROM accounts WHERE username=?', (username.strip().lower(),)).fetchone()
             if row is None or row['recovery_salt'] is None or row['recovery_hash'] is None: return False
-            candidate = self._derive(recovery_code.strip(), bytes(row['recovery_salt']))
+            candidate = self._derive(recovery, bytes(row['recovery_salt']))
             if not hmac.compare_digest(candidate, bytes(row['recovery_hash'])): return False
             salt = secrets.token_bytes(16); digest = self._derive(new_password, salt)
-            db.execute('UPDATE accounts SET password_salt=?, password_hash=? WHERE id=?', (salt,digest,row['id'])); db.commit(); return True
+            db.execute(
+                '''UPDATE accounts
+                   SET password_salt=?, password_hash=?, recovery_salt=NULL, recovery_hash=NULL
+                   WHERE id=?''',
+                (salt, digest, row['id']),
+            )
+            db.commit()
+            return True
 
     def update_display_name(self, profile_id: int, display_name: str) -> UserProfile:
         name = ' '.join(display_name.strip().split())
@@ -153,12 +196,39 @@ class AccountStore:
 
     def set_avatar(self, profile: UserProfile, source: Path) -> Path:
         from PIL import Image
+
+        source = Path(source)
+        if not source.is_file():
+            raise ValueError('Profile photo file not found.')
+        if source.stat().st_size > _MAX_AVATAR_BYTES:
+            raise ValueError('Profile photo is too large.')
         profile.profile_dir.mkdir(parents=True, exist_ok=True)
         target = profile.avatar_path
-        with Image.open(source) as image:
-            image = image.convert('RGB'); image.thumbnail((512,512))
-            side = min(image.size); left = (image.width-side)//2; top = (image.height-side)//2
-            image.crop((left,top,left+side,top+side)).resize((256,256)).save(target, 'PNG')
+        temporary: Path | None = None
+        try:
+            with Image.open(source) as image:
+                if image.width * image.height > _MAX_AVATAR_PIXELS:
+                    raise ValueError('Profile photo dimensions are too large.')
+                image = image.convert('RGB')
+                image.thumbnail((512, 512))
+                side = min(image.size)
+                left = (image.width - side) // 2
+                top = (image.height - side) // 2
+                avatar = image.crop((left, top, left + side, top + side)).resize((256, 256))
+                with tempfile.NamedTemporaryFile(
+                    mode='wb',
+                    prefix='.avatar-',
+                    suffix='.png',
+                    dir=profile.profile_dir,
+                    delete=False,
+                ) as handle:
+                    temporary = Path(handle.name)
+                    avatar.save(handle, 'PNG')
+            os.replace(temporary, target)
+            temporary = None
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
         return target
 
 def remember_active_profile(profile: UserProfile) -> None:
@@ -193,7 +263,7 @@ def run_account_gate(*, background: bool = False) -> UserProfile | None:
     vars_={key:tk.StringVar() for key in ('name','username','password','recovery')}
     def field(label,key,secret=False):
         tk.Label(form,text=label,bg='#07131d',fg='#dff9ff',anchor='w').pack(fill='x',pady=(5,2)); tk.Entry(form,textvariable=vars_[key],show='*' if secret else '',bg='#0a202e',fg='white',insertbackground='#53e7ff',relief='flat').pack(fill='x',ipady=7)
-    field('Your name (Create Account)','name'); field('Username','username'); field('Password','password',True); field('Recovery PIN/code (Create Account)','recovery',True)
+    field('Your name (Create Account)','name'); field('Username','username'); field('Password','password',True); field('One-time recovery code (Create Account)','recovery',True)
     buttons=tk.Frame(root,bg='#07131d'); buttons.pack(fill='x',padx=42,pady=(2,0))
     def finish(profile): remember_active_profile(profile); activate_profile_environment(profile); result['profile']=profile; root.destroy()
     def login():
@@ -213,13 +283,13 @@ def run_account_gate(*, background: bool = False) -> UserProfile | None:
         def reset():
             try: ok=store.reset_password(user,rc.get(),np.get())
             except Exception as exc: messagebox.showerror('Reset Password',str(exc),parent=win); return
-            if not ok: messagebox.showerror('Reset Password','Recovery code galat hai ya is purane account me recovery setup nahi hai.',parent=win); return
-            messagebox.showinfo('Reset Password','Password reset ho gaya. Ab LOGIN karo.',parent=win); win.destroy()
+            if not ok: messagebox.showerror('Reset Password','Recovery code galat hai, already use ho chuka hai, ya is purane account me recovery setup nahi hai.',parent=win); return
+            messagebox.showinfo('Reset Password','Password reset ho gaya. Ye recovery code ab use ho chuka hai; LOGIN ke baad naya code set karna.',parent=win); win.destroy()
         tk.Button(win,text='RESET PASSWORD',command=reset,bg='#0b2a3a',fg='#53e7ff',relief='flat',pady=8).pack(fill='x',padx=30,pady=18)
     tk.Button(buttons,text='LOGIN',command=login,bg='#0b2a3a',fg='#6affb8',relief='flat',pady=8).pack(fill='x',pady=3)
     tk.Button(buttons,text='CREATE ACCOUNT',command=signup,bg='#0b2a3a',fg='#53e7ff',relief='flat',pady=8).pack(fill='x',pady=3)
     tk.Button(buttons,text='FORGOT PASSWORD',command=forgot,bg='#0b2a3a',fg='#ffd166',relief='flat',pady=7).pack(fill='x',pady=3)
-    tk.Label(root,text='Password aur recovery code local salted hashes me store hote hain.',bg='#07131d',fg='#86a8b8',wraplength=370,font=('Segoe UI',8)).pack(pady=(10,0))
+    tk.Label(root,text='Password aur one-time recovery code local salted hashes me store hote hain.',bg='#07131d',fg='#86a8b8',wraplength=370,font=('Segoe UI',8)).pack(pady=(10,0))
     root.protocol('WM_DELETE_WINDOW',root.destroy); root.mainloop(); return result['profile']
 
 __all__=['AccountStore','UserProfile','activate_profile_environment','active_profile','clear_active_profile','remember_active_profile','run_account_gate']
