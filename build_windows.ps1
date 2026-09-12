@@ -38,6 +38,8 @@ $Args = @(
     '--collect-submodules', 'edge_tts',
     '--collect-submodules', 'pyttsx3.drivers',
     '--collect-submodules', 'speech_recognition',
+    '--hidden-import', 'pystray._win32',
+    '--collect-all', 'playwright',
     'desktop_app.py'
 )
 # Include optional offline recognition only when deliberately installed in the build environment.
@@ -56,6 +58,8 @@ if (-not (Test-Path $Exe)) { throw "Expected executable was not created: $Exe" }
 # Google OAuth files, tokens, database, logs or other private runtime data.
 Copy-Item (Join-Path $Root '.env.example') (Join-Path $Dist '.env.example') -Force
 Copy-Item (Join-Path $Root 'README.md') (Join-Path $Dist 'README.md') -Force
+Copy-Item (Join-Path $Root 'setup_background_startup.ps1') (Join-Path $Dist 'setup_background_startup.ps1') -Force
+Copy-Item (Join-Path $Root 'docs\BACKGROUND-WAKE.md') (Join-Path $Dist 'BACKGROUND-WAKE.md') -Force
 Copy-Item (Join-Path $Root 'LICENSE') (Join-Path $Dist 'LICENSE') -Force
 
 Write-Host "Build ready: $Exe" -ForegroundColor Green

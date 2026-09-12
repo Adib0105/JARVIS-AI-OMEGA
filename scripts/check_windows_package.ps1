@@ -19,4 +19,11 @@ if (-not $worker.WaitForExit(30000)) {
   throw 'Frozen speech worker did not exit within 30 seconds.'
 }
 if ($worker.ExitCode -ne 0) { throw 'Frozen speech worker startup failed.' }
+# Validate optional native imports and the bundled Playwright driver, without recording.
+$backgroundCheck = Start-Process -FilePath $exe -ArgumentList @('--jarvis-background-check') -PassThru
+if (-not $backgroundCheck.WaitForExit(30000)) {
+  $backgroundCheck.Kill()
+  throw 'Frozen background dependency check did not exit within 30 seconds.'
+}
+if ($backgroundCheck.ExitCode -ne 0) { throw 'Frozen background dependency check failed.' }
 Write-Host "Package smoke PASS: $exe"

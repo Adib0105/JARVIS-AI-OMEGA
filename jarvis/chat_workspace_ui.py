@@ -61,6 +61,8 @@ def resume_chat(desktop, session_id):
     event = getattr(desktop, '_live_stop_event', None)
     if event is not None:
         event.set()
+    if getattr(getattr(desktop, 'background', None), 'enabled', False):
+        desktop.background.disable()
     desktop.wake_listener.stop()
     desktop.voice.stop()
     desktop._clear_images()

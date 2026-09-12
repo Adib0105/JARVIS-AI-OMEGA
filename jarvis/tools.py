@@ -15,6 +15,7 @@ from .local_files import LocalFiles
 from .memory import MemoryStore
 from .permissions import PermissionGate
 from .system_tools import current_time, open_app, open_url, system_info, system_metrics
+from .youtube_player import play_first_video
 from .web_tools import read_web_page, search_news, search_web
 
 
@@ -116,6 +117,7 @@ class ToolRegistry:
 
         if settings.enable_desktop_automation:
             tools += [
+                _fn('youtube_play_first', 'Search YouTube and play the first ordinary video in a visible Edge browser. Requires browser permission.', {'query': s}, ['query']),
                 _fn('browser_search', 'Open a Google/Bing/YouTube/GitHub search. Requires approval.', {'query': s, 'engine': s}, ['query', 'engine']),
                 _fn('type_text', 'Type text into the focused app. Requires approval.', {'text': s, 'interval': {'type': 'number'}}, ['text', 'interval']),
                 _fn('press_key', 'Press one allowlisted keyboard key. Requires approval.', {'key': s}, ['key']),
@@ -227,6 +229,7 @@ class ToolRegistry:
                 'open_url': lambda: open_url(args['url']),
                 'open_app': lambda: open_app(args['app']),
                 'open_local_path': lambda: self._open_local_path(args['path']),
+                'youtube_play_first': lambda: play_first_video(args['query']),
                 'browser_search': lambda: browser_search(args['query'], args['engine']),
                 'type_text': lambda: type_text(args['text'], args['interval']),
                 'press_key': lambda: press_key(args['key']),
@@ -241,6 +244,13 @@ class ToolRegistry:
             }
             if name not in handlers:
                 raise KeyError(name)
-            return json.dumps({'ok': True, 'result': handlers[name]()}, ensure_ascii=False, default=str)
+            result = handlers[name]()
+            if name == 'youtube_play_first':
+                verified = bool(result.get('playing')) and not result.get('ad_playing', False)
+                return json.dumps({'ok': bool(result.get('playing')), 'result': result,
+                    'error': None if result.get('playing') else result.get('message'),
+                    'verification': {'status': 'VERIFIED' if verified else 'PARTIAL' if result.get('playing') else 'FAILED',
+                                     'verified': verified, 'evidence': result}}, ensure_ascii=False)
+            return json.dumps({'ok': True, 'result': result}, ensure_ascii=False, default=str)
         except Exception as exc:
             return json.dumps({'ok': False, 'error': f'{type(exc).__name__}: {exc}'}, ensure_ascii=False)

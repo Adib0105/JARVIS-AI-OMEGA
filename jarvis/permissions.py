@@ -25,7 +25,7 @@ class PermissionGate:
     APPROVAL = {
         'search_local_files', 'read_local_text_file', 'index_local_text_file',
         'read_document', 'index_document',
-        'open_url', 'open_app', 'browser_search', 'open_local_path',
+        'open_url', 'open_app', 'browser_search', 'youtube_play_first', 'open_local_path',
         'type_text', 'press_key', 'hotkey', 'click_screen', 'capture_screen',
         'list_code_tree', 'write_local_text_file', 'run_project_tests',
         'git_status', 'git_diff', 'git_log',

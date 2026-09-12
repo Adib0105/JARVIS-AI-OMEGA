@@ -536,3 +536,7 @@ Use the desktop **VOICE SETTINGS** button to choose and save a voice, preview Hi
 ### Chat workspace
 
 Use **Ctrl+K** for searchable commands and editable Python/SQL/Excel prompt starters. Use **Ctrl+H** to search, rename and resume saved conversations. [Chat workspace guide](docs/CHAT-WORKSPACE.md).
+
+### Background wake and daily briefing
+
+Close to the Windows tray, say **Jarvis** for greeting/weather/system load, or **Jarvis, YouTube par Kesariya chalao** for the first video. Includes local Vosk listening, city selection, explicit pause/exit and optional Windows sign-in startup. [Setup and limitations](docs/BACKGROUND-WAKE.md).

@@ -72,6 +72,10 @@ def install_voice_ui() -> None:
     def start_vad_turn(self, *, interrupt: bool = False, automatic: bool = False) -> None:
         if getattr(self, '_closing', False):
             return
+        if getattr(getattr(self, 'background', None), 'enabled', False):
+            if not automatic:
+                self._append('SYSTEM', 'Pause background microphone before using Live or push-to-talk.')
+            return
         if automatic and (not getattr(self, '_live_voice_enabled', False) or self.voice.state != 'idle' or self.voice.muted):
             return
         if getattr(self, 'busy', False) or getattr(self, '_live_listening', False):
@@ -126,6 +130,9 @@ def install_voice_ui() -> None:
         self._send_text(text, from_voice=True)
 
     def toggle_live(self) -> None:
+        if getattr(getattr(self, 'background', None), 'enabled', False):
+            self._append('SYSTEM', 'Pause background microphone before enabling Live conversation.')
+            return
         self._live_voice_enabled = not bool(getattr(self, '_live_voice_enabled', False))
         update_voice_panel(self)
         if not self._live_voice_enabled and hasattr(self, '_live_stop_event'):
@@ -203,6 +210,9 @@ def install_voice_ui() -> None:
             pass
 
     def v75_push_to_talk(self) -> None:
+        if getattr(getattr(self, 'background', None), 'enabled', False):
+            self._append('SYSTEM', 'Pause background microphone before push-to-talk.')
+            return
         if self.voice.state in {'speaking', 'paused'}:
             start_vad_turn(self, interrupt=True)
             return

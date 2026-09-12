@@ -101,6 +101,7 @@ TOOL_SECURITY: dict[str, ToolSecurityProfile] = {
 
     # Browser / apps / desktop
     'open_url': profile('open_url', MEDIUM, {Capability.BROWSER_CONTROL}, 'Opens an external HTTP/HTTPS URL in the default browser.', True),
+    'youtube_play_first': profile('youtube_play_first', MEDIUM, {Capability.BROWSER_CONTROL}, 'Searches YouTube and starts the first ordinary video in a visible browser.', True),
     'browser_search': profile('browser_search', MEDIUM, {Capability.BROWSER_CONTROL}, 'Opens a browser search page.', True),
     'open_app': profile('open_app', MEDIUM, {Capability.APP_CONTROL}, 'Launches an allowlisted Windows application.', True),
     'type_text': profile('type_text', HIGH, {Capability.KEYBOARD_CONTROL}, 'Types text into the currently focused desktop application.', True),
