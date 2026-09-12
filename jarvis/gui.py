@@ -558,6 +558,9 @@ class JarvisDesktop:
         self._send_text(text, from_voice=True)
 
     def _toggle_wake_word(self) -> None:
+        if getattr(getattr(self, 'background', None), 'enabled', False):
+            self._append('SYSTEM', 'Pause background microphone before using the standard wake listener.')
+            return
         if not settings.enable_mic_input:
             messagebox.showinfo('Wake Word', 'Microphone input is disabled in .env.')
             return

@@ -11,14 +11,14 @@ from .mission import VerificationResult
 SIDE_EFFECTING_TOOLS = {
     'remember_fact', 'add_note', 'add_todo', 'complete_todo', 'add_reminder',
     'index_local_text_file', 'index_document',
-    'open_url', 'open_app', 'open_local_path', 'browser_search',
+    'open_url', 'open_app', 'open_local_path', 'browser_search', 'youtube_play_first',
     'type_text', 'press_key', 'hotkey', 'click_screen',
     'browser_agent_open', 'semantic_click', 'semantic_type',
     'write_local_text_file', 'gmail_send', 'calendar_create',
 }
 
 PARTIAL_VERIFICATION_TOOLS = {
-    'open_url', 'open_app', 'open_local_path', 'browser_search',
+    'open_url', 'open_app', 'open_local_path', 'browser_search', 'youtube_play_first',
     'type_text', 'press_key', 'hotkey', 'click_screen',
 }
 
