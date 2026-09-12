@@ -6,7 +6,7 @@ Audit base: `36fc6f37c0b87b64f2ea69383b1b0d54050df376` on `main`.
 Reviewed voice playback/lifecycle, microphone and wake-word capture, desktop voice wiring, provider configuration/factory/routing, speech formatting, Windows packaging and CI. Ran the complete existing regression suite, including its security, memory, tool and self-development tests. This is not a claim that every function or real device has been exhaustively verified.
 
 Baseline: 194 tests passed on Python 3.12/Linux after installing the declared dependencies.
-Updated: 220 tests passed, including 26 new regression/integration tests. Compilation and `git diff --check` passed. Tests use mock AI providers: no paid API requests, external messages or real desktop actions were executed.
+Initial update: 220 tests passed, including 26 new regression/integration tests. Follow-up: 238 tests passed, with 18 additional tests for profiles, offline recognition, microphone exclusion, diagnostics and desktop error callbacks. Compilation and `git diff --check` passed. Tests use mock AI providers: no paid API requests, external messages or real desktop actions were executed.
 
 ## Confirmed issues and changes
 
@@ -81,7 +81,7 @@ VOICE_ENGINE=pyttsx3
 
 Use the exact model ID exposed by your local server. Clear any cloud-specific `FAST_MODEL`, `SMART_MODEL`, `VISION_MODEL`, `CODING_MODEL`, `PLANNING_MODEL`, `REVIEW_MODEL` or `SUMMARY_MODEL` overrides unless the local server also exposes those IDs. Tool calling and vision require a model/server supporting those capabilities; a text-only model does not gain vision automatically.
 
-Local chat does not require a cloud key. The existing microphone transcription still uses Google's online recognition service. Web tools and configured integrations also use the network. Selecting local chat does not make every feature offline.
+Local chat does not require a cloud key. Microphone transcription defaults to Google's online recognition service. The follow-up update adds optional local Vosk recognition; see [voice controls and offline setup](VOICE-CONTROLS-OFFLINE.md). Web tools and configured integrations also use the network. Selecting local chat does not make every feature offline.
 
 This uses pretrained models plus the project's existing memory/retrieval. No new foundation model, ML training run, autonomous production self-modification or full-duplex audio system was created. Existing tool approvals and security checks remain in force.
 

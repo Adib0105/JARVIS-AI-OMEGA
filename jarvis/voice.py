@@ -12,6 +12,7 @@ import time
 from typing import Callable
 
 from .config import settings
+from .voice_profiles import load_profile, save_profile, profile_overrides
 
 
 _MARKDOWN_RE = re.compile(r"[`*_>#~\[\]{}|]+")
@@ -91,6 +92,8 @@ class VoiceOutput:
     def __init__(self, on_state_change: Callable[[str], None] | None = None) -> None:
         self.enabled = settings.enable_voice_output
         self.muted = False
+        self._preference_path = settings.db_path.parent / 'voice_preferences.json'
+        self.profile = load_profile(self._preference_path)
         self.on_state_change = on_state_change or (lambda _state: None)
         self._queue: queue.Queue[tuple[int, str] | object] = queue.Queue()
         self._thread: threading.Thread | None = None
@@ -110,6 +113,18 @@ class VoiceOutput:
         if self.enabled:
             self._thread = threading.Thread(target=self._worker, daemon=True, name='jarvis-tts')
             self._thread.start()
+
+    @property
+    def engine(self) -> str:
+        return profile_overrides(self.profile).get('VOICE_ENGINE', settings.voice_engine)
+
+    def set_profile(self, name: str) -> None:
+        profile_overrides(name)
+        save_profile(self._preference_path, name)
+        self.stop()
+        with self._lock:
+            self.profile = name
+            self.last_error = None
 
     @property
     def state(self) -> str:
@@ -323,7 +338,7 @@ class VoiceOutput:
                     if self._interrupted():
                         return 'interrupted'
                     process = subprocess.Popen(
-                        command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        command, env=os.environ | profile_overrides(self.profile), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                         cwd=os.path.dirname(os.path.dirname(__file__)),
                         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0,
                         start_new_session=os.name != 'nt',
@@ -354,7 +369,7 @@ class VoiceOutput:
 
     def _play_text(self, text: str) -> str:
         self.last_error = None
-        engine = settings.voice_engine
+        engine = self.engine
         if engine in {'edge', 'openai'}:
             result = self._speak_process(text, engine)
             if result != 'failed':

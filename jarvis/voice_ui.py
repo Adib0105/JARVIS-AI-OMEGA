@@ -185,9 +185,11 @@ def install_voice_ui() -> None:
         self.voice_speed_label.bind('<Button-1>', lambda _event: voice_reset_speed(self))
         self.live_voice_button = self._button(strip, 'LIVE: OFF', lambda: toggle_live(self), gui_module.GREEN)
         self.live_voice_button.pack(side='left', padx=(3, 8))
+        from .voice_settings_ui import open_voice_settings
+        self._button(strip, 'VOICE SETTINGS', lambda: open_voice_settings(self), gui_module.CYAN).pack(side='left', padx=4)
         tk.Label(
             strip,
-            text='Ctrl+M Barge-in  •  Esc Stop  •  Ctrl+Space Pause  •  Ctrl+Shift+V Live',
+            text='Ctrl+M Mic • Esc Stop',
             bg='#061725', fg=gui_module.MUTED, font=('Segoe UI', 7),
         ).pack(side='right')
 

@@ -110,6 +110,9 @@ class Settings:
     enable_mic_input: bool = _bool('ENABLE_MIC_INPUT', True)
     enable_wake_word: bool = _bool('ENABLE_WAKE_WORD', False)
     wake_word: str = os.getenv('WAKE_WORD', 'hey jarvis').strip() or 'hey jarvis'
+    speech_engine: str = os.getenv('SPEECH_ENGINE', 'google').strip().lower()
+    vosk_model_path: str = os.getenv('VOSK_MODEL_PATH', '').strip()
+    mic_device: str = os.getenv('MIC_DEVICE', '').strip()
     speech_language: str = os.getenv('SPEECH_LANGUAGE', 'en-IN').strip() or 'en-IN'
     mic_record_seconds: float = _float('MIC_RECORD_SECONDS', 6.0)
     ai_timeout_seconds: float = _float('AI_TIMEOUT_SECONDS', 60.0)

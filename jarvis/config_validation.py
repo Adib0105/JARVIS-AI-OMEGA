@@ -55,6 +55,12 @@ def validate_settings(settings) -> list[ValidationFinding]:
     if voice_engine == 'openai':
         add('OPENAI_TTS_KEY', bool(getattr(settings, 'openai_api_key', '').strip()), 'OpenAI speech requires OPENAI_API_KEY; otherwise offline speech is used.', warning=True)
 
+    speech_engine = getattr(settings, 'speech_engine', 'google')
+    add('SPEECH_ENGINE', speech_engine in {'google', 'vosk'}, 'Recognition engine must be google or vosk.')
+    if speech_engine == 'vosk':
+        model_path = getattr(settings, 'vosk_model_path', '')
+        add('VOSK_MODEL_PATH', bool(model_path) and Path(model_path).expanduser().is_dir(), 'Offline speech needs an extracted local Vosk model folder.', warning=True)
+
     roots = tuple(settings.allowed_file_roots)
     add('ALLOWED_FILE_ROOTS', bool(roots), 'At least one local root must be configured.')
     for index, root in enumerate(roots, 1):
