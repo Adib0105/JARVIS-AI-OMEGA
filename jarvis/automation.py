@@ -22,7 +22,8 @@ def browser_search(query: str, engine: str = 'google') -> str:
     if key not in engines:
         raise ValueError(f"Unsupported engine. Use: {', '.join(engines)}")
     url = engines[key] + urllib.parse.quote_plus(query)
-    webbrowser.open(url, new=2)
+    if not webbrowser.open(url, new=2):
+        raise RuntimeError('Browser did not accept the open request. Check your default browser.')
     return f'Opened {key} search for: {query}'
 
 

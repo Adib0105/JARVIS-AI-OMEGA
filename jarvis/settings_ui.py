@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
 import tkinter as tk
 import webbrowser
 from pathlib import Path
@@ -41,13 +42,24 @@ def _read_env_lines() -> list[str]:
 
 def update_env_values(values: dict[str, str]) -> None:
     """Update only allowlisted non-secret UI settings without exposing API/OAuth secrets."""
-    cleaned = {k: str(v).strip() for k, v in values.items() if k in EDITABLE_KEYS}
+    cleaned = {}
+    for key, value in values.items():
+        if key not in EDITABLE_KEYS:
+            continue
+        value = str(value)
+        if any(char in value for char in ('\r', '\n', '\0')):
+            raise ValueError('Settings must contain a single line without null characters.')
+        value = value.strip()
+        # Preserve literal spaces, comment markers, apostrophes and backslashes.
+        if any(char.isspace() or char in "#'\"\\" for char in value):
+            value = "'" + value.replace('\\', '\\\\').replace("'", "\\'") + "'"
+        cleaned[key] = value
     if not cleaned:
         return
     lines = _read_env_lines()
     seen: set[str] = set()
     out: list[str] = []
-    pattern = re.compile(r'^\s*([A-Z0-9_]+)\s*=')
+    pattern = re.compile(r'^\s*(?:export\s+)?([A-Z0-9_]+)\s*=')
     for line in lines:
         match = pattern.match(line)
         key = match.group(1) if match else None
@@ -61,7 +73,16 @@ def update_env_values(values: dict[str, str]) -> None:
     for key, value in cleaned.items():
         if key not in seen:
             out.append(f'{key}={value}')
-    _env_path().write_text('\n'.join(out).rstrip() + '\n', encoding='utf-8')
+    destination = _env_path()
+    temp = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=destination.parent, delete=False) as stream:
+            temp = Path(stream.name)
+            stream.write('\n'.join(out).rstrip() + '\n')
+        temp.replace(destination)
+    finally:
+        if temp is not None:
+            temp.unlink(missing_ok=True)
 
 
 def _open_folder(path: Path) -> None:

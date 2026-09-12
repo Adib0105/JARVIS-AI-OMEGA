@@ -299,15 +299,32 @@ class JarvisDesktop:
         result = {'allowed': False}
 
         def ask() -> None:
-            result['allowed'] = messagebox.askyesno(
-                'JARVIS V6 // Permission Gate',
-                f'Allow this local action?\n\nTool: {tool}\n\nArguments:\n{args}\n\n'
-                'Only approve if this matches what you asked JARVIS to do.'
-            )
-            event.set()
+            if getattr(self, '_closing', False):
+                event.set()
+                return
+            try:
+                result['allowed'] = messagebox.askyesno(
+                    'JARVIS V6 // Permission Gate',
+                    f'Allow this local action?\n\nTool: {tool}\n\nArguments:\n{args}\n\n'
+                    'Only approve if this matches what you asked JARVIS to do.'
+                )
+            except (RuntimeError, tk.TclError):
+                result['allowed'] = False
+            finally:
+                event.set()
 
-        self.root.after(0, ask)
-        event.wait()
+        if getattr(self, '_closing', False):
+            return bool(result['allowed'])
+        if threading.current_thread() is threading.main_thread():
+            ask()
+        else:
+            try:
+                self.root.after(0, ask)
+            except (RuntimeError, tk.TclError):
+                return bool(result['allowed'])
+            while not event.wait(0.1):
+                if getattr(self, '_closing', False):
+                    return bool(result['allowed'])
         return bool(result['allowed'])
 
     def _refresh_metrics(self) -> None:

@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
 from .config import settings
-from .daily_briefing import build_briefing, find_locations
+from .daily_briefing import build_briefing, find_locations, valid_location
 from .wake_service import BackgroundWakeListener
 
 
@@ -22,7 +22,14 @@ def preference_path():
 def load_preferences():
     try:
         data = json.loads(preference_path().read_text(encoding='utf-8'))
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            return {}
+        clean = {'enabled': data.get('enabled') is True}
+        if isinstance(data.get('model_path'), str):
+            clean['model_path'] = data['model_path']
+        if valid_location(data.get('location')):
+            clean['location'] = data['location']
+        return clean
     except (OSError, ValueError):
         return {}
 
@@ -107,20 +114,42 @@ class BackgroundController:
             self.show()
             messagebox.showerror('Background voice', str(exc), parent=d.root)
 
+    def persist(self):
+        try:
+            save_preferences(self.preferences)
+            return True
+        except OSError:
+            self.desktop._append('SYSTEM', 'Settings could not be saved. Check folder permissions/free disk space. This change may not survive restart.')
+            return False
+
     def disable(self, save=True):
         self.generation += 1
         self.enabled = False
         self.pending = False
         self.listener.stop()
-        if self.tray:
-            self.tray.stop()
-            self.tray = None
+        tray, self.tray = self.tray, None
+        try:
+            if tray:
+                tray.stop()
+        except Exception:
+            self.desktop._append('SYSTEM', 'Tray cleanup failed; the background microphone is stopped.')
+        finally:
+            self.show()
         if save:
             self.preferences['enabled'] = False
-            save_preferences(self.preferences)
-        self.show()
+            self.persist()
 
     def poll(self):
+        try:
+            self._poll_events()
+        except Exception:
+            self.pending = False
+            self.desktop._append('SYSTEM', 'Background update failed. Please retry the action.')
+        finally:
+            if not getattr(self.desktop, '_closing', False):
+                self.desktop.root.after(100, self.poll)
+
+    def _poll_events(self):
         d = self.desktop
         if getattr(d, '_closing', False):
             return
@@ -143,6 +172,9 @@ class BackgroundController:
                     self.disable()
                     d._append('SYSTEM', 'Background listener stopped: ' + value)
                 elif kind == 'wake':
+                    if d.busy:
+                        self.pending = False
+                        continue
                     self.show()
                     if value:
                         self.pending = False
@@ -150,7 +182,13 @@ class BackgroundController:
                         d._send_text(value, from_voice=True)
                     else:
                         location = self.preferences.get('location')
-                        threading.Thread(target=lambda loc=location, gen=generation: self.events.put(('brief', build_briefing(loc), gen)), daemon=True).start()
+                        def briefing_worker(loc=location, gen=generation):
+                            try:
+                                text = build_briefing(loc)
+                            except Exception:
+                                text = 'Briefing abhi available nahi hai. Dobara try kijiye.'
+                            self.events.put(('brief', text, gen))
+                        threading.Thread(target=briefing_worker, daemon=True).start()
                 elif kind == 'brief':
                     self.pending = False
                     if d.busy:
@@ -158,7 +196,6 @@ class BackgroundController:
                     self.suppress_until = time.monotonic() + 2
                     d._append('JARVIS', value)
                     d.voice.speak(value)
-        d.root.after(100, self.poll)
 
     def settings_dialog(self):
         win = tk.Toplevel(self.desktop.root)
@@ -182,7 +219,7 @@ class BackgroundController:
                     status.set('OFF')
                 self.listener.model_path = folder
                 self.preferences['model_path'] = folder
-                save_preferences(self.preferences)
+                self.persist()
                 model_label.set('Model: ' + folder)
         ttk.Button(frame, text='Choose Vosk model folder', command=select_model).pack(anchor='w')
         current = self.preferences.get('location') or {}
@@ -226,7 +263,8 @@ class BackgroundController:
                 return
             row = locations[results.curselection()[0]]
             self.preferences['location'] = {k: row[k] for k in ('name', 'latitude', 'longitude')}
-            save_preferences(self.preferences)
+            if not self.persist():
+                return
             location_label.set('Weather location: ' + row['name'])
         ttk.Button(frame, text='Search city', command=search).pack(side='left')
         ttk.Button(frame, text='Save selected city', command=select).pack(side='left', padx=8)
@@ -253,9 +291,13 @@ def install_background_ui():
             self._exit_completely()
     def exit_completely(self):
         from .youtube_player import shutdown
-        self.background.disable(save=False)
-        shutdown()
-        original_close(self)
+        try:
+            self.background.disable(save=False)
+        finally:
+            try:
+                shutdown()
+            finally:
+                original_close(self)
     JarvisDesktop.__init__ = init
     JarvisDesktop._close = close
     JarvisDesktop._exit_completely = exit_completely
