@@ -27,17 +27,19 @@ _CAPABILITY_PATTERNS = (
 
 def local_identity_answer(text: str) -> str | None:
     lower = ' '.join(text.lower().split())
+    if any(phrase in lower for phrase in ('your name', 'tumhara naam', 'aapka naam', 'who are you', 'tum kaun')):
+        return 'Main Friday hoon, aapki JARVIS AI assistant.'
     if not any(pattern in lower for pattern in _CREATOR_PATTERNS):
         return None
     creator = settings.creator_name or 'Adib Azam'
-    assistant = settings.assistant_name or 'JARVIS OMEGA'
+    assistant = 'Friday'
     wants_capabilities = any(pattern in lower for pattern in _CAPABILITY_PATTERNS)
-    base = f'{creator} ne mujhe banaya hai. Main {assistant} V7 hoon.'
+    base = f'{creator} ne mujhe banaya hai. Main {assistant} hoon, JARVIS app ki AI assistant.'
     if not wants_capabilities:
         return base
     return (
         f'{base}\n\n'
-        'Main ye kaam kar sakta hoon:\n'
+        'Main ye kaam kar sakti hoon:\n'
         '• Hinglish, Hindi aur English me AI chat, reasoning, coding aur planning\n'
         '• Image upload aur permission-based Screen Vision\n'
         '• PDF, DOCX, XLSX, CSV aur text documents ko samajhna\n'
@@ -107,7 +109,7 @@ def _repair_answer(self, user_text: str, bad_answer: str) -> str:
     try:
         turn = self.provider.chat(
             system=(
-                f'You are {settings.assistant_name} V7, created by {settings.creator_name}. '
+                f'You are Friday, the female assistant inside {settings.assistant_name}, created by {settings.creator_name}. '
                 'Answer directly in clean Hinglish/English matching the user. Use only Latin and Devanagari '
                 'unless another script was requested. Do not output broken HTML/template tokens.'
             ),
@@ -304,4 +306,6 @@ def run_adaptive_gui() -> None:
             root.state('zoomed')
     except Exception:
         pass
+    from .desktop_smoke import schedule_smoke_check
+    schedule_smoke_check(root, app)
     root.mainloop()

@@ -123,6 +123,15 @@ jobs:
         shell: pwsh
         run: |
           .\scripts\check_windows_package.ps1
+      - name: Upload desktop launch evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-launch-evidence
+          path: |
+            desktop-smoke.json
+            desktop-smoke.png
+          if-no-files-found: ignore
       - name: Upload package smoke artifact
         if: success()
         uses: actions/upload-artifact@v4

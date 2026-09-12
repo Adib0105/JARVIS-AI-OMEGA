@@ -104,6 +104,8 @@ class JarvisOmega:
             return None
 
     def _friendly_error(self, exc: BaseException) -> RuntimeError:
+        if 'AI setup is incomplete.' in str(exc):
+            return RuntimeError('AI setup incomplete. Click AI CONNECTION, save your key, then restart JARVIS.')
         failure = classify_exception(exc, provider=settings.provider, operation=self.last_request_kind)
         provider = {'openrouter': 'OpenRouter', 'openai': 'OpenAI', 'local': 'Local AI'}.get(settings.provider, settings.provider)
         messages = {

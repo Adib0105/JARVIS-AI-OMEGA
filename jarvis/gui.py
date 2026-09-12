@@ -19,8 +19,8 @@ from .vision import capture_screen
 from .voice import VoiceOutput
 
 
-BG = '#030810'
-PANEL = '#07131d'
+BG = '#0c1020'
+PANEL = '#141c30'
 PANEL_2 = '#091a26'
 CYAN = '#53e7ff'
 CYAN_DIM = '#1d5368'
@@ -57,6 +57,8 @@ class JarvisDesktop:
         self.todo_ids: list[int] = []
 
         self._build()
+        if settings.provider in {'openrouter', 'openai'} and not settings.api_key.strip():
+            self._append('SYSTEM', 'Friday is ready. Use AI CONNECTION to add your key for AI chat.')
         self.root.protocol('WM_DELETE_WINDOW', self._close)
         self.root.bind('<Control-o>', lambda _e: self._upload_images())
         self.root.bind('<Control-l>', lambda _e: self.entry.focus_set())
@@ -103,7 +105,7 @@ class JarvisDesktop:
         ).pack(anchor='w')
         tk.Label(
             title_box,
-            text='ARC DESKTOP AGENT // MULTIMODAL INTELLIGENCE SYSTEM',
+            text='FRIDAY  /  YOUR PERSONAL AI COMPANION',
             bg='#061725', fg=MUTED, font=('Consolas', 8, 'bold'),
         ).pack(anchor='w')
 
@@ -140,7 +142,7 @@ class JarvisDesktop:
         self.entry.focus_set()
 
     def _build_left_panel(self, parent: tk.Frame) -> None:
-        tk.Label(parent, text='ARC CORE', bg=PANEL, fg=CYAN, font=('Consolas', 10, 'bold')).pack(pady=(12, 2))
+        tk.Label(parent, text='FRIDAY · AI COMPANION', bg=PANEL, fg=CYAN, font=('Consolas', 10, 'bold')).pack(pady=(12, 2))
         self.hud = ArcReactorHUD(parent, size=220, bg=PANEL)
         self.hud.pack(pady=(0, 6))
 
@@ -204,6 +206,7 @@ class JarvisDesktop:
             ('MUTE / UNMUTE', self._toggle_voice, GREEN),
             ('IMAGE HELP', self._image_help, MAGENTA),
             ('SYSTEM STATUS', self._show_status, CYAN),
+            ('AI CONNECTION', lambda: __import__('jarvis.connection_setup', fromlist=['open_connection_setup']).open_connection_setup(self), MAGENTA),
             ('SETTINGS', self._open_settings, GREEN),
             ('CHECK UPDATE', self._check_update, GOLD),
         ]:
