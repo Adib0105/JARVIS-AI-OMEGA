@@ -1,4 +1,7 @@
+param([switch]$OfflineVoice)
+
 $ErrorActionPreference = "Stop"
+Set-Location $PSScriptRoot
 Write-Host "=== JARVIS AI OMEGA V6 - ARC Windows Setup ===" -ForegroundColor Cyan
 
 $python = $null
@@ -9,6 +12,7 @@ else { throw "Python 3.10+ not found. Install Python and enable Add Python to PA
 if (-not (Test-Path ".venv")) {
     Write-Host "Creating isolated V6 environment..." -ForegroundColor Cyan
     & $python -m venv .venv
+    if ($LASTEXITCODE -ne 0) { throw "Virtual environment creation failed." }
 }
 
 $venvPython = Join-Path $PWD ".venv\Scripts\python.exe"
@@ -25,6 +29,12 @@ if (Test-Path "requirements-windows.txt") {
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "Optional Windows packages could not all be installed. Text chat still works; MIC/desktop automation may be unavailable."
     }
+}
+
+if ($OfflineVoice) {
+    & $venvPython -m pip install -r requirements-offline-voice.txt
+    if ($LASTEXITCODE -ne 0) { throw "Offline speech package installation failed." }
+    Write-Host "Set SPEECH_ENGINE=vosk and VOSK_MODEL_PATH in .env after extracting a local model."
 }
 
 if (-not (Test-Path ".env")) {

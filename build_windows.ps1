@@ -19,7 +19,7 @@ if ($LASTEXITCODE -ne 0) {
     throw 'PyInstaller is not installed. Install it deliberately with: .\.venv\Scripts\python.exe -m pip install pyinstaller'
 }
 
-& $Python -m compileall -f -q .
+& $Python -m compileall -f -q jarvis tests desktop_app.py main.py self_check.py self_check_v75.py
 if ($LASTEXITCODE -ne 0) { throw 'compileall failed; build stopped.' }
 
 & $Python -m unittest discover -s tests -v
@@ -36,9 +36,15 @@ $Args = @(
     '--name', 'JARVIS-OMEGA-V7',
     '--collect-submodules', 'jarvis',
     '--collect-submodules', 'edge_tts',
+    '--collect-submodules', 'pyttsx3.drivers',
     '--collect-submodules', 'speech_recognition',
     'desktop_app.py'
 )
+# Include optional offline recognition only when deliberately installed in the build environment.
+& $Python -c "import importlib.util; raise SystemExit(0 if importlib.util.find_spec('vosk') else 1)"
+if ($LASTEXITCODE -eq 0) {
+    $Args = $Args[0..($Args.Length - 2)] + @('--collect-all', 'vosk', 'desktop_app.py')
+}
 & $Python @Args
 if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed.' }
 

@@ -31,7 +31,7 @@ def confirmer(tool: str, args: dict) -> bool:
 
 def banner() -> None:
     title = Text('J A R V I S   O M E G A   V6', style='bold cyan')
-    provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
+    provider = {'openrouter': 'OpenRouter', 'openai': 'OpenAI', 'local': 'Local AI'}.get(settings.provider, settings.provider)
     subtitle = (
         f'ARC Agent • Mission Planner • Images • Documents • Web • Memory • Desktop Tools • Neural Voice\n'
         f'OPERATOR: {settings.creator_name} • Provider: {provider} • Model: {settings.model}'
@@ -70,6 +70,8 @@ def help_table() -> Table:
         ('/stats', 'Memory/task/knowledge stats'),
         ('/status', 'Full V6 status'),
         ('/voice-test [mode]', 'Test neural voice'),
+        ('/voice-profile [name]', 'List or save a voice profile'),
+        ('/voice-doctor', 'Local diagnostics and microphone device list'),
         ('/mute / /unmute', 'Control speech'),
         ('/new', 'New session'),
         ('/sessions', 'List sessions'),
@@ -109,7 +111,7 @@ def run_cli() -> None:
             text = Prompt.ask('[bold green]YOU[/bold green]').strip()
         except (EOFError, KeyboardInterrupt):
             console.print('\n[cyan]JARVIS[/cyan]: Goodbye.')
-            voice.stop()
+            voice.shutdown()
             break
         if not text:
             continue
@@ -118,8 +120,7 @@ def run_cli() -> None:
         if low in {'/exit', '/quit', 'exit', 'quit'}:
             goodbye = f'Goodbye, {settings.user_name}.'
             console.print(f'[cyan]JARVIS[/cyan]: {goodbye}')
-            voice.speak(goodbye)
-            voice.stop()
+            voice.shutdown()
             break
         if low == '/help':
             console.print(help_table()); continue
@@ -132,7 +133,7 @@ def run_cli() -> None:
 
         if low == '/status':
             stats = jarvis.memory.stats()
-            provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
+            provider = {'openrouter': 'OpenRouter', 'openai': 'OpenAI', 'local': 'Local AI'}.get(settings.provider, settings.provider)
             console.print(Panel(
                 f'Version: {settings.app_version}\nOperator: {settings.creator_name}\nProvider: {provider}\n'
                 f'Model: {settings.model}\nLast model: {jarvis.last_model_used}\nLast request: {jarvis.last_request_kind}\n'
@@ -280,6 +281,22 @@ def run_cli() -> None:
             console.print(f'[green]Exported:[/green] {jarvis.memory.export_session(jarvis.session_id, settings.export_dir)}'); continue
         if low == '/stats':
             _show_json('Memory & Knowledge Stats', jarvis.memory.stats()); continue
+        if low == '/voice-doctor':
+            from .voice_diagnostics import diagnose_voice
+            _show_json('Voice diagnostics', diagnose_voice(voice.profile))
+            continue
+        if low == '/voice-profile' or low.startswith('/voice-profile '):
+            from .voice_profiles import PROFILES
+            parts = low.split(maxsplit=1)
+            if len(parts) == 1:
+                _show_json('Voice profiles', {'selected': voice.profile, 'profiles': {key: value[0] for key, value in PROFILES.items()}})
+            else:
+                try:
+                    voice.set_profile(parts[1].strip())
+                    console.print(f'Voice profile saved: {voice.profile}')
+                except (ValueError, OSError) as exc:
+                    console.print(str(exc), markup=False)
+            continue
         if low.startswith('/voice-test'):
             parts = text.split(maxsplit=1)
             voice.test(parts[1].strip().lower() if len(parts) > 1 else 'hinglish'); continue

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 import array
 import math
 import threading
-import time
 from typing import Callable
+
+from .config import settings
 
 
 class MicrophoneUnavailable(RuntimeError):
@@ -14,13 +16,35 @@ class MicrophoneUnavailable(RuntimeError):
 def _deps():
     try:
         import sounddevice as sd
-        import speech_recognition as sr
+        if settings.speech_engine == 'google':
+            import speech_recognition as sr
+        else:
+            sr = None
     except Exception as exc:
         raise MicrophoneUnavailable(
             'Optional microphone packages are not available. Run setup_windows.ps1 again to install '
             'sounddevice and SpeechRecognition.'
         ) from exc
     return sd, sr
+
+
+_CAPTURE_LOCK = threading.Lock()
+
+
+@contextmanager
+def _exclusive_stream(sd, **kwargs):
+    if not _CAPTURE_LOCK.acquire(blocking=False):
+        raise MicrophoneUnavailable('Microphone already in use. Stop wake-word/listening before starting another recording.')
+    try:
+        with sd.RawInputStream(**kwargs) as stream:
+            yield stream
+    finally:
+        _CAPTURE_LOCK.release()
+
+
+def input_device():
+    value = settings.mic_device.strip()
+    return int(value) if value.isdecimal() else value or None
 
 
 def _rms_int16(data: bytes) -> float:
@@ -34,8 +58,14 @@ def _rms_int16(data: bytes) -> float:
 
 
 def _transcribe_pcm(data: bytes, sample_rate: int, language: str) -> str:
+    if settings.speech_engine == 'vosk':
+        from .offline_speech import transcribe_vosk
+        return transcribe_vosk(data, sample_rate, settings.vosk_model_path)
+    if settings.speech_engine != 'google':
+        raise RuntimeError('SPEECH_ENGINE must be google or vosk.')
     _sd, sr = _deps()
     recognizer = sr.Recognizer()
+    recognizer.operation_timeout = 15
     audio = sr.AudioData(data, sample_rate, 2)
     try:
         return recognizer.recognize_google(audio, language=language).strip()
@@ -55,7 +85,7 @@ def record_and_transcribe(
     duration = max(1.0, min(float(duration), 20.0))
     frames = int(sample_rate * duration)
     try:
-        with sd.RawInputStream(samplerate=sample_rate, blocksize=0, dtype='int16', channels=1) as stream:
+        with _exclusive_stream(sd, samplerate=sample_rate, blocksize=0, dtype='int16', channels=1, device=input_device()) as stream:
             data, _overflowed = stream.read(frames)
     except Exception as exc:
         raise MicrophoneUnavailable(f'Microphone recording failed: {exc}') from exc
@@ -71,13 +101,16 @@ def record_until_silence(
     speech_threshold: float = 420.0,
     preroll_seconds: float = 0.25,
     on_speech_start: Callable[[], None] | None = None,
+    stop_event: threading.Event | None = None,
 ) -> str:
     """VAD-style capture that stops naturally after the user finishes speaking.
 
     It uses local RMS energy only for endpointing; transcription remains the existing
-    SpeechRecognition backend. This keeps microphone capture fast and avoids a fixed
+    configured Google or local Vosk backend. This keeps microphone capture fast and avoids a fixed
     six-second wait for short commands.
     """
+    if stop_event is not None and stop_event.is_set():
+        return ''
     sd, _sr = _deps()
     max_seconds = max(2.0, min(float(max_seconds), 30.0))
     start_timeout = max(1.0, min(float(start_timeout), max_seconds))
@@ -96,13 +129,16 @@ def record_until_silence(
     quiet_count = 0
 
     try:
-        with sd.RawInputStream(
+        with _exclusive_stream(sd,
             samplerate=sample_rate,
             blocksize=block_frames,
             dtype='int16',
             channels=1,
+            device=input_device(),
         ) as stream:
             for index in range(max_blocks):
+                if stop_event is not None and stop_event.is_set():
+                    return ''
                 chunk, _overflowed = stream.read(block_frames)
                 raw = bytes(chunk)
                 level = _rms_int16(raw)
@@ -134,9 +170,10 @@ def record_until_silence(
     except Exception as exc:
         raise MicrophoneUnavailable(f'Microphone recording failed: {exc}') from exc
 
-    if not captured:
+    if not captured or (stop_event is not None and stop_event.is_set()):
         return ''
-    return _transcribe_pcm(b''.join(captured), sample_rate, language)
+    text = _transcribe_pcm(b''.join(captured), sample_rate, language)
+    return '' if stop_event is not None and stop_event.is_set() else text
 
 
 class WakeWordListener:
@@ -165,7 +202,7 @@ class WakeWordListener:
         return bool(self._thread and self._thread.is_alive() and not self._stop.is_set())
 
     def start(self) -> None:
-        if self.running:
+        if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True, name='jarvis-wake-word')
@@ -183,11 +220,11 @@ class WakeWordListener:
                 if self.wake_word not in lower:
                     continue
                 self.on_state('listening')
-                after = lower.split(self.wake_word, 1)[1].strip(' ,.!?')
+                after = heard[lower.index(self.wake_word) + len(self.wake_word):].strip(' ,.!?')
                 command = after
                 if not command and not self._stop.is_set():
-                    command = record_until_silence(language=self.language, max_seconds=12.0)
-                if command:
+                    command = record_until_silence(language=self.language, max_seconds=12.0, stop_event=self._stop)
+                if command and not self._stop.is_set():
                     self.on_command(command)
                 self.on_state('wake-idle')
             except MicrophoneUnavailable as exc:
@@ -195,5 +232,5 @@ class WakeWordListener:
                 break
             except Exception as exc:
                 self.on_error(str(exc))
-                time.sleep(0.8)
+                self._stop.wait(0.8)
         self.on_state('idle')

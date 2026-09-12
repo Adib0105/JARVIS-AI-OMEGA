@@ -7,6 +7,9 @@ from .openrouter_provider import OpenRouterProvider
 
 
 def create_primary_provider(settings) -> AIProvider:
+    if settings.provider == 'local':
+        return LocalProvider(api_key=settings.local_ai_api_key, base_url=settings.local_ai_base_url,
+                             max_retries=settings.api_max_retries)
     if settings.provider == 'openrouter':
         return OpenRouterProvider(
             api_key=settings.openrouter_api_key,
@@ -27,6 +30,8 @@ def create_primary_provider(settings) -> AIProvider:
 
 
 def create_local_provider(settings) -> LocalProvider | None:
+    if settings.provider == 'local':
+        return None
     if not settings.enable_local_fallback or not settings.local_ai_model or not settings.local_ai_base_url:
         return None
     return LocalProvider(

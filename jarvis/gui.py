@@ -109,7 +109,7 @@ class JarvisDesktop:
 
         operator = tk.Frame(header, bg='#061725')
         operator.pack(side='right')
-        provider = 'OPENROUTER FREE' if settings.provider == 'openrouter' else 'OPENAI'
+        provider = {'openrouter': 'OPENROUTER', 'openai': 'OPENAI', 'local': 'LOCAL AI'}.get(settings.provider, settings.provider.upper())
         tk.Label(
             operator,
             text=f'OPERATOR: {settings.creator_name.upper()}',
@@ -483,7 +483,7 @@ class JarvisDesktop:
             answer = self.jarvis.analyze_images(images, text) if images else self.jarvis.chat(text)
             self.root.after(0, lambda: self._answer_done(answer, None, bool(images)))
         except Exception as exc:
-            self.root.after(0, lambda: self._answer_done('', str(exc), False))
+            self.root.after(0, lambda error=str(exc): self._answer_done('', error, False))
 
     def _answer_done(self, answer: str, error: str | None, clear_images: bool) -> None:
         self._set_busy(False)
@@ -518,7 +518,7 @@ class JarvisDesktop:
             result = self.jarvis.run_mission(goal, progress)
             self.root.after(0, lambda: self._mission_done(result, None))
         except Exception as exc:
-            self.root.after(0, lambda: self._mission_done('', str(exc)))
+            self.root.after(0, lambda error=str(exc): self._mission_done('', error))
 
     def _mission_done(self, result: str, error: str | None) -> None:
         self._set_busy(False)
@@ -544,7 +544,7 @@ class JarvisDesktop:
             text = record_and_transcribe(settings.mic_record_seconds, settings.speech_language)
             self.root.after(0, lambda: self._mic_done(text, None))
         except Exception as exc:
-            self.root.after(0, lambda: self._mic_done('', str(exc)))
+            self.root.after(0, lambda error=str(exc): self._mic_done('', error))
 
     def _mic_done(self, text: str, error: str | None) -> None:
         self._set_busy(False)
@@ -608,7 +608,7 @@ class JarvisDesktop:
             answer = self.jarvis.analyze_image(screenshot, prompt)
             self.root.after(0, lambda: self._vision_done(answer, screenshot.name, None))
         except Exception as exc:
-            self.root.after(0, lambda: self._vision_done('', '', str(exc)))
+            self.root.after(0, lambda error=str(exc): self._vision_done('', '', error))
 
     def _vision_done(self, answer: str, name: str, error: str | None) -> None:
         self._set_busy(False)
@@ -711,7 +711,7 @@ class JarvisDesktop:
         )
 
     def _show_status(self) -> None:
-        provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
+        provider = {'openrouter': 'OpenRouter', 'openai': 'OpenAI', 'local': 'Local AI'}.get(settings.provider, settings.provider)
         stats = self.jarvis.memory.stats()
         messagebox.showinfo(
             'OMEGA V6 // Core Status',

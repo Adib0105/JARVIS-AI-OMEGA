@@ -101,11 +101,18 @@ class Settings:
     edge_voice_rate: str = os.getenv('EDGE_VOICE_RATE', '+2%').strip()
     edge_voice_volume: str = os.getenv('EDGE_VOICE_VOLUME', '+3%').strip()
     edge_voice_pitch: str = os.getenv('EDGE_VOICE_PITCH', '-4Hz').strip()
+    openai_tts_model: str = os.getenv('OPENAI_TTS_MODEL', 'gpt-4o-mini-tts').strip()
+    openai_tts_voice: str = os.getenv('OPENAI_TTS_VOICE', 'coral').strip()
+    openai_tts_instructions: str = os.getenv('OPENAI_TTS_INSTRUCTIONS', 'Speak in a warm, gentle, affectionate female voice. Use natural conversational pacing and clear Hindi, Hinglish or English pronunciation. Sound caring and relaxed, without exaggerated pitch or breathiness.').strip()
+    offline_voice_id: str = os.getenv('OFFLINE_VOICE_ID', '').strip()
     voice_rate: int = _int('VOICE_RATE', 172)
     voice_volume: float = _float('VOICE_VOLUME', 1.0)
     enable_mic_input: bool = _bool('ENABLE_MIC_INPUT', True)
     enable_wake_word: bool = _bool('ENABLE_WAKE_WORD', False)
     wake_word: str = os.getenv('WAKE_WORD', 'hey jarvis').strip() or 'hey jarvis'
+    speech_engine: str = os.getenv('SPEECH_ENGINE', 'google').strip().lower()
+    vosk_model_path: str = os.getenv('VOSK_MODEL_PATH', '').strip()
+    mic_device: str = os.getenv('MIC_DEVICE', '').strip()
     speech_language: str = os.getenv('SPEECH_LANGUAGE', 'en-IN').strip() or 'en-IN'
     mic_record_seconds: float = _float('MIC_RECORD_SECONDS', 6.0)
     ai_timeout_seconds: float = _float('AI_TIMEOUT_SECONDS', 60.0)
@@ -128,12 +135,18 @@ class Settings:
 
     @property
     def api_key(self) -> str:
+        if self.provider == 'local':
+            return self.local_ai_api_key
         return self.openrouter_api_key if self.provider == 'openrouter' else self.openai_api_key
     @property
     def model(self) -> str:
+        if self.provider == 'local':
+            return self.local_ai_model
         return self.openrouter_model if self.provider == 'openrouter' else self.openai_model
     @property
     def base_url(self) -> str | None:
+        if self.provider == 'local':
+            return self.local_ai_base_url
         return self.openrouter_base_url if self.provider == 'openrouter' else None
     @property
     def routed_fast_model(self) -> str:

@@ -142,12 +142,12 @@ def main() -> None:
             elif finding.level == ValidationLevel.WARNING:
                 optional(f'Config {finding.key}', False, finding.message)
 
-        provider_ok = settings.provider in {'openrouter', 'openai'}
+        provider_ok = settings.provider in {'openrouter', 'openai', 'local'}
         results.append(check('AI provider', provider_ok, settings.provider))
 
         placeholders = {'put_your_openrouter_key_here', 'put_your_api_key_here', 'YAHAN_APNI_OPENROUTER_KEY'}
         key_ok = bool(settings.api_key and settings.api_key not in placeholders)
-        key_name = 'OPENROUTER_API_KEY' if settings.provider == 'openrouter' else 'OPENAI_API_KEY'
+        key_name = {'openrouter': 'OPENROUTER_API_KEY', 'openai': 'OPENAI_API_KEY', 'local': 'LOCAL_AI_API_KEY (optional)'}.get(settings.provider, 'API_KEY')
         results.append(check(f'{key_name} configured', key_ok, settings.model))
 
         if settings.provider == 'openrouter':
