@@ -28,8 +28,8 @@ if (-not $backgroundCheck.WaitForExit(30000)) {
 if ($backgroundCheck.ExitCode -ne 0) { throw 'Frozen background dependency check failed.' }
 Write-Host "Package smoke PASS: $exe"
 # Launch a complete fresh desktop from a directory containing spaces, without any key.
-$SmokeRoot = Join-Path $env:RUNNER_TEMP 'JARVIS fresh install'
-if (-not $env:RUNNER_TEMP) { $SmokeRoot = Join-Path $env:TEMP ('JARVIS fresh ' + [guid]::NewGuid()) }
+if ($env:RUNNER_TEMP) { $SmokeRoot = Join-Path $env:RUNNER_TEMP 'JARVIS fresh install' }
+else { $SmokeRoot = Join-Path $env:TEMP ('JARVIS fresh ' + [guid]::NewGuid()) }
 New-Item -ItemType Directory -Path $SmokeRoot -Force | Out-Null
 Copy-Item "$dist\*" $SmokeRoot -Recurse -Force
 $Report = Join-Path (Get-Location) 'desktop-smoke.json'
