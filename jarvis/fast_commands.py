@@ -57,10 +57,13 @@ def execute_fast_command(jarvis, text: str) -> str | None:
     if tool == 'youtube_play_first':
         if not isinstance(payload, dict) or not payload.get('ok'):
             return 'YouTube action complete nahi hua: ' + str(payload.get('error', 'Unknown error') if isinstance(payload, dict) else payload)
-        return payload.get('result', {}).get('message', 'YouTube playback verify nahi hua.')
-    if isinstance(payload, dict) and payload.get('ok') is False:
-        # Permission policy still wins. Never bypass a denied/approval-gated action.
-        return None
+        result = payload.get('result')
+        return result.get('message', 'YouTube playback verify nahi hua.') if isinstance(result, dict) else 'YouTube playback verify nahi hua.'
+    if not isinstance(payload, dict) or payload.get('ok') is not True:
+        # A recognized command is terminal even when denied or malformed.
+        # Falling through to the model can retry an action the user just denied.
+        error = payload.get('error', 'Invalid tool response') if isinstance(payload, dict) else 'Invalid tool response'
+        return f'App open nahi hua: {error}'
     app = args['app']
     names = {'vscode': 'VS Code', 'chrome': 'Chrome', 'edge': 'Edge', 'explorer': 'File Explorer'}
     return f"Done. {names.get(app, app.title())} open kar diya."

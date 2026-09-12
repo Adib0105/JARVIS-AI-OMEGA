@@ -68,7 +68,9 @@ def open_url(url: str) -> str:
     if not url.lower().startswith(('http://', 'https://')):
         raise ValueError('Only http/https URLs are allowed.')
     ok = webbrowser.open(url, new=2)
-    return 'Opened URL.' if ok else 'Browser launch was requested.'
+    if not ok:
+        raise RuntimeError('Browser did not accept the open request. Check your default browser.')
+    return 'Opened URL.'
 
 
 def open_app(app: str) -> str:

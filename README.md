@@ -540,3 +540,7 @@ Use **Ctrl+K** for searchable commands and editable Python/SQL/Excel prompt star
 ### Background wake and daily briefing
 
 Close to the Windows tray, say **Jarvis** for greeting/weather/system load, or **Jarvis, YouTube par Kesariya chalao** for the first video. Includes local Vosk listening, city selection, explicit pause/exit and optional Windows sign-in startup. [Setup and limitations](docs/BACKGROUND-WAKE.md).
+
+### Reliability fixes — September 12, 2026
+
+Bug-fix-only polish covers background recovery, voice errors, permission-dialog shutdown, settings persistence and browser/YouTube result verification. See the [audit and validation notes](docs/BUGFIX-POLISH-2026-09-12.md).

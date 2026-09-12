@@ -202,6 +202,7 @@ def _rebrand_chat_history(app) -> None:
 
 
 def _install_security_gui_hooks(gui_module) -> None:
+    import tkinter as tk
     from .security.approval_ui import ask_approval
     from .security.audit_ui import show_audit_viewer
     from .security.policy import ApprovalDecision
@@ -212,6 +213,9 @@ def _install_security_gui_hooks(gui_module) -> None:
         result = {'decision': ApprovalDecision.DENY.value}
 
         def ask() -> None:
+            if getattr(self, '_closing', False):
+                event.set()
+                return
             try:
                 if isinstance(args, dict) and '__approval__' in args:
                     result['decision'] = ask_approval(self.root, tool, args)
@@ -227,11 +231,23 @@ def _install_security_gui_hooks(gui_module) -> None:
                         self.jarvis.cancel_mission()
                     except Exception:
                         pass
+            except (RuntimeError, tk.TclError):
+                result['decision'] = ApprovalDecision.DENY.value
             finally:
                 event.set()
 
-        self.root.after(0, ask)
-        event.wait()
+        if getattr(self, '_closing', False):
+            return result['decision']
+        if threading.current_thread() is threading.main_thread():
+            ask()
+        else:
+            try:
+                self.root.after(0, ask)
+            except (RuntimeError, tk.TclError):
+                return result['decision']
+            while not event.wait(0.1):
+                if getattr(self, '_closing', False):
+                    return result['decision']
         return result['decision']
 
     gui_module.JarvisDesktop._confirm_tool = v7_confirm_tool

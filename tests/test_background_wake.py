@@ -236,7 +236,7 @@ class BackgroundLifecycleTests(unittest.TestCase):
 
     def test_preferences_round_trip_and_corruption(self):
         with tempfile.TemporaryDirectory() as folder, patch('jarvis.background_ui.preference_path', return_value=Path(folder) / 'background.json'):
-            data = {'enabled': True, 'model_path': 'my model', 'location': {'name': 'Patna'}}
+            data = {'enabled': True, 'model_path': 'my model', 'location': {'name': 'Patna', 'latitude': 25.6, 'longitude': 85.1}}
             save_preferences(data)
             self.assertEqual(load_preferences(), data)
             (Path(folder) / 'background.json').write_text('broken')

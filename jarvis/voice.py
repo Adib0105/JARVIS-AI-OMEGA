@@ -439,7 +439,8 @@ class VoiceOutput:
                     self._current_text = None
                 if not self._paused:
                     self._interrupt_reason = None
-            if not self._shutdown and not self._paused and result != 'failed' and self._queue.empty():
+            if not self._shutdown and not self._paused and self._queue.empty():
                 self._emit('idle')
 
-        self._emit('idle')
+        if self.state != 'idle':
+            self._emit('idle')
