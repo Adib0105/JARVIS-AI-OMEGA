@@ -571,7 +571,9 @@ class JarvisDesktop:
             self._append('SYSTEM', f'Wake-word listener enabled: “{settings.wake_word}”.')
 
     def _wake_command(self, command: str) -> None:
-        self.root.after(0, lambda: self._send_text(command, from_voice=True))
+        session_id = self.jarvis.session_id
+        self.root.after(0, lambda: self._send_text(command, from_voice=True)
+                        if self.jarvis.session_id == session_id and self.wake_listener.running else None)
 
     def _wake_state(self, state: str) -> None:
         if state == 'listening':
