@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
+from . import __version__
 
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[1]
 # The package-local .env is the user's explicit JARVIS configuration.
@@ -44,7 +45,7 @@ def _path(name: str, default: Path) -> Path:
 
 @dataclass(frozen=True)
 class Settings:
-    app_version: str = '7.0.0'
+    app_version: str = __version__
     provider: str = os.getenv('AI_PROVIDER', 'openrouter').strip().lower()
     openrouter_api_key: str = os.getenv('OPENROUTER_API_KEY', '')
     openrouter_model: str = os.getenv('OPENROUTER_MODEL', 'openrouter/free').strip()

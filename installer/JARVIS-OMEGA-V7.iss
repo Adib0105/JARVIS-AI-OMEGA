@@ -1,5 +1,7 @@
 #define MyAppName "JARVIS AI OMEGA V7"
-#define MyAppVersion "7.0.0"
+#ifndef MyAppVersion
+#define MyAppVersion "7.5.1"
+#endif
 #define MyAppPublisher "Adib Azam"
 #define MyAppExeName "JARVIS-OMEGA-V7.exe"
 
@@ -28,7 +30,7 @@ Name: "{autoprograms}\JARVIS AI OMEGA V7"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\JARVIS AI OMEGA V7"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
+Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch JARVIS AI OMEGA V7"; Flags: nowait postinstall skipifsilent

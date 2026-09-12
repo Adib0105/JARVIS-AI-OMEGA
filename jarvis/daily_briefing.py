@@ -3,6 +3,11 @@ from __future__ import annotations
 
 import json
 import math
+import threading
+import time
+
+_WEATHER_CACHE = {}
+_WEATHER_LOCK = threading.Lock()
 from datetime import datetime
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -44,6 +49,11 @@ def weather_report(location):
     lat, lon = float(location['latitude']), float(location['longitude'])
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise ValueError('Invalid weather coordinates.')
+    cache_key = (lat, lon, location['name'], datetime.now().date())
+    with _WEATHER_LOCK:
+        cached = _WEATHER_CACHE.get(cache_key)
+        if cached and time.monotonic() - cached[0] < 300:
+            return cached[1] + ' (Pichhle 5 minute ka cached forecast.)'
     data = _get_json('https://api.open-meteo.com/v1/forecast', {
         'latitude': lat, 'longitude': lon, 'current': 'temperature_2m',
         'daily': 'precipitation_probability_max', 'timezone': 'auto', 'forecast_days': 1,
@@ -62,7 +72,12 @@ def weather_report(location):
         parts.append(f'Aaj barish ya anya precipitation ka maximum chance {chance:g} percent hai. Yeh forecast hai, guarantee nahi.')
     else:
         parts.append('Aaj barish ka chance abhi available nahi hai.')
-    return ' '.join(parts)
+    report = ' '.join(parts)
+    with _WEATHER_LOCK:
+        if len(_WEATHER_CACHE) > 20:
+            _WEATHER_CACHE.clear()
+        _WEATHER_CACHE[cache_key] = (time.monotonic(), report)
+    return report
 
 
 def build_briefing(location=None, now=None):
@@ -74,8 +89,15 @@ def build_briefing(location=None, now=None):
         parts.append(weather_report(location))
     except Exception:
         parts.append('Weather service abhi available nahi hai. Barish ka forecast confirm nahi kar sakti.')
+    parts.append(system_report())
+    return ' '.join(parts)
+
+
+def system_report():
+    import psutil
+    parts = []
     try:
-        cpu = psutil.cpu_percent(interval=0.25)
+        cpu = psutil.cpu_percent(interval=0.1)
         ram = psutil.virtual_memory().percent
         parts.append(f'Aapke system ka CPU {cpu:g} percent aur RAM {ram:g} percent use ho raha hai.')
         battery = psutil.sensors_battery()

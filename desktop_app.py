@@ -22,8 +22,10 @@ def main():
 
 
 
-    from jarvis.desktop_instance import acquire_desktop_instance
+    from jarvis.desktop_instance import acquire_desktop_instance, show_existing_desktop
     if not acquire_desktop_instance():
+        if show_existing_desktop():
+            raise SystemExit(0)
         from tkinter import messagebox
         messagebox.showinfo('JARVIS is running', 'Open JARVIS from its taskbar or system tray icon. Exit that instance before starting another.')
         raise SystemExit(0)

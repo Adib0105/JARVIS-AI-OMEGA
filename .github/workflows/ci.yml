@@ -116,6 +116,12 @@ jobs:
           .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
           .\.venv\Scripts\python.exe -m pip install -r requirements-windows.txt
           .\.venv\Scripts\python.exe -m pip install -r requirements-offline-voice.txt
+      - name: Assign increasing release version
+        shell: pwsh
+        run: |
+          $Version = "7.5.$env:GITHUB_RUN_NUMBER"
+          "__version__ = '$Version'" | Set-Content jarvis/__init__.py -Encoding utf8
+          $Version | Set-Content build-version.txt
       - name: Build V7 Windows application
         shell: pwsh
         run: .\build_windows.ps1
@@ -123,6 +129,24 @@ jobs:
         shell: pwsh
         run: |
           .\scripts\check_windows_package.ps1
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
+          }
+          .\build_installer.ps1
+      - name: Verify installer and update lifecycle
+        shell: pwsh
+        run: .\scripts\check_windows_installer.ps1
+      - name: Upload tested installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: JARVIS-Windows-Setup
+          path: |
+            dist/installer/JARVIS-AI-OMEGA-V7-Setup.exe
+            build-version.txt
       - name: Upload desktop launch evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -131,6 +155,8 @@ jobs:
           path: |
             desktop-smoke.json
             desktop-smoke.png
+            installed-desktop-smoke.json
+            installed-desktop-smoke.png
           if-no-files-found: ignore
       - name: Upload package smoke artifact
         if: success()
@@ -139,3 +165,25 @@ jobs:
           name: JARVIS-OMEGA-V7-windows-smoke
           path: dist/JARVIS-OMEGA-V7
           retention-days: 3
+
+  publish-release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, windows-regression, windows-package-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: JARVIS-Windows-Setup
+          path: release
+      - name: Publish tested Windows installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_COMMIT: ${{ github.sha }}
+        shell: bash
+        run: |
+          version=$(tr -d '\r\n' < release/build-version.txt)
+          printf '%s\n' 'Windows Setup: desktop shortcut, background tray, in-app updates and faster local replies.' 'Settings and data are preserved during in-place updates.' 'Validated by Linux/Windows tests, packaged desktop launch and installer/upgrade checks.' > release-notes.txt
+          gh release create "v$version" release/dist/installer/JARVIS-AI-OMEGA-V7-Setup.exe --target "$RELEASE_COMMIT" --title "JARVIS Friday $version" --notes-file release-notes.txt

@@ -30,6 +30,22 @@ def speech_chunks(text: str, limit: int = 1200):
         text = text[end:].lstrip()
 
 
+def speech_segments(text):
+    """Render a short first sentence before synthesizing a long answer."""
+    text = text.strip()
+    if not text:
+        return
+    match = re.search(r'[.!?।](?:\s+|$)', text[:220])
+    if match:
+        end = match.end()
+    else:
+        end = text.rfind(' ', 0, 220) if len(text) > 220 else len(text)
+        if end <= 0:
+            end = min(220, len(text))
+    yield text[:end].strip()
+    yield from speech_chunks(text[end:].lstrip())
+
+
 def play_audio(path: Path) -> None:
     if os.name == 'nt':
         import ctypes
@@ -104,7 +120,7 @@ def main(argv=None) -> int:
         return 0
     audio_path = text_path.with_suffix('.mp3')
     try:
-        for chunk in speech_chunks(text):
+        for chunk in speech_segments(text):
             if args.engine == 'openai':
                 render_openai(chunk, audio_path, speed)
             else:

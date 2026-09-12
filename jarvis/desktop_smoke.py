@@ -33,6 +33,23 @@ def schedule_smoke_check(root, app):
             for child in root.winfo_children():
                 if isinstance(child, tk.Toplevel):
                     child.destroy()
+            # Change focus to another real window, then minimize and close-to-tray.
+            other = tk.Toplevel(root)
+            other.title('Another application focus check')
+            other.focus_force()
+            root.update()
+            assert root.winfo_exists() and not getattr(app, '_closing', False)
+            other.destroy()
+            root.iconify()
+            root.update()
+            assert root.winfo_exists() and not getattr(app, '_closing', False)
+            app.background.show()
+            app._close()
+            root.update()
+            assert root.winfo_exists() and not getattr(app, '_closing', False), 'Close stopped the app'
+            assert 'Friday' in app.jarvis.chat('hello'), 'Hidden desktop stopped handling commands'
+            app.background.show()
+            root.update()
             try:
                 from PIL import ImageGrab
                 ImageGrab.grab().save(path.with_suffix('.png'))
