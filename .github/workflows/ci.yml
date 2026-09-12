@@ -157,6 +157,8 @@ jobs:
             desktop-smoke.png
             installed-desktop-smoke.json
             installed-desktop-smoke.png
+            dist/installer/update-result.txt
+            dist/installer/update-result.txt.install.log
           if-no-files-found: ignore
       - name: Upload package smoke artifact
         if: success()

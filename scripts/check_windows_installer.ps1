@@ -18,7 +18,9 @@ New-Item -ItemType Directory (Join-Path $InstallDir 'data') -Force | Out-Null
 $DataFile = Join-Path $InstallDir 'data\upgrade-sentinel.txt'
 'keep my data' | Set-Content -LiteralPath $DataFile
 $Hash = (Get-FileHash $Installer -Algorithm SHA256).Hash
-& .\scripts\apply-update.ps1 -Installer $Installer -AppDir $InstallDir -ParentId 0 -Sha256 $Hash -NoRelaunch
+$PowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+& $PowerShell -NoProfile -NonInteractive -File .\scripts\apply-update.ps1 -Installer $Installer -AppDir $InstallDir -ParentId 0 -Sha256 $Hash -NoRelaunch
+Get-Content (Join-Path (Split-Path -Parent $Installer) 'update-result.txt') -ErrorAction SilentlyContinue
 if ($LASTEXITCODE -ne 0) { throw 'Update helper failed.' }
 if ([IO.File]::ReadAllText($EnvFile) -ne $SavedEnv) { throw 'Update changed user environment settings.' }
 if ((Get-Content $DataFile -Raw).Trim() -ne 'keep my data') { throw 'Update changed user data.' }
