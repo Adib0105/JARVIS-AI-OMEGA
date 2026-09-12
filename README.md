@@ -532,3 +532,7 @@ See [voice setup, local AI setup and audit results](docs/VOICE-AI-RELIABILITY.md
 ### Voice controls and offline speech
 
 Use the desktop **VOICE SETTINGS** button to choose and save a voice, preview Hindi/Hinglish/English, and run local diagnostics. Terminal commands: `/voice-profile`, `/voice-profile gentle`, `/voice-doctor`. Optional Vosk recognition adds a local microphone-to-text path. See the [offline setup and controls guide](docs/VOICE-CONTROLS-OFFLINE.md).
+
+### Chat workspace
+
+Use **Ctrl+K** for searchable commands and editable Python/SQL/Excel prompt starters. Use **Ctrl+H** to search, rename and resume saved conversations. [Chat workspace guide](docs/CHAT-WORKSPACE.md).

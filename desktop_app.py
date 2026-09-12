@@ -5,6 +5,7 @@ if __name__ == '__main__' and sys.argv[1:2] == ['--jarvis-speech-worker']:
     from jarvis.speech_worker import main as speech_main
     raise SystemExit(speech_main(sys.argv[2:]))
 
+from jarvis.chat_workspace_ui import install_chat_workspace
 from jarvis.fast_runtime import install_fast_command_runtime
 from jarvis.logging_utils import install_exception_hook
 from jarvis.runtime_guard import install_runtime_guards, run_adaptive_gui
@@ -22,4 +23,5 @@ if __name__ == '__main__':
     install_release_ui()
     install_skill_runtime()
     install_skill_ui()
+    install_chat_workspace()
     run_adaptive_gui()

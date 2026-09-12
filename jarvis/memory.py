@@ -316,6 +316,37 @@ class MemoryStore:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_session(self, session_id: str) -> dict | None:
+        with self._lock, self._connect() as conn:
+            row = conn.execute('SELECT id, title, created_at FROM sessions WHERE id=?', (session_id,)).fetchone()
+        return dict(row) if row else None
+
+    def rename_session(self, session_id: str, title: str) -> None:
+        title = str(title).strip()
+        if not title or len(title) > 100:
+            raise ValueError('Chat title must contain 1 to 100 characters.')
+        with self._lock, self._connect() as conn:
+            cursor = conn.execute('UPDATE sessions SET title=? WHERE id=?', (title, session_id))
+            if cursor.rowcount != 1:
+                raise ValueError('Chat not found.')
+            conn.commit()
+
+    def find_sessions(self, query: str = '', limit: int = 100) -> list[dict]:
+        """Search literal title/message text, newest activity first; no wildcard syntax."""
+        query = str(query).strip()
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                """SELECT s.id, s.title, s.created_at,
+                          (SELECT COUNT(*) FROM messages m WHERE m.session_id=s.id) AS message_count,
+                          COALESCE((SELECT MAX(created_at) FROM messages m WHERE m.session_id=s.id), s.created_at) AS last_activity
+                   FROM sessions s
+                   WHERE ?='' OR instr(lower(s.title), lower(?))>0
+                     OR EXISTS (SELECT 1 FROM messages m WHERE m.session_id=s.id AND instr(lower(m.content), lower(?))>0)
+                   ORDER BY last_activity DESC, s.id LIMIT ?""",
+                (query, query, query, max(1, min(int(limit), 200))),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def stats(self) -> dict:
         with self._lock, self._connect() as conn:
             sessions = conn.execute('SELECT COUNT(*) FROM sessions').fetchone()[0]

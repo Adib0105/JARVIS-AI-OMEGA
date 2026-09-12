@@ -75,6 +75,8 @@ def help_table() -> Table:
         ('/mute / /unmute', 'Control speech'),
         ('/new', 'New session'),
         ('/sessions', 'List sessions'),
+        ('/resume <session-id>', 'Continue an existing conversation'),
+        ('/rename <title>', 'Rename the current conversation'),
         ('/version', 'Show V6 version'),
         ('/exit', 'Close JARVIS'),
     ]
@@ -131,6 +133,21 @@ def run_cli() -> None:
         if low == '/new':
             console.print(f'[green]New V6 session:[/green] {jarvis.new_session()}'); continue
 
+        if low.startswith('/resume '):
+            try:
+                voice.stop()
+                sid = jarvis.resume_session(text.split(maxsplit=1)[1].strip())
+                console.print(f'Resumed conversation: {sid}')
+            except ValueError as exc:
+                console.print(str(exc), markup=False)
+            continue
+        if low.startswith('/rename '):
+            try:
+                jarvis.memory.rename_session(jarvis.session_id, text.split(maxsplit=1)[1])
+                console.print('Conversation renamed.')
+            except ValueError as exc:
+                console.print(str(exc), markup=False)
+            continue
         if low == '/status':
             stats = jarvis.memory.stats()
             provider = {'openrouter': 'OpenRouter', 'openai': 'OpenAI', 'local': 'Local AI'}.get(settings.provider, settings.provider)

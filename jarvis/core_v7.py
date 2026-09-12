@@ -54,6 +54,15 @@ class JarvisOmega:
         self.session_id = self.memory.new_session('JARVIS OMEGA V7 session')
         return self.session_id
 
+    def resume_session(self, session_id: str) -> str:
+        if self.memory.get_session(session_id) is None:
+            raise ValueError('Chat not found. Select an existing session.')
+        self.session_id = session_id
+        self.last_plan = []
+        if hasattr(self, 'last_mission_id'):
+            self.last_mission_id = None
+        return session_id
+
     def _select_model(self, text: str, kind: str = 'chat') -> str:
         if kind == 'image':
             self.last_route = 'vision'
