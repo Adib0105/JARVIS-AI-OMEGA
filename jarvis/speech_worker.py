@@ -12,6 +12,8 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 from .config import settings
 
@@ -43,7 +45,35 @@ def speech_segments(text):
         if end <= 0:
             end = min(220, len(text))
     yield text[:end].strip()
-    yield from speech_chunks(text[end:].lstrip())
+    yield from speech_chunks(text[end:].lstrip(), limit=400)
+
+
+def play_prefetched(chunks, directory, render, play=None):
+    """Render the next segment during playback; keep at most two audio files."""
+    play = play or play_audio
+    chunks = iter(chunks)
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix='tts-prefetch') as pool:
+        def submit(index, text):
+            path = Path(directory) / f'segment-{index}.mp3'
+            def task():
+                render(text, path)
+                return path
+            return pool.submit(task)
+        first = next(chunks, None)
+        if first is None:
+            return
+        current = submit(0, first)
+        index = 1
+        while current is not None:
+            path = current.result()
+            following = next(chunks, None)
+            upcoming = submit(index, following) if following is not None else None
+            index += 1
+            try:
+                play(path)
+            finally:
+                path.unlink(missing_ok=True)
+            current = upcoming
 
 
 def play_audio(path: Path) -> None:
@@ -118,21 +148,20 @@ def main(argv=None) -> int:
     if args.engine == 'pyttsx3':
         speak_offline(text, speed)
         return 0
-    audio_path = text_path.with_suffix('.mp3')
-    try:
-        for chunk in speech_segments(text):
-            if args.engine == 'openai':
-                render_openai(chunk, audio_path, speed)
-            else:
-                import edge_tts
-                from .voice import choose_voice, edge_rate_for_speed
-                asyncio.run(edge_tts.Communicate(
-                    chunk, choose_voice(chunk), rate=edge_rate_for_speed(settings.edge_voice_rate, speed),
-                    volume=settings.edge_voice_volume, pitch=settings.edge_voice_pitch,
-                ).save(str(audio_path)))
-            play_audio(audio_path)
-    finally:
-        audio_path.unlink(missing_ok=True)
+    from .voice import choose_voice, edge_rate_for_speed
+    # Resolve once: short English opening words must not switch the voice halfway.
+    voice_name = choose_voice(text)
+    def render(chunk, path):
+        if args.engine == 'openai':
+            render_openai(chunk, path, speed)
+        else:
+            import edge_tts
+            asyncio.run(edge_tts.Communicate(
+                chunk, voice_name, rate=edge_rate_for_speed(settings.edge_voice_rate, speed),
+                volume=settings.edge_voice_volume, pitch=settings.edge_voice_pitch,
+            ).save(str(path)))
+    with tempfile.TemporaryDirectory(prefix='segments-', dir=text_path.parent) as directory:
+        play_prefetched(speech_segments(text), directory, render)
     return 0
 
 

@@ -12,7 +12,7 @@ from .config import settings
 
 STABLE_FREE_TEXT_MODEL = os.getenv(
     'OPENROUTER_STABLE_TEXT_MODEL',
-    'nvidia/nemotron-3-ultra-550b-a55b:free',
+    'openrouter/free',
 ).strip()
 
 _CREATOR_PATTERNS = (

@@ -118,11 +118,12 @@ class JarvisDesktop:
             text=f'OPERATOR: {settings.creator_name.upper()}',
             bg='#061725', fg=GREEN, font=('Consolas', 11, 'bold'),
         ).pack(anchor='e')
-        tk.Label(
+        self.connection_label = tk.Label(
             operator,
             text=f'{provider}  //  {settings.model}  //  CORE {settings.app_version}',
             bg='#061725', fg=MUTED, font=('Consolas', 8),
-        ).pack(anchor='e')
+        )
+        self.connection_label.pack(anchor='e')
 
     def _build_input_bar(self) -> None:
         bottom = tk.Frame(self.root, bg='#061725', padx=14, pady=11)

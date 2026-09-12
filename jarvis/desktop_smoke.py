@@ -28,7 +28,15 @@ def schedule_smoke_check(root, app):
             assert 'Friday' in app.jarvis.chat('what is your name'), 'Identity route failed'
             from .connection_setup import open_connection_setup
             import tkinter as tk
-            open_connection_setup(app)
+            connection = open_connection_setup(app)
+            from .config import settings
+            session = app.jarvis.session_id
+            connection.connection_key_entry.insert(0, 'ci-synthetic-key-not-a-credential')
+            connection.connection_save_button.invoke()
+            assert settings.api_key == 'ci-synthetic-key-not-a-credential', 'Saved key not applied live'
+            assert app.jarvis.provider.client is not None, 'Provider not rebuilt after saving'
+            assert app.jarvis.session_id == session, 'Saving key reset the conversation'
+            assert not connection.connection_key_entry.get(), 'Key entry not cleared after save'
             root.update_idletasks()
             for child in root.winfo_children():
                 if isinstance(child, tk.Toplevel):

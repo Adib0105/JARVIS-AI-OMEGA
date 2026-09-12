@@ -1,8 +1,10 @@
-"""Repair first-run API configuration from inside the desktop."""
+"""Save and apply credentials immediately, with an optional real AI reply test."""
+import queue
+import threading
 import tkinter as tk
-from tkinter import ttk, messagebox
-from dotenv import set_key
+from tkinter import ttk
 from .config import ROOT, settings
+from .connection_manager import ConnectionInputError, read_connection_file, save_and_apply, test_connection
 
 
 def open_connection_setup(desktop):
@@ -12,28 +14,84 @@ def open_connection_setup(desktop):
     panel = ttk.Frame(win, padding=20)
     panel.pack(fill='both', expand=True)
     ttk.Label(panel, text='Connect Friday to your AI provider', font=('Segoe UI', 14, 'bold')).pack(anchor='w')
-    ttk.Label(panel, text='Paste your API key below. Save, then close and reopen JARVIS.').pack(anchor='w', pady=8)
-    provider = tk.StringVar(value=settings.provider if settings.provider in {'openrouter','openai'} else 'openrouter')
-    ttk.Combobox(panel, textvariable=provider, values=('openrouter','openai'), state='readonly').pack(fill='x')
+    ttk.Label(panel, text='Save & Apply activates the key now. No restart needed.').pack(anchor='w', pady=8)
+    provider = tk.StringVar(value=settings.provider if settings.provider in {'openrouter', 'openai'} else 'openrouter')
+    chooser = ttk.Combobox(panel, textvariable=provider, values=('openrouter', 'openai'), state='readonly')
+    chooser.pack(fill='x')
     key = ttk.Entry(panel, show='•', width=54)
     key.pack(fill='x', pady=10)
-    ttk.Label(panel, text='Saved beside this application:\n' + str(ROOT / '.env'), wraplength=460).pack(anchor='w')
+    ttk.Label(panel, text='Leave key blank to use the saved key for the selected provider.').pack(anchor='w')
+    model = tk.StringVar(value=getattr(settings, provider.get() + '_model'))
+    ttk.Label(panel, text='Model identifier:').pack(anchor='w', pady=(10, 0))
+    ttk.Entry(panel, textvariable=model).pack(fill='x')
+    chooser.bind('<<ComboboxSelected>>', lambda _: model.set(getattr(settings, provider.get() + '_model')))
+    ttk.Label(panel, text='Changing provider clears old model-routing overrides.', wraplength=480).pack(anchor='w')
+    ttk.Label(panel, text='Configuration used by THIS copy:\n' + str(ROOT / '.env'), wraplength=480).pack(anchor='w', pady=10)
+    state = tk.StringVar()
+    ttk.Label(panel, textvariable=state, wraplength=480).pack(anchor='w')
+    def refresh():
+        try:
+            saved = read_connection_file()
+            has_saved = bool(saved.get(provider.get().upper() + '_API_KEY'))
+            state.set('Saved key: ' + ('present' if has_saved else 'not found in this folder') +
+                      ' | Active connection key: ' + ('present' if settings.api_key.strip() else 'missing'))
+        except (OSError, ValueError):
+            state.set('Could not read configuration. Check this application folder permissions.')
+    refresh()
     if (ROOT / '.env.txt').exists():
-        ttk.Label(panel, text='Found .env.txt. JARVIS needs .env; Save below writes the correct file.').pack(anchor='w', pady=8)
+        ttk.Label(panel, text='Found .env.txt. Save & Apply writes the correct .env file.').pack(anchor='w')
     def save():
-        value = key.get().strip()
-        if not value or any(c in value for c in '\r\n\0'):
-            messagebox.showerror('AI connection', 'Paste a valid single-line key.', parent=win)
+        if desktop.busy:
+            state.set('Finish the current request before changing the connection.')
             return
         try:
-            path = ROOT / '.env'
-            variable = 'OPENROUTER_API_KEY' if provider.get() == 'openrouter' else 'OPENAI_API_KEY'
-            set_key(str(path), variable, value)
-            set_key(str(path), 'AI_PROVIDER', provider.get())
-        except OSError:
-            messagebox.showerror('AI connection', 'Cannot save here. Extract the entire ZIP into a writable folder such as Documents, then retry.', parent=win)
+            message = save_and_apply(desktop.jarvis, provider.get(), key.get(), model.get())
+        except ConnectionInputError as exc:
+            state.set(str(exc))
+            return
+        except Exception:
+            state.set('Could not apply connection. Check folder write permission. Existing connection was kept.')
             return
         key.delete(0, 'end')
-        messagebox.showinfo('Saved', 'Connection saved. Exit JARVIS completely and reopen this same application.', parent=win)
-        win.destroy()
-    ttk.Button(panel, text='Save connection', command=save).pack(anchor='e', pady=(12,0))
+        desktop.connection_label.configure(text=f'{settings.provider.upper()}  //  {settings.model}  //  CORE {settings.app_version}')
+        desktop._append('SYSTEM', message)
+        state.set(message)
+    results = queue.Queue()
+    pending = [False]
+    def test():
+        if not settings.api_key.strip():
+            state.set('No active key. Click SAVE & APPLY NOW first.')
+            return
+        if desktop.busy:
+            state.set('Finish the current request first.')
+            return
+        pending[0] = True
+        desktop._set_busy(True, 'TESTING AI', '#ffd166', 'thinking')
+        state.set('Requesting one short AI reply (provider charges may apply)…')
+        def worker():
+            try:
+                results.put(test_connection(desktop.jarvis))
+            except Exception as exc:
+                from .errors import classify_exception
+                failure = classify_exception(exc)
+                results.put('AI test failed (' + str(failure.category.value) + '). Check key/provider, model, balance or network.')
+        threading.Thread(target=worker, daemon=True).start()
+    def poll():
+        if getattr(desktop, '_closing', False):
+            return
+        try:
+            message = results.get_nowait()
+            pending[0] = False
+            desktop._set_busy(False)
+            if win.winfo_exists():
+                state.set(message)
+        except queue.Empty:
+            pass
+        if win.winfo_exists() or pending[0]:
+            desktop.root.after(100, poll)
+    win.connection_key_entry = key
+    win.connection_save_button = ttk.Button(panel, text='SAVE & APPLY NOW', command=save)
+    win.connection_save_button.pack(anchor='e', pady=10)
+    ttk.Button(panel, text='TEST ACTIVE CONNECTION (short AI reply)', command=test).pack(anchor='e')
+    poll()
+    return win
