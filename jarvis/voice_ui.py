@@ -32,6 +32,10 @@ def install_voice_ui() -> None:
         if voice is None:
             return
         current = (state or voice.state or 'idle').upper()
+        if current in {'FALLBACK', 'ERROR'} and voice.last_error:
+            if getattr(self, '_last_voice_error', None) != voice.last_error:
+                self._last_voice_error = voice.last_error
+                self._append('SYSTEM', voice.last_error)
         if hasattr(self, 'voice_player_status'):
             self.voice_player_status.set(f'VOICE: {current}')
         if hasattr(self, 'voice_play_button'):
@@ -65,13 +69,18 @@ def install_voice_ui() -> None:
         self.voice.reset_speed()
         update_voice_panel(self)
 
-    def start_vad_turn(self, *, interrupt: bool = False) -> None:
+    def start_vad_turn(self, *, interrupt: bool = False, automatic: bool = False) -> None:
+        if getattr(self, '_closing', False):
+            return
+        if automatic and (not getattr(self, '_live_voice_enabled', False) or self.voice.state != 'idle' or self.voice.muted):
+            return
         if getattr(self, 'busy', False) or getattr(self, '_live_listening', False):
             return
         if not settings.enable_mic_input:
             return
         if interrupt:
             self.voice.stop()
+        self._live_stop_event = threading.Event()
         self._live_listening = True
         self._set_busy(True, 'LISTENING', gui_module.MAGENTA, 'listening')
 
@@ -84,9 +93,14 @@ def install_voice_ui() -> None:
                     silence_seconds=float(os.getenv('VOICE_SILENCE_SECONDS', '0.75')),
                     speech_threshold=float(os.getenv('VOICE_VAD_THRESHOLD', '420')),
                     on_speech_start=self.voice.stop,
+                    stop_event=self._live_stop_event,
                 )
+                if getattr(self, '_closing', False):
+                    return
                 self.root.after(0, lambda value=text: vad_done(self, value, None))
             except Exception as exc:
+                if getattr(self, '_closing', False):
+                    return
                 message = str(exc)
                 self.root.after(0, lambda value=message: vad_done(self, '', value))
 
@@ -94,13 +108,18 @@ def install_voice_ui() -> None:
 
     def vad_done(self, text: str, error: str | None) -> None:
         self._live_listening = False
+        if getattr(self, '_closing', False):
+            return
         self._set_busy(False)
+        if self._live_stop_event.is_set():
+            return
         if error:
             self._append('SYSTEM', f'MIC: {error}')
             return
         if not text:
             if getattr(self, '_live_voice_enabled', False):
                 self.status.configure(text='● LIVE READY', fg=gui_module.GREEN)
+                self.root.after(250, lambda: start_vad_turn(self, automatic=True))
             return
         self.entry.delete(0, 'end')
         self.entry.insert(0, text)
@@ -109,10 +128,12 @@ def install_voice_ui() -> None:
     def toggle_live(self) -> None:
         self._live_voice_enabled = not bool(getattr(self, '_live_voice_enabled', False))
         update_voice_panel(self)
+        if not self._live_voice_enabled and hasattr(self, '_live_stop_event'):
+            self._live_stop_event.set()
         if self._live_voice_enabled:
             self._append('SYSTEM', 'Live conversation enabled. JARVIS will listen after each spoken reply. Ctrl+M interrupts speech immediately.')
             if self.voice.state == 'idle' and not self.busy:
-                self.root.after(150, lambda: start_vad_turn(self))
+                self.root.after(150, lambda: start_vad_turn(self, automatic=True))
         else:
             self._append('SYSTEM', 'Live conversation disabled.')
 
@@ -137,7 +158,7 @@ def install_voice_ui() -> None:
         root.bind('<Control-Shift-v>', lambda _event: toggle_live(self))
         update_voice_panel(self)
         if self._live_voice_enabled and settings.enable_mic_input:
-            root.after(800, lambda: start_vad_turn(self))
+            root.after(800, lambda: start_vad_turn(self, automatic=True))
 
     def v75_input_bar(self) -> None:
         original_input(self)
@@ -175,7 +196,7 @@ def install_voice_ui() -> None:
         try:
             self.root.after(0, lambda s=state: update_voice_panel(self, s))
             if state == 'idle' and getattr(self, '_live_voice_enabled', False):
-                self.root.after(220, lambda: start_vad_turn(self))
+                self.root.after(220, lambda: start_vad_turn(self, automatic=True))
         except Exception:
             pass
 
@@ -193,7 +214,10 @@ def install_voice_ui() -> None:
         update_voice_panel(self)
 
     def v75_close(self) -> None:
+        self._closing = True
         self._live_voice_enabled = False
+        if hasattr(self, '_live_stop_event'):
+            self._live_stop_event.set()
         try:
             self.wake_listener.stop()
         except Exception:

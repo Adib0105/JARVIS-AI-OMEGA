@@ -31,7 +31,7 @@ def confirmer(tool: str, args: dict) -> bool:
 
 def banner() -> None:
     title = Text('J A R V I S   O M E G A   V6', style='bold cyan')
-    provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
+    provider = {'openrouter': 'OpenRouter', 'openai': 'OpenAI', 'local': 'Local AI'}.get(settings.provider, settings.provider)
     subtitle = (
         f'ARC Agent • Mission Planner • Images • Documents • Web • Memory • Desktop Tools • Neural Voice\n'
         f'OPERATOR: {settings.creator_name} • Provider: {provider} • Model: {settings.model}'
@@ -132,7 +132,7 @@ def run_cli() -> None:
 
         if low == '/status':
             stats = jarvis.memory.stats()
-            provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
+            provider = {'openrouter': 'OpenRouter', 'openai': 'OpenAI', 'local': 'Local AI'}.get(settings.provider, settings.provider)
             console.print(Panel(
                 f'Version: {settings.app_version}\nOperator: {settings.creator_name}\nProvider: {provider}\n'
                 f'Model: {settings.model}\nLast model: {jarvis.last_model_used}\nLast request: {jarvis.last_request_kind}\n'

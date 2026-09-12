@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from dataclasses import asdict, dataclass
 
 from ..config import settings
@@ -28,6 +30,11 @@ class ModelRouter:
     REVIEW_HINTS = {'review', 'verify', 'verification', 'check result', 'evaluate'}
     SUMMARY_HINTS = {'summarize', 'summary', 'recap', 'shorten'}
 
+    @staticmethod
+    def _matches(text: str, hints: set[str]) -> bool:
+        # Whole terms: 'latest' is not 'test', 'planet' is not 'plan'.
+        return any(re.search(r'(?<!\w)' + re.escape(hint) + r'(?!\w)', text) for hint in hints)
+
     def select(self, text: str, kind: str = 'chat') -> ModelRoute:
         kind = (kind or 'chat').strip().lower()
         lower = str(text).lower()
@@ -47,15 +54,15 @@ class ModelRouter:
         if settings.model_routing not in {'auto', 'on', 'true'}:
             return ModelRoute('DEFAULT', settings.model, 'model routing disabled')
 
-        if any(hint in lower for hint in self.CODING_HINTS):
+        if self._matches(lower, self.CODING_HINTS):
             return ModelRoute('CODING', settings.routed_coding_model, 'coding keywords')
-        if any(hint in lower for hint in self.PLAN_HINTS):
+        if self._matches(lower, self.PLAN_HINTS):
             return ModelRoute('PLANNING', settings.routed_planning_model, 'planning keywords')
-        if any(hint in lower for hint in self.REVIEW_HINTS):
+        if self._matches(lower, self.REVIEW_HINTS):
             return ModelRoute('REVIEW', settings.routed_review_model, 'review keywords')
-        if any(hint in lower for hint in self.SUMMARY_HINTS):
+        if self._matches(lower, self.SUMMARY_HINTS):
             return ModelRoute('SUMMARY', settings.routed_summary_model, 'summary keywords')
-        smart = len(str(text)) > 700 or any(hint in lower for hint in self.SMART_HINTS)
+        smart = len(str(text)) > 700 or self._matches(lower, self.SMART_HINTS)
         if smart:
             return ModelRoute('SMART', settings.routed_smart_model, 'complexity/analysis heuristic')
         return ModelRoute('FAST', settings.routed_fast_model, 'short/general request')

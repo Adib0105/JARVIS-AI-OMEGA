@@ -109,7 +109,7 @@ class JarvisDesktop:
 
         operator = tk.Frame(header, bg='#061725')
         operator.pack(side='right')
-        provider = 'OPENROUTER FREE' if settings.provider == 'openrouter' else 'OPENAI'
+        provider = {'openrouter': 'OPENROUTER', 'openai': 'OPENAI', 'local': 'LOCAL AI'}.get(settings.provider, settings.provider.upper())
         tk.Label(
             operator,
             text=f'OPERATOR: {settings.creator_name.upper()}',
@@ -711,7 +711,7 @@ class JarvisDesktop:
         )
 
     def _show_status(self) -> None:
-        provider = 'OpenRouter Free' if settings.provider == 'openrouter' else 'OpenAI'
+        provider = {'openrouter': 'OpenRouter', 'openai': 'OpenAI', 'local': 'Local AI'}.get(settings.provider, settings.provider)
         stats = self.jarvis.memory.stats()
         messagebox.showinfo(
             'OMEGA V6 // Core Status',

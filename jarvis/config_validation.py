@@ -35,7 +35,7 @@ def validate_settings(settings) -> list[ValidationFinding]:
         else:
             findings.append(ValidationFinding(key, ValidationLevel.WARNING if warning else ValidationLevel.FAIL, message))
 
-    add('AI_PROVIDER', settings.provider in {'openrouter', 'openai'}, 'Provider must be openrouter or openai.')
+    add('AI_PROVIDER', settings.provider in {'openrouter', 'openai', 'local'}, 'Provider must be openrouter, openai or local.')
     add('MODEL', bool(settings.model.strip()), 'A primary model must be configured.')
     add('API_KEY', bool(settings.api_key.strip()), f'{settings.provider} API key must be configured.')
     add('AI_TIMEOUT_SECONDS', settings.ai_timeout_seconds > 0, 'AI timeout must be greater than zero.')
@@ -50,6 +50,11 @@ def validate_settings(settings) -> list[ValidationFinding]:
     add('VOICE_VOLUME', 0.0 <= settings.voice_volume <= 1.0, 'Offline voice volume must be 0.0..1.0.')
     add('MIC_RECORD_SECONDS', 1.0 <= settings.mic_record_seconds <= 60.0, 'Microphone recording length must be 1..60 seconds.')
 
+    voice_engine = getattr(settings, 'voice_engine', 'edge')
+    add('VOICE_ENGINE', voice_engine in {'edge', 'openai', 'pyttsx3'}, 'Voice engine must be edge, openai or pyttsx3.')
+    if voice_engine == 'openai':
+        add('OPENAI_TTS_KEY', bool(getattr(settings, 'openai_api_key', '').strip()), 'OpenAI speech requires OPENAI_API_KEY; otherwise offline speech is used.', warning=True)
+
     roots = tuple(settings.allowed_file_roots)
     add('ALLOWED_FILE_ROOTS', bool(roots), 'At least one local root must be configured.')
     for index, root in enumerate(roots, 1):
@@ -63,7 +68,7 @@ def validate_settings(settings) -> list[ValidationFinding]:
             warning=True,
         )
 
-    if settings.enable_local_fallback:
+    if settings.enable_local_fallback or settings.provider == 'local':
         add('LOCAL_AI_BASE_URL', bool(settings.local_ai_base_url), 'Local fallback requires a base URL.')
         add('LOCAL_AI_MODEL', bool(settings.local_ai_model), 'Local fallback requires LOCAL_AI_MODEL.')
 

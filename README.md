@@ -524,3 +524,7 @@ Read [SECURITY.md](SECURITY.md) before extending local-computer or self-developm
 ## License
 
 MIT License — see [LICENSE](LICENSE).
+
+### Voice and local AI reliability update
+
+See [voice setup, local AI setup and audit results](docs/VOICE-AI-RELIABILITY.md) for the optional warm female OpenAI speech profile, Hindi/English Edge voices, offline chat mode, fixes, and test limitations. Speech is AI-generated.

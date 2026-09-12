@@ -36,6 +36,7 @@ def _rms_int16(data: bytes) -> float:
 def _transcribe_pcm(data: bytes, sample_rate: int, language: str) -> str:
     _sd, sr = _deps()
     recognizer = sr.Recognizer()
+    recognizer.operation_timeout = 15
     audio = sr.AudioData(data, sample_rate, 2)
     try:
         return recognizer.recognize_google(audio, language=language).strip()
@@ -71,6 +72,7 @@ def record_until_silence(
     speech_threshold: float = 420.0,
     preroll_seconds: float = 0.25,
     on_speech_start: Callable[[], None] | None = None,
+    stop_event: threading.Event | None = None,
 ) -> str:
     """VAD-style capture that stops naturally after the user finishes speaking.
 
@@ -78,6 +80,8 @@ def record_until_silence(
     SpeechRecognition backend. This keeps microphone capture fast and avoids a fixed
     six-second wait for short commands.
     """
+    if stop_event is not None and stop_event.is_set():
+        return ''
     sd, _sr = _deps()
     max_seconds = max(2.0, min(float(max_seconds), 30.0))
     start_timeout = max(1.0, min(float(start_timeout), max_seconds))
@@ -103,6 +107,8 @@ def record_until_silence(
             channels=1,
         ) as stream:
             for index in range(max_blocks):
+                if stop_event is not None and stop_event.is_set():
+                    return ''
                 chunk, _overflowed = stream.read(block_frames)
                 raw = bytes(chunk)
                 level = _rms_int16(raw)
@@ -134,9 +140,10 @@ def record_until_silence(
     except Exception as exc:
         raise MicrophoneUnavailable(f'Microphone recording failed: {exc}') from exc
 
-    if not captured:
+    if not captured or (stop_event is not None and stop_event.is_set()):
         return ''
-    return _transcribe_pcm(b''.join(captured), sample_rate, language)
+    text = _transcribe_pcm(b''.join(captured), sample_rate, language)
+    return '' if stop_event is not None and stop_event.is_set() else text
 
 
 class WakeWordListener:
@@ -183,11 +190,11 @@ class WakeWordListener:
                 if self.wake_word not in lower:
                     continue
                 self.on_state('listening')
-                after = lower.split(self.wake_word, 1)[1].strip(' ,.!?')
+                after = heard[lower.index(self.wake_word) + len(self.wake_word):].strip(' ,.!?')
                 command = after
                 if not command and not self._stop.is_set():
-                    command = record_until_silence(language=self.language, max_seconds=12.0)
-                if command:
+                    command = record_until_silence(language=self.language, max_seconds=12.0, stop_event=self._stop)
+                if command and not self._stop.is_set():
                     self.on_command(command)
                 self.on_state('wake-idle')
             except MicrophoneUnavailable as exc:
@@ -195,5 +202,5 @@ class WakeWordListener:
                 break
             except Exception as exc:
                 self.on_error(str(exc))
-                time.sleep(0.8)
+                self._stop.wait(0.8)
         self.on_state('idle')

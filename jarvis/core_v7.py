@@ -96,7 +96,7 @@ class JarvisOmega:
 
     def _friendly_error(self, exc: BaseException) -> RuntimeError:
         failure = classify_exception(exc, provider=settings.provider, operation=self.last_request_kind)
-        provider = 'OpenRouter' if settings.provider == 'openrouter' else 'OpenAI'
+        provider = {'openrouter': 'OpenRouter', 'openai': 'OpenAI', 'local': 'Local AI'}.get(settings.provider, settings.provider)
         messages = {
             ErrorCategory.AUTH_ERROR: f'{provider} API key reject ho gayi. .env me key check/recreate karo.',
             ErrorCategory.PERMISSION_ERROR: f'{provider} request permission/policy ki wajah se block hui.',

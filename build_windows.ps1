@@ -36,6 +36,7 @@ $Args = @(
     '--name', 'JARVIS-OMEGA-V7',
     '--collect-submodules', 'jarvis',
     '--collect-submodules', 'edge_tts',
+    '--collect-submodules', 'pyttsx3.drivers',
     '--collect-submodules', 'speech_recognition',
     'desktop_app.py'
 )

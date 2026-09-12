@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import queue
 import re
 import subprocess
@@ -9,8 +10,6 @@ import tempfile
 import threading
 import time
 from typing import Callable
-
-import pyttsx3
 
 from .config import settings
 
@@ -93,7 +92,7 @@ class VoiceOutput:
         self.enabled = settings.enable_voice_output
         self.muted = False
         self.on_state_change = on_state_change or (lambda _state: None)
-        self._queue: queue.Queue[str | object] = queue.Queue()
+        self._queue: queue.Queue[tuple[int, str] | object] = queue.Queue()
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
         self._condition = threading.Condition(self._lock)
@@ -103,10 +102,11 @@ class VoiceOutput:
         self._speed = 1.0
         self._cancel_epoch = 0
         self._interrupt_reason: str | None = None
+        self._active_epoch = 0
+        self.last_error: str | None = None
         self._current_text: str | None = None
         self._last_text: str | None = None
         self._process: subprocess.Popen | None = None
-        self._offline_engine = None
         if self.enabled:
             self._thread = threading.Thread(target=self._worker, daemon=True, name='jarvis-tts')
             self._thread.start()
@@ -148,7 +148,7 @@ class VoiceOutput:
             if self._shutdown:
                 return
             self._last_text = spoken
-        self._queue.put(spoken)
+            self._queue.put((self._cancel_epoch, spoken))
 
     def play(self) -> bool:
         """Resume paused speech, or replay the last utterance after STOP."""
@@ -157,15 +157,14 @@ class VoiceOutput:
                 return False
             if self._paused:
                 self._paused = False
-                self._interrupt_reason = None
                 self._condition.notify_all()
                 return True
-            if self._current_text:
+            if self._current_text and self._active_epoch == self._cancel_epoch:
                 return True
             last = self._last_text
-        if last:
-            self._queue.put(last)
-            return True
+            if last:
+                self._queue.put((self._cancel_epoch, last))
+                return True
         return False
 
     def pause(self) -> bool:
@@ -175,9 +174,7 @@ class VoiceOutput:
             self._paused = True
             self._interrupt_reason = 'pause'
             process = self._process
-            engine = self._offline_engine
         self._terminate_process(process)
-        self._stop_offline_engine(engine)
         self._emit('paused')
         return True
 
@@ -186,7 +183,6 @@ class VoiceOutput:
             if not self._paused or self._shutdown:
                 return False
             self._paused = False
-            self._interrupt_reason = None
             self._condition.notify_all()
         return True
 
@@ -212,11 +208,9 @@ class VoiceOutput:
             self._paused = False
             self._interrupt_reason = 'stop'
             process = self._process
-            engine = self._offline_engine
             self._condition.notify_all()
-        self._drain_queue()
+            self._drain_queue()
         self._terminate_process(process)
-        self._stop_offline_engine(engine)
         self._emit('idle')
 
     def mute(self) -> None:
@@ -239,13 +233,11 @@ class VoiceOutput:
             changed = value != self._speed
             self._speed = value
             process = self._process
-            engine = self._offline_engine
             should_restart = changed and bool(self._current_text) and not self._paused and not self._shutdown
             if should_restart:
                 self._interrupt_reason = 'restart'
         if should_restart:
             self._terminate_process(process)
-            self._stop_offline_engine(engine)
         return value
 
     def speed_up(self) -> float:
@@ -259,9 +251,9 @@ class VoiceOutput:
 
     def test(self, mode: str = 'hinglish') -> None:
         samples = {
-            'hindi': 'नमस्ते आदिब। मैं जार्विस ओमेगा वर्जन सेवन हूँ। सिस्टम ऑनलाइन है।',
-            'english': 'Hello Adib. JARVIS OMEGA version seven is online. All core systems are ready.',
-            'hinglish': 'Adib bhai, JARVIS OMEGA version seven online hai. ARC core ready hai.',
+            'hindi': 'नमस्ते आदिब। मैं तुम्हारी एआई असिस्टेंट हूँ। बताओ, आज मैं तुम्हारी क्या मदद करूँ?',
+            'english': 'Hi Adib. I am your AI assistant. It is lovely to hear from you. What shall we work on today?',
+            'hinglish': 'Hi Adib, main tumhari AI assistant hoon. Batao, aaj main tumhari kya help karun?',
         }
         self.speak(samples.get(mode, samples['hinglish']))
 
@@ -275,11 +267,9 @@ class VoiceOutput:
             self._paused = False
             self._interrupt_reason = 'shutdown'
             process = self._process
-            engine = self._offline_engine
             self._condition.notify_all()
-        self._drain_queue()
+            self._drain_queue()
         self._terminate_process(process)
-        self._stop_offline_engine(engine)
         self._queue.put(_SENTINEL)
         if wait and self._thread and self._thread.is_alive() and threading.current_thread() is not self._thread:
             self._thread.join(timeout=3.0)
@@ -298,123 +288,103 @@ class VoiceOutput:
                     timeout=3,
                     check=False,
                 )
+                process.wait(timeout=3)
             else:
-                process.terminate()
+                os.killpg(process.pid, signal.SIGTERM)
                 try:
                     process.wait(timeout=1.0)
                 except subprocess.TimeoutExpired:
-                    process.kill()
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait(timeout=1.0)
         except Exception:
             try:
                 process.kill()
+                process.wait(timeout=1)
             except Exception:
                 pass
 
-    @staticmethod
-    def _stop_offline_engine(engine) -> None:
-        if engine is None:
-            return
-        try:
-            engine.stop()
-        except Exception:
-            pass
+    def _interrupted(self) -> bool:
+        return (self._shutdown or self.muted or self._active_epoch != self._cancel_epoch
+                or self._interrupt_reason is not None)
+
+    def _speak_process(self, text: str, engine: str) -> str:
+        process = None
+        # Parent owns all temporary files, including when the child is killed.
+        with tempfile.TemporaryDirectory(prefix='jarvis-speech-') as directory:
+            path = os.path.join(directory, 'speech.txt')
+            with open(path, 'w', encoding='utf-8') as handle:
+                handle.write(text)
+            command = ([sys.executable, '--jarvis-speech-worker'] if getattr(sys, 'frozen', False)
+                       else [sys.executable, '-m', 'jarvis.speech_worker'])
+            command += ['--engine', engine, '--speed', str(self.speed), '--file', path]
+            try:
+                # Register the child atomically with cancellation. STOP cannot miss it.
+                with self._lock:
+                    if self._interrupted():
+                        return 'interrupted'
+                    process = subprocess.Popen(
+                        command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        cwd=os.path.dirname(os.path.dirname(__file__)),
+                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0) if os.name == 'nt' else 0,
+                        start_new_session=os.name != 'nt',
+                    )
+                    self._process = process
+                try:
+                    return_code = process.wait(timeout=max(180, min(900, len(text) / 8)))
+                except subprocess.TimeoutExpired:
+                    self._terminate_process(process)
+                    return 'interrupted' if self._interrupted() else 'failed'
+                with self._lock:
+                    if self._interrupted():
+                        return 'interrupted'
+                return 'completed' if return_code == 0 else 'failed'
+            except Exception:
+                return 'interrupted' if self._interrupted() else 'failed'
+            finally:
+                self._terminate_process(process)
+                with self._lock:
+                    if self._process is process:
+                        self._process = None
 
     def _speak_edge(self, text: str) -> str:
-        voice = choose_voice(text)
-        path = None
-        process = None
-        try:
-            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.txt', delete=False) as handle:
-                handle.write(text)
-                path = handle.name
-            command = [
-                sys.executable,
-                '-m',
-                'edge_playback',
-                '--voice', voice,
-                f'--rate={edge_rate_for_speed(settings.edge_voice_rate, self.speed)}',
-                f'--volume={settings.edge_voice_volume}',
-                f'--pitch={settings.edge_voice_pitch}',
-                '--file', path,
-            ]
-            creationflags = 0
-            if os.name == 'nt' and hasattr(subprocess, 'CREATE_NEW_PROCESS_GROUP'):
-                creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=creationflags,
-            )
-            with self._lock:
-                self._process = process
-            try:
-                return_code = process.wait(timeout=180)
-            except subprocess.TimeoutExpired:
-                self._terminate_process(process)
-                return 'failed'
-            with self._lock:
-                interrupted = self._interrupt_reason in {'pause', 'stop', 'shutdown', 'restart'}
-            if interrupted:
-                return 'interrupted'
-            return 'completed' if return_code == 0 else 'failed'
-        finally:
-            with self._lock:
-                if self._process is process:
-                    self._process = None
-            if path:
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
-
-    def _build_offline_engine(self):
-        engine = pyttsx3.init()
-        engine.setProperty('rate', int(max(80, min(360, settings.voice_rate * self.speed))))
-        engine.setProperty('volume', settings.voice_volume)
-        return engine
+        return self._speak_process(text, 'edge')
 
     def _speak_offline(self, text: str) -> str:
-        engine = None
-        try:
-            engine = self._build_offline_engine()
-            with self._lock:
-                self._offline_engine = engine
-            engine.say(text)
-            engine.runAndWait()
-            with self._lock:
-                interrupted = self._interrupt_reason in {'pause', 'stop', 'shutdown', 'restart'}
-            return 'interrupted' if interrupted else 'completed'
-        except Exception:
-            return 'failed'
-        finally:
-            with self._lock:
-                if self._offline_engine is engine:
-                    self._offline_engine = None
+        return self._speak_process(text, 'pyttsx3')
 
     def _play_text(self, text: str) -> str:
-        if settings.voice_engine == 'edge':
-            try:
-                result = self._speak_edge(text)
-            except Exception:
-                result = 'failed'
+        self.last_error = None
+        engine = settings.voice_engine
+        if engine in {'edge', 'openai'}:
+            result = self._speak_process(text, engine)
             if result != 'failed':
                 return result
-        return self._speak_offline(text)
+            self.last_error = f'{engine} voice unavailable; using installed offline voice.'
+            self._emit('fallback')
+        with self._lock:
+            if self._interrupted():
+                return 'interrupted'
+        result = self._speak_offline(text)
+        if result == 'failed':
+            self.last_error = 'Speech failed. Check audio output, voice packages and selected engine credentials.'
+        return result
 
     def _worker(self) -> None:
         while True:
             item = self._queue.get()
             if item is _SENTINEL:
                 break
-            text = str(item)
+            epoch, text = item
             with self._condition:
                 if self._shutdown:
                     break
-                epoch = self._cancel_epoch
+                if epoch != self._cancel_epoch or self.muted:
+                    continue
+                self._active_epoch = epoch
                 self._current_text = text
                 self._interrupt_reason = None
 
+            result = 'interrupted'
             while True:
                 with self._condition:
                     while self._paused and epoch == self._cancel_epoch and not self._shutdown:
@@ -424,7 +394,11 @@ class VoiceOutput:
                     self._interrupt_reason = None
 
                 self._emit('speaking')
-                result = self._play_text(text)
+                try:
+                    result = self._play_text(text)
+                except Exception:
+                    self.last_error = 'Speech worker failed. Check audio setup and retry playback.'
+                    result = 'failed'
 
                 with self._condition:
                     reason = self._interrupt_reason
@@ -450,7 +424,7 @@ class VoiceOutput:
                     self._current_text = None
                 if not self._paused:
                     self._interrupt_reason = None
-            if not self._shutdown and not self._paused:
+            if not self._shutdown and not self._paused and result != 'failed' and self._queue.empty():
                 self._emit('idle')
 
         self._emit('idle')
