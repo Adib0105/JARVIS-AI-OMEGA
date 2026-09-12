@@ -37,7 +37,10 @@ def validate_settings(settings) -> list[ValidationFinding]:
 
     add('AI_PROVIDER', settings.provider in {'openrouter', 'openai', 'local'}, 'Provider must be openrouter, openai or local.')
     add('MODEL', bool(settings.model.strip()), 'A primary model must be configured.')
-    add('API_KEY', bool(settings.api_key.strip()), f'{settings.provider} API key must be configured.')
+    # A desktop user must be able to open Settings and add a key. Missing cloud
+    # credentials are handled on the first AI request, not by crashing startup.
+    add('API_KEY', bool(settings.api_key.strip()), f'{settings.provider} API key must be configured.',
+        warning=settings.provider in {'openrouter', 'openai'})
     add('AI_TIMEOUT_SECONDS', settings.ai_timeout_seconds > 0, 'AI timeout must be greater than zero.')
     add('VISION_TIMEOUT_SECONDS', settings.vision_timeout_seconds > 0, 'Vision timeout must be greater than zero.')
     add('API_MAX_RETRIES', 0 <= settings.api_max_retries <= 10, 'API retries must be between 0 and 10.')

@@ -8,7 +8,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[1]
-load_dotenv(ROOT / '.env')
+# The package-local .env is the user's explicit JARVIS configuration.
+# It must win over a stale/blank Windows environment variable.
+load_dotenv(ROOT / '.env', override=True)
 
 
 def _bool(name: str, default: bool) -> bool:
