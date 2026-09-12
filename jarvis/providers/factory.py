@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .base import AIProvider
 from .local_provider import LocalProvider
+from .missing_credentials import MissingCredentialsProvider
 from .openai_provider import OpenAIProvider
 from .openrouter_provider import OpenRouterProvider
 
@@ -11,6 +12,8 @@ def create_primary_provider(settings) -> AIProvider:
         return LocalProvider(api_key=settings.local_ai_api_key, base_url=settings.local_ai_base_url,
                              max_retries=settings.api_max_retries)
     if settings.provider == 'openrouter':
+        if not settings.openrouter_api_key.strip():
+            return MissingCredentialsProvider('openrouter')
         return OpenRouterProvider(
             api_key=settings.openrouter_api_key,
             base_url=settings.openrouter_base_url,
@@ -19,6 +22,8 @@ def create_primary_provider(settings) -> AIProvider:
             max_retries=settings.api_max_retries,
         )
     if settings.provider == 'openai':
+        if not settings.openai_api_key.strip():
+            return MissingCredentialsProvider('openai')
         return OpenAIProvider(
             api_key=settings.openai_api_key,
             reasoning_effort=settings.reasoning_effort,
