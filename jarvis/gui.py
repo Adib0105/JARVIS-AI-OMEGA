@@ -65,6 +65,8 @@ class JarvisDesktop:
         self.root.bind('<Control-l>', lambda _e: self.entry.focus_set())
         self.root.bind('<Control-m>', lambda _e: self._push_to_talk())
         self.root.bind('<F2>', lambda _e: self._mission())
+        self.root.bind('<Control-Shift-U>', lambda _e: self._check_update())
+        self.root.bind('<Control-comma>', lambda _e: self._open_settings())
 
         self._refresh_metrics()
         self._refresh_tasks()
@@ -79,19 +81,33 @@ class JarvisDesktop:
         main = tk.Frame(self.root, bg=BG)
         main.pack(side='top', fill='both', expand=True, padx=10, pady=(6, 10))
 
-        left = tk.Frame(main, bg=PANEL, width=260, highlightbackground=CYAN_DIM, highlightthickness=1)
-        left.pack(side='left', fill='y', padx=(0, 8))
-        left.pack_propagate(False)
+        self.sidebar_canvases = []
+        left = self._scrollable_sidebar(main, 260, 'left', (0, 8))
         self._build_left_panel(left)
 
-        right = tk.Frame(main, bg=PANEL, width=285, highlightbackground=CYAN_DIM, highlightthickness=1)
-        right.pack(side='right', fill='y', padx=(8, 0))
-        right.pack_propagate(False)
+        right = self._scrollable_sidebar(main, 285, 'right', (8, 0))
         self._build_right_panel(right)
 
         center = tk.Frame(main, bg=BG)
         center.pack(side='left', fill='both', expand=True)
         self._build_center(center)
+
+    def _scrollable_sidebar(self, parent, width, side, padding):
+        shell = tk.Frame(parent, bg=PANEL, width=width, highlightbackground=CYAN_DIM, highlightthickness=1)
+        shell.pack(side=side, fill='y', padx=padding)
+        shell.pack_propagate(False)
+        canvas = tk.Canvas(shell, bg=PANEL, highlightthickness=0, width=width-18)
+        scroll = tk.Scrollbar(shell, orient='vertical', command=canvas.yview)
+        scroll.pack(side='right', fill='y')
+        canvas.pack(side='left', fill='both', expand=True)
+        canvas.configure(yscrollcommand=scroll.set)
+        body = tk.Frame(canvas, bg=PANEL)
+        window = canvas.create_window(0, 0, anchor='nw', window=body)
+        body.bind('<Configure>', lambda _: canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind('<Configure>', lambda event: canvas.itemconfigure(window, width=event.width))
+        canvas.bind('<MouseWheel>', lambda event: canvas.yview_scroll(-1 if event.delta > 0 else 1, 'units'))
+        self.sidebar_canvases.append(canvas)
+        return body
 
     def _build_header(self) -> None:
         header = tk.Frame(self.root, bg='#061725', padx=18, pady=12)
@@ -201,6 +217,9 @@ class JarvisDesktop:
         modules = tk.Frame(parent, bg=PANEL)
         modules.pack(fill='x', padx=10)
         for text, command, color in [
+            ('AI CONNECTION', lambda: __import__('jarvis.connection_setup', fromlist=['open_connection_setup']).open_connection_setup(self), MAGENTA),
+            ('UPDATE APP', self._check_update, GOLD),
+            ('SETTINGS', self._open_settings, GREEN),
             ('LEARN DOCUMENT', self._learn_document, MAGENTA),
             ('RUN CODE TESTS', self._code_tests, GOLD),
             ('EXPORT CHAT', self._export_chat, CYAN),
@@ -208,9 +227,6 @@ class JarvisDesktop:
             ('MUTE / UNMUTE', self._toggle_voice, GREEN),
             ('IMAGE HELP', self._image_help, MAGENTA),
             ('SYSTEM STATUS', self._show_status, CYAN),
-            ('AI CONNECTION', lambda: __import__('jarvis.connection_setup', fromlist=['open_connection_setup']).open_connection_setup(self), MAGENTA),
-            ('SETTINGS', self._open_settings, GREEN),
-            ('UPDATE APP', self._check_update, GOLD),
         ]:
             self._button(modules, text, command, color).pack(fill='x', pady=1)
 

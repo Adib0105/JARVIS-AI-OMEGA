@@ -22,6 +22,12 @@ def schedule_smoke_check(root, app):
             assert root.winfo_exists() and root.winfo_viewable(), 'Desktop not visible'
             assert app.jarvis.memory.get_session(app.jarvis.session_id), 'Core did not initialize'
             assert app.hud and app.hud.find_all(), 'Avatar did not render'
+            for canvas in app.sidebar_canvases:
+                assert canvas.bbox('all'), 'Sidebar content missing'
+                canvas.yview_moveto(1)
+                root.update_idletasks()
+                assert canvas.yview()[1] > 0.99, 'Sidebar bottom inaccessible'
+                canvas.yview_moveto(0)
             for state in ('listening', 'thinking', 'speaking', 'idle'):
                 app.hud.set_state(state)
                 app.hud._portrait()
