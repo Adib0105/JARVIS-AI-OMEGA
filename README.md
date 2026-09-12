@@ -544,3 +544,11 @@ Close to the Windows tray, say **Jarvis** for greeting/weather/system load, or *
 ### Reliability fixes — September 12, 2026
 
 Bug-fix-only polish covers background recovery, voice errors, permission-dialog shutdown, settings persistence and browser/YouTube result verification. See the [audit and validation notes](docs/BUGFIX-POLISH-2026-09-12.md).
+
+### Friday desktop and fresh-start verification
+
+The application remains JARVIS; the assistant introduces herself as Friday. A lightweight animated female vector portrait responds to listening, thinking and speaking states. The mouth animation indicates speech activity; it is not phoneme lip sync.
+
+The Windows download is a **portable ZIP**, not an installer. Extract the entire ZIP into a new writable folder (for example under Documents), keeping `_internal` beside `JARVIS-OMEGA-V7.exe`. Keep your previous folder and its data until you have checked the new build. Start the new EXE, click **AI CONNECTION**, choose your provider, paste your key, and save. Use **Exit** to close JARVIS completely, then reopen this same EXE. Never commit your key to GitHub. UTF-8 BOM `.env` files are supported; the setup window also identifies accidental `.env.txt` files.
+
+CI now launches the actual packaged desktop without credentials from a fresh folder containing spaces, with a different working directory. It checks core/session initialization, avatar rendering, Friday's local identity response, the connection window and clean exit. Launch failures block the Windows download artifact. This does not test microphone hardware, paid AI requests or natural voice quality on your computer. Startup errors write a redacted report to `%TEMP%\jarvis-startup-error.txt`.
