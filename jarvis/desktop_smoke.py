@@ -22,13 +22,27 @@ def schedule_smoke_check(root, app):
             assert root.winfo_exists() and root.winfo_viewable(), 'Desktop not visible'
             assert app.jarvis.memory.get_session(app.jarvis.session_id), 'Core did not initialize'
             assert app.hud and app.hud.find_all(), 'Avatar did not render'
+            for canvas in app.sidebar_canvases:
+                assert canvas.bbox('all'), 'Sidebar content missing'
+                canvas.yview_moveto(1)
+                root.update_idletasks()
+                assert canvas.yview()[1] > 0.99, 'Sidebar bottom inaccessible'
+                canvas.yview_moveto(0)
             for state in ('listening', 'thinking', 'speaking', 'idle'):
                 app.hud.set_state(state)
                 app.hud._portrait()
             assert 'Friday' in app.jarvis.chat('what is your name'), 'Identity route failed'
             from .connection_setup import open_connection_setup
             import tkinter as tk
-            open_connection_setup(app)
+            connection = open_connection_setup(app)
+            from .config import settings
+            session = app.jarvis.session_id
+            connection.connection_key_entry.insert(0, 'ci-synthetic-key-not-a-credential')
+            connection.connection_save_button.invoke()
+            assert settings.api_key == 'ci-synthetic-key-not-a-credential', 'Saved key not applied live'
+            assert app.jarvis.provider.client is not None, 'Provider not rebuilt after saving'
+            assert app.jarvis.session_id == session, 'Saving key reset the conversation'
+            assert not connection.connection_key_entry.get(), 'Key entry not cleared after save'
             root.update_idletasks()
             for child in root.winfo_children():
                 if isinstance(child, tk.Toplevel):

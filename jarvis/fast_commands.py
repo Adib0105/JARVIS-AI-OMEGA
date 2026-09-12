@@ -28,6 +28,9 @@ _FILLER = r'(?:please\s+|jarvis\s+|friday\s+|zara\s+|jara\s+|mere\s+liye\s+)*'
 def parse_fast_command(text: str) -> tuple[str, dict] | None:
     """Recognize deterministic, low-risk commands without an LLM round trip."""
     normalized = ' '.join(str(text or '').lower().strip().split())
+    search = parse_youtube_search(normalized)
+    if search:
+        return ('browser_search', {'engine': 'youtube', 'query': search})
     youtube = parse_youtube_command(normalized)
     if youtube:
         return ('youtube_play_first', {'query': youtube})
@@ -62,6 +65,10 @@ def execute_fast_command(jarvis, text: str) -> str | None:
             return 'YouTube action complete nahi hua: ' + str(payload.get('error', 'Unknown error') if isinstance(payload, dict) else payload)
         result = payload.get('result')
         return result.get('message', 'YouTube playback verify nahi hua.') if isinstance(result, dict) else 'YouTube playback verify nahi hua.'
+    if tool == 'browser_search':
+        if isinstance(payload, dict) and payload.get('ok') is True:
+            return 'YouTube search aapke default browser mein khol di. Video apne aap play nahi kiya.'
+        return 'YouTube search complete nahi hui. Browser permission/result check kijiye.'
     if not isinstance(payload, dict) or payload.get('ok') is not True:
         # A recognized command is terminal even when denied or malformed.
         # Falling through to the model can retry an action the user just denied.
@@ -87,6 +94,20 @@ def parse_youtube_command(text: str) -> str | None:
         if match:
             query = match.group(1).strip()
             return query if 1 <= len(query) <= 300 else None
+    return None
+
+
+def parse_youtube_search(text):
+    text = re.sub(r'^(?:(?:hey|please|jarvis|jarves|friday)[,\s]+)+', '', text.strip(), flags=re.I)
+    patterns = (
+        r'(?:chrome\s+(?:me|mein)\s+jao\s+)?youtube\s+search\s+(?:kro|karo)\s+aur\s+(.+?)\s+search[.!]?$',
+        r'youtube\s+(?:par|pe)\s+(.+?)\s+search\s+(?:karo|kro)[.!]?$',
+        r'search\s+(.+?)\s+on\s+youtube[.!]?$',
+    )
+    for pattern in patterns:
+        match = re.fullmatch(pattern, text, re.I)
+        if match and 1 <= len(match.group(1)) <= 300:
+            return match.group(1).strip()
     return None
 
 
