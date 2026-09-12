@@ -94,17 +94,8 @@ def _open_folder(path: Path) -> None:
 
 
 def show_update_dialog(root: tk.Misc) -> None:
-    try:
-        result = check_latest_release(settings.app_version)
-    except Exception as exc:
-        messagebox.showerror('JARVIS V6 Update Check', str(exc), parent=root)
-        return
-    message = result.get('message', 'Update check completed.')
-    if result.get('available') and result.get('url'):
-        if messagebox.askyesno('JARVIS V6 Update Available', message + '\n\nOpen GitHub release page?', parent=root):
-            webbrowser.open(result['url'], new=2)
-    else:
-        messagebox.showinfo('JARVIS V6 Update Check', message, parent=root)
+    from .update_ui import open_update_window
+    open_update_window(root)
 
 
 def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:

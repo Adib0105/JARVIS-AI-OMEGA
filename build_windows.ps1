@@ -64,3 +64,5 @@ Copy-Item (Join-Path $Root 'LICENSE') (Join-Path $Dist 'LICENSE') -Force
 
 Write-Host "Build ready: $Exe" -ForegroundColor Green
 Write-Host 'Private .env / OAuth / database files were NOT bundled.' -ForegroundColor Yellow
+
+Copy-Item (Join-Path $Root 'scripts\apply-update.ps1') (Join-Path $Dist 'apply-update.ps1') -Force

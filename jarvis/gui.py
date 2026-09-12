@@ -60,6 +60,7 @@ class JarvisDesktop:
         if settings.provider in {'openrouter', 'openai'} and not settings.api_key.strip():
             self._append('SYSTEM', 'Friday is ready. Use AI CONNECTION to add your key for AI chat.')
         self.root.protocol('WM_DELETE_WINDOW', self._close)
+        self.root.jarvis_desktop = self
         self.root.bind('<Control-o>', lambda _e: self._upload_images())
         self.root.bind('<Control-l>', lambda _e: self.entry.focus_set())
         self.root.bind('<Control-m>', lambda _e: self._push_to_talk())
@@ -208,7 +209,7 @@ class JarvisDesktop:
             ('SYSTEM STATUS', self._show_status, CYAN),
             ('AI CONNECTION', lambda: __import__('jarvis.connection_setup', fromlist=['open_connection_setup']).open_connection_setup(self), MAGENTA),
             ('SETTINGS', self._open_settings, GREEN),
-            ('CHECK UPDATE', self._check_update, GOLD),
+            ('UPDATE APP', self._check_update, GOLD),
         ]:
             self._button(modules, text, command, color).pack(fill='x', pady=1)
 

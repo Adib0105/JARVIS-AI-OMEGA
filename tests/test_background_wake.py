@@ -64,6 +64,10 @@ class WakeTests(unittest.TestCase):
 class BriefingTests(unittest.TestCase):
     location = {'name': 'Patna', 'latitude': 25.6, 'longitude': 85.1}
 
+    def setUp(self):
+        from jarvis.daily_briefing import _WEATHER_CACHE
+        _WEATHER_CACHE.clear()
+
     def test_no_location_does_not_network(self):
         with patch('jarvis.daily_briefing._get_json') as request:
             self.assertIn('shehar', weather_report(None))
@@ -96,7 +100,7 @@ class BriefingTests(unittest.TestCase):
         self.assertIn('CPU 17 percent', result)
         self.assertIn('RAM 45 percent', result)
         self.assertIn('confirm nahi', result)
-        cpu.assert_called_once_with(interval=0.25)
+        cpu.assert_called_once_with(interval=0.1)
 
     def test_greeting_boundaries(self):
         with patch('jarvis.daily_briefing.weather_report', return_value=''), patch('psutil.cpu_percent', side_effect=OSError):
@@ -255,20 +259,16 @@ class DesktopCloseTests(unittest.TestCase):
             install_background_ui()
         return Desktop
 
-    def test_x_hides_only_with_active_listener_and_tray(self):
+    def test_x_keeps_running_independent_of_microphone(self):
         cls = self.desktop_class()
         desktop = object.__new__(cls)
-        desktop.root = MagicMock()
         desktop.background = MagicMock()
-        desktop.background.enabled = True
-        desktop.background.listener.running = True
         desktop._exit_completely = MagicMock()
-        desktop._close()
-        desktop.root.withdraw.assert_called_once()
-        desktop._exit_completely.assert_not_called()
+        desktop.background.enabled = False
         desktop.background.listener.running = False
         desktop._close()
-        desktop._exit_completely.assert_called_once()
+        desktop.background.hide_to_tray.assert_called_once()
+        desktop._exit_completely.assert_not_called()
 
     def test_full_exit_stops_background_and_browser(self):
         cls = self.desktop_class()

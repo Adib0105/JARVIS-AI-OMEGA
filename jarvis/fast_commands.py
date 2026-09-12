@@ -22,7 +22,7 @@ _APP_ALIASES = {
 }
 
 _OPEN_WORDS = r'(?:open|launch|start|khol|kholo|kholna|chalao|chalu\s+karo)'
-_FILLER = r'(?:please\s+|jarvis\s+|zara\s+|jara\s+|mere\s+liye\s+)*'
+_FILLER = r'(?:please\s+|jarvis\s+|friday\s+|zara\s+|jara\s+|mere\s+liye\s+)*'
 
 
 def parse_fast_command(text: str) -> tuple[str, dict] | None:
@@ -45,6 +45,9 @@ def parse_fast_command(text: str) -> tuple[str, dict] | None:
 
 
 def execute_fast_command(jarvis, text: str) -> str | None:
+    local = local_quick_reply(text)
+    if local is not None:
+        return local
     parsed = parse_fast_command(text)
     if parsed is None:
         return None
@@ -84,4 +87,31 @@ def parse_youtube_command(text: str) -> str | None:
         if match:
             query = match.group(1).strip()
             return query if 1 <= len(query) <= 300 else None
+    return None
+
+
+def local_quick_reply(text):
+    """Exact small-talk and factual local requests avoid remote inference entirely."""
+    from datetime import datetime
+    clean = ' '.join(str(text).lower().strip(' .!?').split())
+    clean = re.sub(r'^(?:(?:hey|jarvis|jarves|friday|please)\s+)+', '', clean)
+    if clean in {'hi', 'hello', 'hey', 'namaste', 'kaisi ho', 'kaise ho', 'hello friday'}:
+        return 'Hello boss! Main Friday hoon. Bataiye, kya karna hai?'
+    if clean in {'time', 'what time is it', 'kitne baje hain', 'kitna time hua', 'time batao'}:
+        return 'Abhi ' + datetime.now().strftime('%I:%M %p') + ' hua hai, boss.'
+    if clean in {'system status', 'system report', 'cpu usage', 'ram usage', 'system kitna use ho raha hai'}:
+        from .daily_briefing import system_report
+        return system_report()
+    if clean in {'weather', 'weather report', 'weather batao', 'mausam batao', 'aaj ka mausam', 'aaj barish hogi', 'aaj barish hogi ya nahi', 'aaj barish hogi ya nhi'}:
+        from .daily_briefing import weather_report
+        from .config import settings
+        try:
+            preferences = json.loads((settings.db_path.parent / 'background-settings.json').read_text(encoding='utf-8'))
+            location = preferences.get('location') if isinstance(preferences, dict) else None
+        except (OSError, ValueError):
+            location = None
+        try:
+            return weather_report(location)
+        except Exception:
+            return 'Weather service abhi available nahi hai. Internet check karke dobara boliye.'
     return None

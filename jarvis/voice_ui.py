@@ -94,7 +94,7 @@ def install_voice_ui() -> None:
                     language=settings.speech_language,
                     max_seconds=float(os.getenv('VOICE_MAX_UTTERANCE_SECONDS', '15')),
                     start_timeout=float(os.getenv('VOICE_START_TIMEOUT_SECONDS', '5')),
-                    silence_seconds=float(os.getenv('VOICE_SILENCE_SECONDS', '0.75')),
+                    silence_seconds=float(os.getenv('VOICE_SILENCE_SECONDS', '0.55')),
                     speech_threshold=float(os.getenv('VOICE_VAD_THRESHOLD', '420')),
                     on_speech_start=self.voice.stop,
                     stop_event=self._live_stop_event,

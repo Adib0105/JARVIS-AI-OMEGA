@@ -81,7 +81,7 @@ class BackgroundController:
         from PIL import Image, ImageDraw
         image = Image.new('RGB', (64, 64), '#061725')
         ImageDraw.Draw(image).text((24, 18), 'J', fill='#53e7ff', stroke_width=2)
-        self.tray = pystray.Icon('jarvis-omega', image, 'JARVIS — background microphone ON', menu=pystray.Menu(
+        self.tray = pystray.Icon('jarvis-omega', image, 'JARVIS / Friday — running', menu=pystray.Menu(
             pystray.MenuItem('Open JARVIS', lambda *_: self.events.put(('show', None, 0)), default=True),
             pystray.MenuItem('Pause background microphone', lambda *_: self.events.put(('pause', None, 0))),
             pystray.MenuItem('Exit JARVIS completely', lambda *_: self.events.put(('exit', None, 0)))))
@@ -90,6 +90,15 @@ class BackgroundController:
         except Exception:
             self.tray = None
             raise
+
+    def hide_to_tray(self):
+        try:
+            self.ensure_tray()
+            self.desktop.root.withdraw()
+        except Exception:
+            # Keep a taskbar entry if the tray backend is unavailable.
+            self.desktop.root.iconify()
+            self.desktop._append('SYSTEM', 'Tray unavailable. JARVIS remains running in the taskbar.')
 
     def enable(self):
         if self.enabled:
@@ -138,6 +147,14 @@ class BackgroundController:
         if save:
             self.preferences['enabled'] = False
             self.persist()
+
+    def set_startup(self, enabled):
+        from .windows_integration import set_startup
+        try:
+            set_startup(enabled)
+            self.desktop._append('SYSTEM', 'Windows sign-in startup ' + ('enabled.' if enabled else 'disabled.'))
+        except Exception as exc:
+            messagebox.showerror('Windows startup', str(exc), parent=self.desktop.root)
 
     def poll(self):
         try:
@@ -209,6 +226,8 @@ class BackgroundController:
             self.disable() if self.enabled else self.enable()
             status.set('ON' if self.enabled else 'OFF')
         ttk.Button(frame, text='Enable / pause background microphone', command=toggle).pack(anchor='w')
+        ttk.Button(frame, text='Start JARVIS when I sign in', command=lambda: self.set_startup(True)).pack(anchor='w', pady=4)
+        ttk.Button(frame, text='Disable sign-in startup', command=lambda: self.set_startup(False)).pack(anchor='w')
         model_label = tk.StringVar(value='Model: ' + (self.listener.model_path or 'not selected'))
         ttk.Label(frame, textvariable=model_label, wraplength=520).pack(anchor='w', pady=8)
         def select_model():
@@ -282,13 +301,13 @@ def install_background_ui():
         bar = ttk.Frame(root)
         bar.pack(side='bottom', fill='x')
         ttk.Button(bar, text='BACKGROUND / WEATHER', command=self.background.settings_dialog).pack(side='left', padx=8)
+        ttk.Button(bar, text='WEATHER NOW', command=lambda: self._send_text('weather report')).pack(side='left', padx=8)
         ttk.Button(bar, text='EXIT COMPLETELY', command=self._exit_completely).pack(side='right', padx=8)
         root.protocol('WM_DELETE_WINDOW', self._close)
+        if '--background' in sys.argv:
+            root.after(1200, self.background.hide_to_tray)
     def close(self):
-        if self.background.enabled and self.background.listener.running and self.background.tray:
-            self.root.withdraw()
-        else:
-            self._exit_completely()
+        self.background.hide_to_tray()
     def exit_completely(self):
         from .youtube_player import shutdown
         try:
