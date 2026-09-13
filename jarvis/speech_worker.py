@@ -123,7 +123,7 @@ def speak_offline(text: str, speed: float) -> None:
         engine.stop()
 
 
-def speak_windows_sapi(text_path: Path, speed: float) -> None:
+def speak_windows_sapi(text_path: Path, speed: float, output_path=None) -> None:
     """Last-resort Windows speech path for frozen builds.
 
     ``pyttsx3`` uses the same Windows SAPI service, but its Python COM bridge can
@@ -135,19 +135,23 @@ def speak_windows_sapi(text_path: Path, speed: float) -> None:
     if os.name != 'nt':
         raise RuntimeError('Windows SAPI fallback is only available on Windows.')
     program = (
+        "param([string]$TextFile,[double]$Speed,[string]$WaveFile='')\n"
         "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Speech; "
-        "$t=[IO.File]::ReadAllText($args[0],[Text.Encoding]::UTF8); "
+        "$t=[IO.File]::ReadAllText($TextFile,[Text.Encoding]::UTF8); "
         "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer; "
         "$v=$s.GetInstalledVoices() | Where-Object { $_.Enabled -and "
         "($_.VoiceInfo.Gender.ToString() -eq 'Female' -or $_.VoiceInfo.Name -match 'Zira|Heera|Hazel') } | "
         "Select-Object -First 1; if($v){$s.SelectVoice($v.VoiceInfo.Name)}; "
-        "$s.Rate=[Math]::Max(-10,[Math]::Min(10,[int](($args[1]-1)*10))); "
-        "$s.Speak($t); $s.Dispose()"
+        "$s.Rate=[Math]::Max(-10,[Math]::Min(10,[int](($Speed-1)*10))); "
+        "try { if($WaveFile){$s.SetOutputToWaveFile($WaveFile)}; $s.Speak($t) } finally { $s.Dispose() }"
     )
-    executable = shutil.which('powershell.exe') or shutil.which('powershell') or 'powershell.exe'
+    from .windows_integration import powershell_path
+    executable = powershell_path()
+    script = text_path.parent / 'speak.ps1'
+    script.write_text(program, encoding='utf-8-sig')
     completed = subprocess.run(
-        [executable, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', program,
-         str(text_path), str(speed)],
+        [executable, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', str(script),
+         '-TextFile', str(text_path), '-Speed', str(speed)] + (['-WaveFile', str(output_path)] if output_path else []),
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         timeout=max(45, min(300, text_path.stat().st_size / 5)),
@@ -176,7 +180,12 @@ def main(argv=None) -> int:
     parser.add_argument('--file', required=True)
     parser.add_argument('--engine', choices=('edge', 'openai', 'pyttsx3'), required=True)
     parser.add_argument('--speed', type=float, default=1.0)
+    parser.add_argument('--profile', default='configured')
     args = parser.parse_args(argv)
+    from .voice_profiles import profile_overrides
+    # Apply after .env loading so the selected UI profile reaches the worker.
+    for key, value in profile_overrides(args.profile).items():
+        object.__setattr__(settings, key.lower(), value)
     text_path = Path(args.file)
     text = text_path.read_text(encoding='utf-8')
     speed = max(0.6, min(2.0, args.speed))
@@ -196,10 +205,10 @@ def main(argv=None) -> int:
             render_openai(chunk, path, speed)
         else:
             import edge_tts
-            asyncio.run(edge_tts.Communicate(
+            asyncio.run(asyncio.wait_for(edge_tts.Communicate(
                 chunk, voice_name, rate=edge_rate_for_speed(settings.edge_voice_rate, speed),
                 volume=settings.edge_voice_volume, pitch=settings.edge_voice_pitch,
-            ).save(str(path)))
+            ).save(str(path)), timeout=20))
     with tempfile.TemporaryDirectory(prefix='segments-', dir=text_path.parent) as directory:
         play_prefetched(speech_segments(text), directory, render)
     return 0

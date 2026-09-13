@@ -216,11 +216,11 @@ class WakeWordListener:
         while not self._stop.is_set():
             try:
                 heard = record_and_transcribe(self.chunk_seconds, self.language)
-                lower = heard.lower()
-                if self.wake_word not in lower:
+                from .wake_service import split_wake
+                after = split_wake(heard, self.wake_word)
+                if after is None:
                     continue
                 self.on_state('listening')
-                after = heard[lower.index(self.wake_word) + len(self.wake_word):].strip(' ,.!?')
                 command = after
                 if not command and not self._stop.is_set():
                     command = record_until_silence(language=self.language, max_seconds=12.0, stop_event=self._stop)

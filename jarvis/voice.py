@@ -331,7 +331,7 @@ class VoiceOutput:
                 handle.write(text)
             command = ([sys.executable, '--jarvis-speech-worker'] if getattr(sys, 'frozen', False)
                        else [sys.executable, '-m', 'jarvis.speech_worker'])
-            command += ['--engine', engine, '--speed', str(self.speed), '--file', path]
+            command += ['--engine', engine, '--speed', str(self.speed), '--profile', self.profile, '--file', path]
             try:
                 # Register the child atomically with cancellation. STOP cannot miss it.
                 with self._lock:

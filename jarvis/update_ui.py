@@ -7,7 +7,7 @@ from .config import settings
 from .updater import check_latest_release, download_installer, start_installer_update
 
 
-def open_update_window(root):
+def open_update_window(root, automatic=False):
     owner = root.winfo_toplevel()
     desktop = getattr(root._root(), 'jarvis_desktop', None)
     existing = getattr(root._root(), '_jarvis_update_window', None)
@@ -24,7 +24,7 @@ def open_update_window(root):
     bar = ttk.Progressbar(body, length=430)
     bar.pack(fill='x', pady=12)
     events = queue.Queue()
-    state = {'result': None, 'busy': False}
+    state = {'result': None, 'busy': False, 'preparing': False}
     def check():
         try:
             events.put(('release', check_latest_release(settings.app_version)))
@@ -66,6 +66,8 @@ def open_update_window(root):
                     status.set(value.get('message', 'Check finished.'))
                     if value.get('available') and value.get('asset') and desktop is not None:
                         button.configure(state='normal')
+                        if automatic:
+                            install()
                     elif value.get('available'):
                         status.set('A release exists, but its Windows installer is not published yet. Please try later.')
                 elif kind == 'progress':
@@ -74,7 +76,16 @@ def open_update_window(root):
                     # A task may have started while the download was running.
                     if desktop.busy:
                         raise RuntimeError('A task is running. Finish it, then click Update again.')
-                    start_installer_update(value, state['result']['asset'])
+                    desktop.busy = True
+                    state['preparing'] = True
+                    def prepare(path=value, asset=state['result']['asset']):
+                        try:
+                            start_installer_update(path, asset)
+                            events.put(('prepared', None))
+                        except Exception as exc:
+                            events.put(('error', str(exc)))
+                    threading.Thread(target=prepare, daemon=True).start()
+                elif kind == 'prepared':
                     desktop._exit_completely()
                     return
                 elif kind == 'error':
@@ -82,6 +93,9 @@ def open_update_window(root):
         except queue.Empty:
             pass
         except Exception as exc:
+            if state['preparing']:
+                desktop.busy = False
+                state['preparing'] = False
             state['busy'] = False
             status.set(str(exc))
             if state['result'] and state['result'].get('asset'):
@@ -89,3 +103,34 @@ def open_update_window(root):
         win.after(100, poll)
     threading.Thread(target=check, daemon=True).start()
     poll()
+
+
+def schedule_update_checks(desktop):
+    """Check on startup and every six hours; install only after explicit opt-in."""
+    from .background_ui import load_preferences
+    events = queue.Queue()
+    def check():
+        if getattr(desktop, '_closing', False):
+            return
+        def worker():
+            try:
+                events.put(check_latest_release(settings.app_version))
+            except Exception:
+                pass  # Offline is normal; the next scheduled check retries.
+        threading.Thread(target=worker, daemon=True).start()
+        desktop.root.after(6 * 60 * 60 * 1000, check)
+    def poll():
+        if getattr(desktop, '_closing', False):
+            return
+        if not desktop.busy and desktop.voice.state == 'idle':
+            try:
+                result = events.get_nowait()
+                if result.get('available') and result.get('asset'):
+                    desktop._append('SYSTEM', result['message'] + ' Open UPDATE APP (Ctrl+Shift+U).')
+                    if load_preferences().get('auto_updates'):
+                        open_update_window(desktop.root, automatic=True)
+            except queue.Empty:
+                pass
+        desktop.root.after(1000, poll)
+    desktop.root.after(30000, check)
+    desktop.root.after(1000, poll)

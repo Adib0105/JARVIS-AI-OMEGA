@@ -25,7 +25,12 @@ def check_latest_release(current_version: str, timeout: float = 8.0) -> dict:
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = json.loads(response.read().decode('utf-8'))
+            raw = response.read(1024 * 1024 + 1)
+            if len(raw) > 1024 * 1024:
+                raise ValueError('Release response too large.')
+            payload = json.loads(raw.decode('utf-8'))
+            if not isinstance(payload, dict):
+                raise ValueError('Invalid release response.')
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             return {'available': False, 'published': False, 'message': 'No GitHub Release has been published yet.'}
@@ -43,7 +48,7 @@ def check_latest_release(current_version: str, timeout: float = 8.0) -> dict:
         'latest_version': tag,
         'url': url,
         'name': payload.get('name') or tag,
-        'asset': next((a for a in payload.get('assets', []) if a.get('name') == INSTALLER_NAME), None),
+        'asset': next((a for a in (payload.get('assets') or []) if isinstance(a, dict) and a.get('name') == INSTALLER_NAME), None),
         'message': f'New version {tag} available.' if newer else f'You are up to date ({current_version}).',
     }
 
@@ -64,7 +69,7 @@ def validate_asset(asset):
             or not parsed.path.startswith('/Adib0105/JARVIS-AI-OMEGA/releases/download/')
             or not parsed.path.endswith('/' + INSTALLER_NAME)
             or not re.fullmatch(r'sha256:[0-9a-fA-F]{64}', digest)
-            or not isinstance(size, int) or not 0 < size <= MAX_DOWNLOAD):
+            or type(size) is not int or not 0 < size <= MAX_DOWNLOAD):
         raise ValueError('Release has no valid verified Windows installer. Nothing was installed.')
     return url, digest.split(':', 1)[1].lower(), size
 
@@ -112,16 +117,30 @@ def start_installer_update(installer, asset):
     from .windows_integration import powershell_path
     if not getattr(sys, 'frozen', False):
         raise RuntimeError('Install the Windows Setup build first to use in-app updates.')
-    _, digest, _ = validate_asset(asset)
+    _, digest, size = validate_asset(asset)
     installer = Path(installer).resolve()
+    import hashlib
+    with installer.open('rb') as stream:
+        actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+    if installer.stat().st_size != size or actual != digest:
+        raise RuntimeError('Downloaded installer changed. Retry the update.')
     helper = installer.parent / 'apply-update.ps1'
     shutil.copy2(ROOT / 'apply-update.ps1', helper)
-    process = subprocess.Popen([powershell_path(), '-NoProfile', '-NonInteractive', '-File', str(helper),
-        '-Installer', str(installer), '-AppDir', str(ROOT), '-ParentId', str(os.getpid()), '-Sha256', digest],
+    ready = installer.parent / 'helper-ready.txt'
+    ready.unlink(missing_ok=True)
+    process = subprocess.Popen([powershell_path(), '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', str(helper),
+        '-Installer', str(installer), '-AppDir', str(ROOT), '-ParentId', str(os.getpid()), '-Sha256', digest, '-ReadyFile', str(ready)],
         cwd=str(installer.parent), creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
 
-    try:
-        code = process.wait(timeout=0.4)
-    except subprocess.TimeoutExpired:
-        return
-    raise RuntimeError(f'Windows could not start the update helper (exit {code}). JARVIS stays open.')
+    import time
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if ready.exists():
+            return
+        code = process.poll()
+        if code is not None:
+            raise RuntimeError(f'Update helper failed (exit {code}). Details: {installer.parent / "update-result.txt"}')
+        time.sleep(0.1)
+    process.terminate()
+    process.wait(timeout=3)
+    raise RuntimeError('Update helper did not become ready. JARVIS stays open; retry the update.')

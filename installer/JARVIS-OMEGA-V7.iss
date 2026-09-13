@@ -28,9 +28,11 @@ Source: "..\dist\JARVIS-OMEGA-V7\*"; DestDir: "{app}"; Flags: ignoreversion recu
 [Icons]
 Name: "{autoprograms}\JARVIS AI OMEGA V7"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\JARVIS AI OMEGA V7"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{userstartup}\JARVIS OMEGA Background"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--background"; WorkingDir: "{app}"; Tasks: startup
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"
+Name: "startup"; Description: "Start JARVIS in the background when I sign in"; GroupDescription: "Background:"; Flags: unchecked
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch JARVIS AI OMEGA V7"; Flags: nowait postinstall skipifsilent
