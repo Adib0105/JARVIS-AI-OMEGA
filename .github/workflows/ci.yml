@@ -125,6 +125,10 @@ jobs:
       - name: Build V7 Windows application
         shell: pwsh
         run: .\build_windows.ps1
+      - name: Scan packaged files before execution
+        shell: pwsh
+        timeout-minutes: 20
+        run: .\scripts\check_windows_defender.ps1 -Target dist/JARVIS-OMEGA-V7 -Report defender-package.json
       - name: Verify package and secret exclusion
         shell: pwsh
         run: |
@@ -137,6 +141,10 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Inno Setup installation failed.' }
           }
           .\build_installer.ps1
+      - name: Scan installer before execution
+        shell: pwsh
+        timeout-minutes: 20
+        run: .\scripts\check_windows_defender.ps1 -Target dist/installer/JARVIS-AI-OMEGA-V7-Setup.exe -Report defender-installer.json
       - name: Verify installer and update lifecycle
         shell: pwsh
         run: .\scripts\check_windows_installer.ps1
@@ -147,6 +155,15 @@ jobs:
           path: |
             dist/installer/JARVIS-AI-OMEGA-V7-Setup.exe
             build-version.txt
+            defender-package.json
+            defender-installer.json
+      - name: Upload Defender evidence even when blocked
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: defender-scan-evidence
+          path: defender-*.json
+          if-no-files-found: warn
       - name: Upload desktop launch evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -188,4 +205,4 @@ jobs:
         run: |
           version=$(tr -d '\r\n' < release/build-version.txt)
           printf '%s\n' 'Windows Setup: desktop shortcut, background tray, in-app updates and faster local replies.' 'Settings and data are preserved during in-place updates.' 'Validated by Linux/Windows tests, packaged desktop launch and installer/upgrade checks.' > release-notes.txt
-          gh release create "v$version" release/dist/installer/JARVIS-AI-OMEGA-V7-Setup.exe --target "$RELEASE_COMMIT" --title "JARVIS Friday $version" --notes-file release-notes.txt
+          gh release create "v$version" release/dist/installer/JARVIS-AI-OMEGA-V7-Setup.exe release/defender-package.json release/defender-installer.json --target "$RELEASE_COMMIT" --title "JARVIS Friday $version" --notes-file release-notes.txt
