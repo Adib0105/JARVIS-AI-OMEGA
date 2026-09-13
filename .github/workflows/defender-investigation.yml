@@ -1,0 +1,32 @@
+name: Defender incident investigation
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/defender-investigation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  scan-reported-release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Retrieve original v7.5.742 package without running it
+        uses: actions/download-artifact@v4
+        with:
+          name: JARVIS-OMEGA-V7-windows-smoke
+          run-id: 34738829005
+          github-token: ${{ github.token }}
+          path: incident-package
+      - name: Scan original release files
+        shell: pwsh
+        run: .\scripts\check_windows_defender.ps1 -Target incident-package -Report defender-original.json
+      - name: Preserve incident evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: defender-original-release-evidence
+          path: defender-original.json
+          if-no-files-found: warn
