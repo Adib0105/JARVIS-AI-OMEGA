@@ -1,5 +1,9 @@
 import sys
 
+if __name__ == '__main__' and sys.argv[1:2] == ['--jarvis-speech-check']:
+    from jarvis.speech_check import main as speech_check
+    raise SystemExit(speech_check())
+
 # Dispatch before importing any GUI/runtime extension in a frozen speech child.
 if __name__ == '__main__' and sys.argv[1:2] == ['--jarvis-speech-worker']:
     from jarvis.speech_worker import main as speech_main

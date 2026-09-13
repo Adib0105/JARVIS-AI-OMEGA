@@ -164,7 +164,7 @@ class VoiceReliabilityTests(unittest.TestCase):
             text_path = Path(directory) / 'speech.txt'
             text_path.write_text('private spoken words', encoding='utf-8')
             completed = SimpleNamespace(returncode=0)
-            with patch('jarvis.speech_worker.os.name', 'nt'), patch('jarvis.speech_worker.subprocess.run', return_value=completed) as run:
+            with patch('jarvis.speech_worker.os.name', 'nt'), patch('jarvis.windows_integration.powershell_path', return_value='powershell.exe'), patch('jarvis.speech_worker.subprocess.run', return_value=completed) as run:
                 speak_windows_sapi(text_path, 1.0)
         args = run.call_args.args[0]
         self.assertIn(str(text_path), args)

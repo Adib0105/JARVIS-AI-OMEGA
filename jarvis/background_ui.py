@@ -25,12 +25,14 @@ def load_preferences():
         if not isinstance(data, dict):
             return {}
         clean = {'enabled': data.get('enabled') is True}
+        if 'auto_updates' in data:
+            clean['auto_updates'] = data.get('auto_updates') is True
         if isinstance(data.get('model_path'), str):
             clean['model_path'] = data['model_path']
         if valid_location(data.get('location')):
             clean['location'] = data['location']
         return clean
-    except (OSError, ValueError):
+    except (OSError, ValueError, UnicodeError):
         return {}
 
 
@@ -52,7 +54,12 @@ class BackgroundController:
         self.suppress_until = 0.0
         self.generation = 0
         self.tray = None
-        self.listener = BackgroundWakeListener(self.preferences.get('model_path', settings.vosk_model_path), self.heard,
+        from .wake_model import MODEL_NAME, model_valid
+        installed_model = settings.db_path.parent / 'models' / MODEL_NAME
+        selected_model = self.preferences.get('model_path') or settings.vosk_model_path
+        if not selected_model and model_valid(installed_model):
+            selected_model = str(installed_model)
+        self.listener = BackgroundWakeListener(selected_model, self.heard,
             lambda error: self.events.put(('error', error, self.generation)), self.suspended, settings.wake_word)
         desktop.root.after(100, self.poll)
         if self.preferences.get('enabled'):
@@ -106,7 +113,9 @@ class BackgroundController:
         d = self.desktop
         try:
             if not settings.enable_mic_input:
-                raise RuntimeError('Enable microphone input in settings and restart first.')
+                from .settings_ui import update_env_values
+                update_env_values({'ENABLE_MIC_INPUT': 'true'})
+                object.__setattr__(settings, 'enable_mic_input', True)
             if d.wake_listener.running or getattr(d, '_live_listening', False) or getattr(d, '_live_voice_enabled', False):
                 raise RuntimeError('Turn off Wake Word and Live conversation first, then retry.')
             self.ensure_tray()
@@ -186,8 +195,11 @@ class BackgroundController:
                 return
             elif generation == self.generation and self.enabled:
                 if kind == 'error':
-                    self.disable()
+                    # A transient device failure must not erase sign-in preference.
+                    self.disable(save=False)
                     d._append('SYSTEM', 'Background listener stopped: ' + value)
+                    if self.preferences.get('enabled'):
+                        d.root.after(30000, self.retry_listener)
                 elif kind == 'wake':
                     if d.busy:
                         self.pending = False
@@ -241,6 +253,48 @@ class BackgroundController:
                 self.persist()
                 model_label.set('Model: ' + folder)
         ttk.Button(frame, text='Choose Vosk model folder', command=select_model).pack(anchor='w')
+        model_events = queue.Queue()
+        downloading = [False]
+        def download_model():
+            if downloading[0]:
+                return
+            downloading[0] = True
+            model_label.set('Preparing official Indian English wake model download (about 36 MB)…')
+            def worker():
+                try:
+                    from .wake_model import install_model
+                    path = install_model(settings.db_path.parent / 'models', lambda text: model_events.put(('progress', text)))
+                    model_events.put(('done', str(path)))
+                except Exception as exc:
+                    model_events.put(('error', str(exc)))
+            threading.Thread(target=worker, daemon=True).start()
+        ttk.Button(frame, text='Download and set up wake model', command=download_model).pack(anchor='w', pady=4)
+        automatic = tk.BooleanVar(value=self.preferences.get('auto_updates', False))
+        def save_automatic():
+            self.preferences['auto_updates'] = automatic.get()
+            self.persist()
+        ttk.Checkbutton(frame, text='Automatically install verified updates while idle (restarts JARVIS)', variable=automatic, command=save_automatic).pack(anchor='w', pady=8)
+        def collect_model():
+            if not win.winfo_exists():
+                return
+            try:
+                for _ in range(100):
+                    kind, value = model_events.get_nowait()
+                    if kind == 'done':
+                        downloading[0] = False
+                        self.listener.model_path = value
+                        self.preferences['model_path'] = value
+                        self.persist()
+                        model_label.set('Model ready. Enable background microphone above.')
+                    elif kind == 'error':
+                        downloading[0] = False
+                        model_label.set('Model setup failed: ' + value)
+                    else:
+                        model_label.set(value)
+            except queue.Empty:
+                pass
+            win.after(100, collect_model)
+        collect_model()
         current = self.preferences.get('location') or {}
         location_label = tk.StringVar(value='Weather location: ' + current.get('name', 'not selected'))
         ttk.Label(frame, textvariable=location_label).pack(anchor='w', pady=(16, 4))
@@ -289,6 +343,10 @@ class BackgroundController:
         ttk.Button(frame, text='Save selected city', command=select).pack(side='left', padx=8)
         collect()
 
+    def retry_listener(self):
+        if not getattr(self.desktop, '_closing', False) and self.preferences.get('enabled') and not self.enabled:
+            self.enable()
+
 
 def install_background_ui():
     from .gui import JarvisDesktop
@@ -298,6 +356,8 @@ def install_background_ui():
     def init(self, root):
         original_init(self, root)
         self.background = BackgroundController(self)
+        from .update_ui import schedule_update_checks
+        schedule_update_checks(self)
         bar = ttk.Frame(root)
         bar.pack(side='bottom', fill='x')
         ttk.Button(bar, text='BACKGROUND / WEATHER', command=self.background.settings_dialog).pack(side='left', padx=8)

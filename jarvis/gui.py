@@ -219,6 +219,7 @@ class JarvisDesktop:
         for text, command, color in [
             ('AI CONNECTION', lambda: __import__('jarvis.connection_setup', fromlist=['open_connection_setup']).open_connection_setup(self), MAGENTA),
             ('UPDATE APP', self._check_update, GOLD),
+            ('BACKGROUND / WEATHER', lambda: self.background.settings_dialog(), CYAN),
             ('SETTINGS', self._open_settings, GREEN),
             ('LEARN DOCUMENT', self._learn_document, MAGENTA),
             ('RUN CODE TESTS', self._code_tests, GOLD),

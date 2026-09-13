@@ -25,6 +25,8 @@ def valid_location(location):
     if not isinstance(location, dict) or not isinstance(location.get('name'), str) or not location['name'].strip():
         return False
     try:
+        if isinstance(location['latitude'], bool) or isinstance(location['longitude'], bool):
+            return False
         return (-90 <= float(location['latitude']) <= 90 and
                 -180 <= float(location['longitude']) <= 180)
     except (KeyError, TypeError, ValueError, OverflowError):
@@ -54,24 +56,38 @@ def weather_report(location):
         cached = _WEATHER_CACHE.get(cache_key)
         if cached and time.monotonic() - cached[0] < 300:
             return cached[1] + ' (Pichhle 5 minute ka cached forecast.)'
-    data = _get_json('https://api.open-meteo.com/v1/forecast', {
-        'latitude': lat, 'longitude': lon, 'current': 'temperature_2m',
-        'daily': 'precipitation_probability_max', 'timezone': 'auto', 'forecast_days': 1,
-    })
+    try:
+        data = _get_json('https://api.open-meteo.com/v1/forecast', {
+            'latitude': lat, 'longitude': lon, 'current': 'temperature_2m,relative_humidity_2m,wind_speed_10m',
+            'daily': 'precipitation_probability_max', 'timezone': 'auto', 'forecast_days': 1,
+            'temperature_unit': 'celsius', 'wind_speed_unit': 'kmh',
+        })
+        if not isinstance(data, dict) or data.get('error'):
+            raise ValueError('Weather service returned an invalid forecast.')
+    except Exception:
+        if cached and time.monotonic() - cached[0] < 1800:
+            return 'Live weather unavailable. Pichhle 30 minute ka purana forecast: ' + cached[1]
+        raise
     current = data.get('current') or {}
     daily = data.get('daily') or {}
     temp = current.get('temperature_2m') if isinstance(current, dict) else None
     probabilities = daily.get('precipitation_probability_max') if isinstance(daily, dict) else None
     chance = probabilities[0] if isinstance(probabilities, list) and probabilities else None
     parts = [f"{location['name']} ka Open-Meteo forecast."]
-    if isinstance(temp, (int, float)) and math.isfinite(temp):
+    if type(temp) in (int, float) and math.isfinite(temp):
         parts.append(f'Abhi temperature {temp:g} degree Celsius hai.')
     else:
         parts.append('Temperature abhi available nahi hai.')
-    if isinstance(chance, (int, float)) and 0 <= chance <= 100:
+    if type(chance) in (int, float) and 0 <= chance <= 100:
         parts.append(f'Aaj barish ya anya precipitation ka maximum chance {chance:g} percent hai. Yeh forecast hai, guarantee nahi.')
     else:
         parts.append('Aaj barish ka chance abhi available nahi hai.')
+    humidity = current.get('relative_humidity_2m') if isinstance(current, dict) else None
+    wind = current.get('wind_speed_10m') if isinstance(current, dict) else None
+    if type(humidity) in (int, float) and 0 <= humidity <= 100:
+        parts.append(f'Humidity {humidity:g} percent hai.')
+    if type(wind) in (int, float) and math.isfinite(wind) and wind >= 0:
+        parts.append(f'Hawa ki speed {wind:g} kilometre per hour hai.')
     report = ' '.join(parts)
     with _WEATHER_LOCK:
         if len(_WEATHER_CACHE) > 20:

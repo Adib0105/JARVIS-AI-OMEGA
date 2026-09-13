@@ -37,7 +37,7 @@ def _read_env_lines() -> list[str]:
             path.write_text(example.read_text(encoding='utf-8'), encoding='utf-8')
         else:
             path.write_text('', encoding='utf-8')
-    return path.read_text(encoding='utf-8', errors='replace').splitlines()
+    return path.read_text(encoding='utf-8-sig', errors='replace').splitlines()
 
 
 def update_env_values(values: dict[str, str]) -> None:
@@ -64,7 +64,8 @@ def update_env_values(values: dict[str, str]) -> None:
         match = pattern.match(line)
         key = match.group(1) if match else None
         if key in cleaned:
-            out.append(f'{key}={cleaned[key]}')
+            if key not in seen:
+                out.append(f'{key}={cleaned[key]}')
             seen.add(key)
         else:
             out.append(line)
@@ -100,14 +101,14 @@ def show_update_dialog(root: tk.Misc) -> None:
 
 def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
     win = tk.Toplevel(root)
-    win.title('JARVIS OMEGA V6 // SETTINGS')
+    win.title('JARVIS OMEGA // SETTINGS')
     win.geometry('690x780')
-    win.minsize(650, 680)
+    win.minsize(600, 400)
     win.configure(bg='#06111a')
     win.transient(root)
     win.grab_set()
 
-    tk.Label(win, text='V6 CORE SETTINGS', bg='#06111a', fg='#53e7ff', font=('Segoe UI', 16, 'bold')).pack(anchor='w', padx=18, pady=(16, 2))
+    tk.Label(win, text='JARVIS SETTINGS', bg='#06111a', fg='#53e7ff', font=('Segoe UI', 16, 'bold')).pack(anchor='w', padx=18, pady=(16, 2))
     tk.Label(
         win,
         text='API keys, Google OAuth JSON, and stored tokens are intentionally hidden. Saved changes apply after restart.',

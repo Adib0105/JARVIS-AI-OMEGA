@@ -19,6 +19,12 @@ if (-not $worker.WaitForExit(30000)) {
   throw 'Frozen speech worker did not exit within 30 seconds.'
 }
 if ($worker.ExitCode -ne 0) { throw 'Frozen speech worker startup failed.' }
+$speechCheck = Start-Process -FilePath $exe -ArgumentList @('--jarvis-speech-check') -PassThru
+if (-not $speechCheck.WaitForExit(60000)) {
+  $speechCheck.Kill()
+  throw 'Frozen Windows speech synthesis timed out.'
+}
+if ($speechCheck.ExitCode -ne 0) { throw 'Frozen Windows speech failed to generate actual audio.' }
 # Validate optional native imports and the bundled Playwright driver, without recording.
 $backgroundCheck = Start-Process -FilePath $exe -ArgumentList @('--jarvis-background-check') -PassThru
 if (-not $backgroundCheck.WaitForExit(30000)) {

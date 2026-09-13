@@ -3,11 +3,16 @@ param(
     [Parameter(Mandatory=$true)][string]$AppDir,
     [Parameter(Mandatory=$true)][int]$ParentId,
     [Parameter(Mandatory=$true)][string]$Sha256,
-    [switch]$NoRelaunch
+    [switch]$NoRelaunch,
+    [string]$ReadyFile = ''
 )
 $ErrorActionPreference = 'Stop'
 $Log = Join-Path (Split-Path -Parent $Installer) 'update-result.txt'
 try {
+    if (-not (Test-Path -LiteralPath $Installer -PathType Leaf)) { throw 'Installer file is missing.' }
+    if (-not (Test-Path -LiteralPath (Join-Path $AppDir 'JARVIS-OMEGA-V7.exe'))) { throw 'Application folder is invalid.' }
+    if ((Get-FileHash -LiteralPath $Installer -Algorithm SHA256).Hash -ne $Sha256) { throw 'Installer checksum changed.' }
+    if ($ReadyFile) { 'ready' | Set-Content -LiteralPath $ReadyFile }
     # Do not force-kill the assistant or any other application.
     if ($ParentId -gt 0 -and (Get-Process -Id $ParentId -ErrorAction SilentlyContinue)) {
         Wait-Process -Id $ParentId -Timeout 60 -ErrorAction Stop
