@@ -36,7 +36,10 @@ $Args = @(
     '--name', 'JARVIS-OMEGA-V7',
     '--collect-submodules', 'jarvis',
     '--collect-submodules', 'edge_tts',
-    '--collect-submodules', 'pyttsx3.drivers',
+    # pyttsx3's Windows SAPI driver imports COM modules dynamically.  Collect
+    # the complete packages so the offline fallback survives PyInstaller.
+    '--collect-all', 'pyttsx3',
+    '--collect-all', 'comtypes',
     '--collect-submodules', 'speech_recognition',
     '--hidden-import', 'pystray._win32',
     '--collect-all', 'playwright',

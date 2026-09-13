@@ -20,3 +20,10 @@ In 7.5.733, a local greeting could succeed while an AI request still reported mi
 Regression coverage includes a real OpenAI-compatible SDK HTTP request to a local fixture immediately after save (without restart), correct authorization header, atomic-save failure recovery, BOM preservation, provider changes, search denial, concurrent speech rendering/order and text preservation. Windows packaged and installed GUI smoke tests invoke the actual Save & Apply button using an obviously synthetic CI-only key and verify provider creation, key-entry clearing and unchanged session.
 
 No user credentials are used in tests. Paid live AI, microphone hardware and actual speaker quality still require testing on the user's PC. This is a targeted repair and broader regression check, not a claim that no undiscovered bugs remain.
+# Voice reliability follow-up
+
+On Windows, a packaged app now tries the selected neural voice first, then the
+installed `pyttsx3` voice, then Windows' own SAPI speech service.  The final
+fallback avoids a silent failure when a Python COM dependency is missing from a
+frozen executable.  The build collects both `pyttsx3` and `comtypes` so normal
+offline speech is included as well.

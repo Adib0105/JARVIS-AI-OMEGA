@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import sys
 import subprocess
+import tempfile
 import threading
 import unittest
 from dataclasses import replace
@@ -10,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from jarvis.config import settings
 from jarvis.voice import VoiceOutput, _SENTINEL
-from jarvis.speech_worker import speech_chunks, render_openai, speak_offline
+from jarvis.speech_worker import main as speech_main, speech_chunks, render_openai, speak_offline, speak_windows_sapi
 from jarvis.voice_personality import speechify
 from jarvis.microphone import record_until_silence, WakeWordListener
 
@@ -157,6 +158,25 @@ class VoiceReliabilityTests(unittest.TestCase):
             speak_offline('hello', 1)
         engine.setProperty.assert_any_call('voice', 'zira-id')
         engine.stop.assert_called_once()
+
+    def test_windows_sapi_fallback_uses_temp_file_not_spoken_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            text_path = Path(directory) / 'speech.txt'
+            text_path.write_text('private spoken words', encoding='utf-8')
+            completed = SimpleNamespace(returncode=0)
+            with patch('jarvis.speech_worker.os.name', 'nt'), patch('jarvis.speech_worker.subprocess.run', return_value=completed) as run:
+                speak_windows_sapi(text_path, 1.0)
+        args = run.call_args.args[0]
+        self.assertIn(str(text_path), args)
+        self.assertNotIn('private spoken words', ' '.join(args))
+
+    def test_offline_worker_uses_windows_sapi_after_pyttsx3_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            text_path = Path(directory) / 'speech.txt'
+            text_path.write_text('hello', encoding='utf-8')
+            with patch('jarvis.speech_worker.speak_offline', side_effect=RuntimeError('com bridge missing')), patch('jarvis.speech_worker.speak_windows_sapi') as sapi:
+                self.assertEqual(speech_main(['--engine', 'pyttsx3', '--file', str(text_path)]), 0)
+        sapi.assert_called_once_with(text_path, 1.0)
 
     def test_cancelled_microphone_does_not_open_device(self):
         event = threading.Event()
