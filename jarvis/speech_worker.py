@@ -123,6 +123,41 @@ def speak_offline(text: str, speed: float) -> None:
         engine.stop()
 
 
+def speak_windows_sapi(text_path: Path, speed: float) -> None:
+    """Last-resort Windows speech path for frozen builds.
+
+    ``pyttsx3`` uses the same Windows SAPI service, but its Python COM bridge can
+    be omitted by a packaging tool or be broken by a locally installed package.
+    PowerShell is available on supported Windows installations, so use it only
+    after pyttsx3 fails.  The utterance stays in the existing temporary file;
+    it is never put into the process command line.
+    """
+    if os.name != 'nt':
+        raise RuntimeError('Windows SAPI fallback is only available on Windows.')
+    program = (
+        "$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Speech; "
+        "$t=[IO.File]::ReadAllText($args[0],[Text.Encoding]::UTF8); "
+        "$s=New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+        "$v=$s.GetInstalledVoices() | Where-Object { $_.Enabled -and "
+        "($_.VoiceInfo.Gender.ToString() -eq 'Female' -or $_.VoiceInfo.Name -match 'Zira|Heera|Hazel') } | "
+        "Select-Object -First 1; if($v){$s.SelectVoice($v.VoiceInfo.Name)}; "
+        "$s.Rate=[Math]::Max(-10,[Math]::Min(10,[int](($args[1]-1)*10))); "
+        "$s.Speak($t); $s.Dispose()"
+    )
+    executable = shutil.which('powershell.exe') or shutil.which('powershell') or 'powershell.exe'
+    completed = subprocess.run(
+        [executable, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', program,
+         str(text_path), str(speed)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=max(45, min(300, text_path.stat().st_size / 5)),
+        check=False,
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+    )
+    if completed.returncode:
+        raise RuntimeError(f'Windows SAPI speech failed ({completed.returncode}).')
+
+
 def render_openai(text: str, path: Path, speed: float) -> None:
     from openai import OpenAI
     if not settings.openai_api_key.strip():
@@ -146,7 +181,12 @@ def main(argv=None) -> int:
     text = text_path.read_text(encoding='utf-8')
     speed = max(0.6, min(2.0, args.speed))
     if args.engine == 'pyttsx3':
-        speak_offline(text, speed)
+        try:
+            speak_offline(text, speed)
+        except Exception:
+            # A Windows machine can still speak even when pyttsx3's packaged COM
+            # bridge is unavailable.  Do not let this fallback hide the reply.
+            speak_windows_sapi(text_path, speed)
         return 0
     from .voice import choose_voice, edge_rate_for_speed
     # Resolve once: short English opening words must not switch the voice halfway.
