@@ -47,7 +47,7 @@ class FakeVisual:
 
 
 class V75ComputerUseIntegrationTests(unittest.TestCase):
-    def test_ocr_fallback_click_is_partial_not_false_verified(self):
+    def test_ocr_fallback_click_is_unknown_not_false_verified(self):
         ocr = UITarget(
             'Submit', 'OCRText', 'SCREEN_OCR',
             left=100, top=100, right=200, bottom=140,
@@ -59,7 +59,7 @@ class V75ComputerUseIntegrationTests(unittest.TestCase):
             result = engine.semantic_click('Submit')
         self.assertTrue(result['ok'])
         self.assertEqual(result['resolution_backend'], 'local-ocr')
-        self.assertEqual(result['verification']['status'], 'PARTIAL')
+        self.assertEqual(result['verification']['status'], 'UNKNOWN')
         self.assertFalse(result['verification']['verified'])
         self.assertEqual(visual.calls, 1)
 

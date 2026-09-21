@@ -144,6 +144,9 @@ class HybridRetriever:
 
         ranked = []
         for base_score, idx, row in preliminary:
+            # Priors are not relevance: require actual lexical or semantic evidence.
+            if lexical[idx] <= 0 and bm25[idx] <= 0 and embedding_scores.get(idx, 0) < 0.65:
+                continue
             emb = embedding_scores.get(idx)
             final = base_score if emb is None else 0.76 * base_score + 0.24 * emb
             ranked.append((final, row, {

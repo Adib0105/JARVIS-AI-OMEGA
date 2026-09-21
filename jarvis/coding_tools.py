@@ -65,13 +65,7 @@ class CodingWorkspace:
         tests = root / 'tests'
         if not tests.is_dir():
             raise FileNotFoundError('A tests/ folder is required for this allowlisted test action.')
-        proc = subprocess.run(
-            [sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-v'],
-            cwd=root,
-            capture_output=True,
-            text=True,
-            timeout=max(10, min(int(timeout), 300)),
-            shell=False,
+        raise PermissionError(
+            'EXECUTION_ISOLATION_UNAVAILABLE: project tests are executable code. '
+            'Host execution is disabled; review and run in a disposable VM.'
         )
-        output = (proc.stdout + '\n' + proc.stderr).strip()
-        return {'returncode': proc.returncode, 'output': output[-30000:]}

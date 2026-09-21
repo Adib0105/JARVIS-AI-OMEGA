@@ -200,7 +200,7 @@ class JarvisOmega:
             self.last_latency = time.perf_counter() - started
 
     def _one_shot_text(self, instruction: str, prompt: str, kind: str = 'smart') -> str:
-        model = self._select_model(prompt, kind if kind in {'mission', 'summary', 'review'} else 'mission')
+        model = self._select_model(prompt, kind if kind != 'smart' else 'mission')
         try:
             text = self.provider.structured_output(
                 system=instruction,

@@ -189,6 +189,20 @@ class ToolRegistry:
         return open_local_path(str(target))
 
     def call(self, name: str, args: dict) -> str:
+        enabled = {item['name']: item for item in self.schemas(include_local=settings.enable_local_tools)}
+        if name not in enabled:
+            return json.dumps({'ok': False, 'error': 'CAPABILITY_DISABLED: tool is not enabled.'})
+        schema = enabled[name]['parameters']
+        if not isinstance(args, dict) or set(args) - set(schema['properties']) or any(k not in args for k in schema['required']):
+            return json.dumps({'ok': False, 'error': 'INVALID_TOOL_ARGUMENTS'})
+        for key, value in args.items():
+            spec = schema['properties'][key]
+            kind = spec.get('type')
+            valid = {'string': isinstance(value, str), 'integer': type(value) is int,
+                     'number': type(value) in (int, float), 'boolean': type(value) is bool,
+                     'array': isinstance(value, list), 'object': isinstance(value, dict)}.get(kind, False)
+            if not valid or ('minimum' in spec and value < spec['minimum']) or ('maximum' in spec and value > spec['maximum']):
+                return json.dumps({'ok': False, 'error': 'INVALID_TOOL_ARGUMENTS'})
         decision = self.permissions.check(name, args)
         if not decision.allowed:
             return json.dumps({'ok': False, 'error': decision.reason}, ensure_ascii=False)

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import subprocess
-import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -35,39 +33,19 @@ class TestReport:
 
 
 class SelfDevelopmentTester:
-    """Runs only explicit Python quality gates inside an isolated worktree."""
+    """Fails closed until a reviewed OS execution isolation backend is available."""
 
     def __init__(self, timeout: int = 300) -> None:
         self.timeout = max(10, min(int(timeout), 900))
 
     def _run(self, name: str, args: list[str], cwd: Path) -> CheckResult:
-        started = time.perf_counter()
-        try:
-            proc = subprocess.run(
-                [sys.executable, *args],
-                cwd=str(cwd.resolve()),
-                text=True,
-                capture_output=True,
-                timeout=self.timeout,
-                check=False,
-            )
-            return CheckResult(
-                name=name,
-                ok=proc.returncode == 0,
-                returncode=proc.returncode,
-                duration_ms=round((time.perf_counter() - started) * 1000, 3),
-                stdout=proc.stdout[-200000:],
-                stderr=proc.stderr[-200000:],
-            )
-        except subprocess.TimeoutExpired as exc:
-            return CheckResult(
-                name=name,
-                ok=False,
-                returncode=124,
-                duration_ms=round((time.perf_counter() - started) * 1000, 3),
-                stdout=str(exc.stdout or '')[-200000:],
-                stderr=('TIMEOUT: ' + str(exc))[-200000:],
-            )
+        # A worktree, timeout and scrubbed environment are not an OS boundary.
+        # No supported/reviewed Windows isolation backend exists in this build.
+        # Never fall back to host Python, even after ordinary action approval.
+        return CheckResult(name=name, ok=False, returncode=126, duration_ms=0.0,
+                           stdout='', stderr='EXECUTION_ISOLATION_UNAVAILABLE: '
+                           'Generated code was not executed. Use a separately reviewed '
+                           'disposable VM; host execution is disabled.')
 
     def run_regression(self, worktree: Path) -> TestReport:
         worktree = worktree.resolve()

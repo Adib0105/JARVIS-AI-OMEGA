@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .security.redaction import redact_text
+
 import re
 import sqlite3
 import threading
@@ -93,6 +95,7 @@ class MemoryStore:
         return datetime.now(timezone.utc).isoformat()
 
     def new_session(self, title: str = 'New chat') -> str:
+        title = redact_text(title)
         session_id = uuid4().hex[:12]
         with self._lock, self._connect() as conn:
             conn.execute('INSERT INTO sessions(id, title, created_at) VALUES (?, ?, ?)',
@@ -101,6 +104,7 @@ class MemoryStore:
         return session_id
 
     def add_message(self, session_id: str, role: str, content: str) -> None:
+        content = redact_text(content)
         with self._lock, self._connect() as conn:
             conn.execute(
                 'INSERT INTO messages(session_id, role, content, created_at) VALUES (?, ?, ?, ?)',
@@ -142,6 +146,7 @@ class MemoryStore:
         return [dict(r) for r in rows]
 
     def set_session_summary(self, session_id: str, summary: str) -> None:
+        summary = redact_text(summary)
         summary = summary.strip()[:12000]
         if not summary:
             return
@@ -322,6 +327,7 @@ class MemoryStore:
         return dict(row) if row else None
 
     def rename_session(self, session_id: str, title: str) -> None:
+        title = redact_text(title)
         title = str(title).strip()
         if not title or len(title) > 100:
             raise ValueError('Chat title must contain 1 to 100 characters.')

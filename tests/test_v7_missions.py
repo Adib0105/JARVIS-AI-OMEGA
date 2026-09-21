@@ -1,10 +1,12 @@
 import json
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
-from jarvis.agent.mission import MissionStatus, StepStatus
-from jarvis.agent.mission_store import MissionStore
+from jarvis.agent.mission import Mission, MissionStatus, StepStatus
+from jarvis.agent.mission_store import ConcurrentMissionUpdateError, MissionStore
 from jarvis.agent.orchestrator import MissionControl, MissionOrchestrator
 
 
@@ -53,6 +55,19 @@ class FakeCore:
         return [str(item).strip() for item in parsed if str(item).strip()][:max_steps]
 
 
+class BlockingCore(FakeCore):
+    def __init__(self):
+        super().__init__(['Wait for operator'], [{'text': 'done', 'events': []}])
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def chat(self, prompt):
+        self.started.set()
+        if not self.release.wait(2):
+            raise TimeoutError('test did not release the fake provider')
+        return super().chat(prompt)
+
+
 def event(name, result=None, error=None, args=None):
     payload = {'ok': error is None}
     if error is None:
@@ -74,15 +89,15 @@ class V7MissionTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_successful_reasoning_mission_is_persisted_and_verified(self):
+    def test_text_only_mission_is_persisted_without_claiming_external_verification(self):
         core = FakeCore(['Analyze'], [{'text': 'Analysis complete', 'events': []}])
         orchestrator = MissionOrchestrator(core, self.store)
         mission = orchestrator.run('Analyze something')
-        self.assertEqual(mission.status, MissionStatus.COMPLETED)
-        self.assertTrue(mission.final_verification.verified)
+        self.assertEqual(mission.status, MissionStatus.PARTIAL)
+        self.assertFalse(mission.final_verification.verified)
         loaded = self.store.get(mission.id)
         self.assertIsNotNone(loaded)
-        self.assertEqual(loaded.status, MissionStatus.COMPLETED)
+        self.assertEqual(loaded.status, MissionStatus.PARTIAL)
         self.assertTrue(self.store.events(mission.id))
 
     def test_unobserved_desktop_action_is_partial_not_false_verified(self):
@@ -93,7 +108,7 @@ class V7MissionTests(unittest.TestCase):
             'events': [event('open_app', 'Opened notepad.')],
         }])
         mission = MissionOrchestrator(core, self.store).run('Open Notepad')
-        self.assertEqual(mission.status, MissionStatus.COMPLETED)
+        self.assertEqual(mission.status, MissionStatus.PARTIAL)
         self.assertFalse(mission.final_verification.verified)
         self.assertEqual(mission.final_verification.status, 'PARTIAL')
         self.assertIn('open_app', mission.final_verification.unverified_actions)
@@ -117,7 +132,7 @@ class V7MissionTests(unittest.TestCase):
         orchestrator = MissionOrchestrator(core, self.store)
         orchestrator.retry.wait = lambda *_args, **_kwargs: True
         mission = orchestrator.run('Fetch data')
-        self.assertEqual(mission.status, MissionStatus.COMPLETED)
+        self.assertEqual(mission.status, MissionStatus.PARTIAL)
         self.assertEqual(mission.retry_count, 1)
         self.assertEqual(mission.plan[0].attempts, 2)
 
@@ -131,12 +146,12 @@ class V7MissionTests(unittest.TestCase):
             replan=['Alternative step'],
         )
         mission = MissionOrchestrator(core, self.store).run('Recoverable goal')
-        self.assertEqual(mission.status, MissionStatus.COMPLETED)
+        self.assertEqual(mission.status, MissionStatus.PARTIAL)
         self.assertEqual(mission.recovery_count, 1)
         self.assertTrue(mission.plan[0].recovered)
         self.assertEqual(mission.plan[1].status, StepStatus.SUPERSEDED)
         self.assertEqual(mission.plan[-1].status, StepStatus.COMPLETED)
-        self.assertTrue(mission.final_verification.verified)
+        self.assertFalse(mission.final_verification.verified)
 
     def test_control_pause_resume_cancel_flags(self):
         control = MissionControl.create()
@@ -149,6 +164,62 @@ class V7MissionTests(unittest.TestCase):
         control.cancel()
         self.assertTrue(control.cancelled)
         self.assertFalse(control.paused)
+
+    def test_pause_during_active_step_resumes_without_stale_state_overwrite(self):
+        core = BlockingCore()
+        orchestrator = MissionOrchestrator(core, self.store)
+        result = {}
+        failure = {}
+
+        def run_mission():
+            try:
+                result['mission'] = orchestrator.run('Wait safely')
+            except Exception as exc:  # captured so the worker assertion is visible
+                failure['exception'] = exc
+
+        worker = threading.Thread(target=run_mission, daemon=True)
+        worker.start()
+        self.assertTrue(core.started.wait(2))
+        self.assertTrue(orchestrator.pause())
+        core.release.set()
+
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            current = self.store.get(orchestrator.current_mission_id)
+            if current is not None and current.status == MissionStatus.PAUSED:
+                break
+            time.sleep(0.01)
+        else:
+            self.fail('Mission never acknowledged PAUSED state')
+
+        self.assertTrue(orchestrator.resume())
+        worker.join(3)
+        self.assertFalse(worker.is_alive())
+        self.assertNotIn('exception', failure)
+        self.assertEqual(result['mission'].status, MissionStatus.PARTIAL)
+
+    def test_illegal_transition_is_rejected_without_persisting_it(self):
+        core = FakeCore([], [])
+        orchestrator = MissionOrchestrator(core, self.store)
+        mission = Mission(goal='test', session_id='session')
+        self.store.save(mission)
+        with self.assertRaises(RuntimeError):
+            orchestrator._transition(
+                mission, MissionStatus.COMPLETED, lambda _message: None
+            )
+        self.assertEqual(self.store.get(mission.id).status, MissionStatus.CREATED)
+
+    def test_stale_concurrent_snapshot_cannot_overwrite_newer_mission_state(self):
+        mission = Mission(goal='test', session_id='session')
+        self.store.save(mission)
+        first = self.store.get(mission.id)
+        stale = self.store.get(mission.id)
+        first.goal = 'newer value'
+        self.store.save(first)
+        stale.goal = 'stale overwrite'
+        with self.assertRaises(ConcurrentMissionUpdateError):
+            self.store.save(stale)
+        self.assertEqual(self.store.get(mission.id).goal, 'newer value')
 
 
 if __name__ == '__main__':

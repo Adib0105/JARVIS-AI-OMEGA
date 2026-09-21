@@ -112,7 +112,7 @@ TOOL_SECURITY: dict[str, ToolSecurityProfile] = {
     # Coding / Git - exact registered V6/V7 tool names
     'list_code_tree': profile('list_code_tree', MEDIUM, {Capability.CODE_READ}, 'Reads an approved project directory tree.'),
     'write_local_text_file': profile('write_local_text_file', HIGH, {Capability.CODE_WRITE, Capability.FILE_WRITE}, 'Creates/replaces an approved source/text file and can alter project behavior.', True),
-    'run_project_tests': profile('run_project_tests', MEDIUM, {Capability.CODE_TEST}, 'Runs the allowlisted Python unittest command in an approved project.'),
+    'run_project_tests': profile('run_project_tests', HIGH, {Capability.CODE_TEST}, 'Executes project code; requires approved isolation.', True),
     'git_status': profile('git_status', MEDIUM, {Capability.GIT_READ, Capability.CODE_READ}, 'Reads Git working-tree status.'),
     'git_diff': profile('git_diff', MEDIUM, {Capability.GIT_READ, Capability.CODE_READ}, 'Reads Git diff output.'),
     'git_log': profile('git_log', MEDIUM, {Capability.GIT_READ, Capability.CODE_READ}, 'Reads recent Git commit metadata.'),

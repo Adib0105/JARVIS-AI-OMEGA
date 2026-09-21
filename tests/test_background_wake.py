@@ -138,6 +138,7 @@ class YoutubeTests(unittest.TestCase):
 
     def test_playback_failure_is_not_success(self):
         registry = MagicMock(spec=ToolRegistry)
+        registry.schemas.return_value = ToolRegistry.schemas(registry, True)
         registry.permissions = MagicMock()
         registry.permissions.check.return_value = Decision(True)
         # Handlers are lambdas, so unused registry collaborators need not be created.

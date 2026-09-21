@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import shutil
+import time
+from uuid import uuid4
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,7 +54,20 @@ class SchemaMigrator:
         target = backup_dir / f'{self.db_path.stem}-pre-v7{self.db_path.suffix}.bak'
         if target.exists():
             return target
-        shutil.copy2(self.db_path, target)
+        staged = target.with_suffix(target.suffix + '.' + uuid4().hex + '.tmp')
+        deadline = time.monotonic() + 10
+
+        def check_deadline(_status, _remaining, _total):
+            if time.monotonic() > deadline:
+                raise TimeoutError('Migration backup deadline exceeded.')
+        try:
+            with self._connect() as source, connect_sqlite(staged) as destination:
+                source.backup(destination, pages=128, progress=check_deadline, sleep=0.05)
+                if destination.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+                    raise RuntimeError('Migration backup failed integrity check.')
+            staged.replace(target)
+        finally:
+            staged.unlink(missing_ok=True)
         return target
 
     @staticmethod

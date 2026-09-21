@@ -64,7 +64,6 @@ TRUSTED_LOCAL_CAPABILITIES = frozenset({
     Capability.BROWSER_CONTROL,
     Capability.APP_CONTROL,
     Capability.CODE_READ,
-    Capability.CODE_TEST,
     Capability.GIT_READ,
     Capability.WEB_READ,
 })
