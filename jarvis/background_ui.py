@@ -107,7 +107,7 @@ class BackgroundController:
             self.desktop.root.iconify()
             self.desktop._append('SYSTEM', 'Tray unavailable. JARVIS remains running in the taskbar.')
 
-    def enable(self):
+    def enable(self, show_error=True):
         if self.enabled:
             return
         d = self.desktop
@@ -129,8 +129,12 @@ class BackgroundController:
                 d.root.withdraw()
         except Exception as exc:
             self.disable(save=False)
-            self.show()
-            messagebox.showerror('Background voice', str(exc), parent=d.root)
+            d._append('SYSTEM', 'Background microphone unavailable: ' + str(exc))
+            if show_error:
+                self.show()
+                messagebox.showerror('Background voice', str(exc), parent=d.root)
+            return False
+        return True
 
     def persist(self):
         try:
@@ -353,8 +357,12 @@ class BackgroundController:
         collect()
 
     def retry_listener(self):
-        if not getattr(self.desktop, '_closing', False) and self.preferences.get('enabled') and not self.enabled:
-            self.enable()
+        if getattr(self.desktop, '_closing', False) or not self.preferences.get('enabled') or self.enabled:
+            return
+        # Device recovery and listener shutdown can take longer than one timer.
+        # Keep retrying without opening a modal dialog over a hidden desktop.
+        if not self.enable(show_error=False):
+            self.desktop.root.after(30000, self.retry_listener)
 
 
 def install_background_ui():
