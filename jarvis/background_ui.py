@@ -107,7 +107,7 @@ class BackgroundController:
             self.desktop.root.iconify()
             self.desktop._append('SYSTEM', 'Tray unavailable. JARVIS remains running in the taskbar.')
 
-    def enable(self):
+    def enable(self, show_error=True):
         if self.enabled:
             return
         d = self.desktop
@@ -128,9 +128,13 @@ class BackgroundController:
             if '--background' in sys.argv:
                 d.root.withdraw()
         except Exception as exc:
-            self.disable(save=False)
-            self.show()
-            messagebox.showerror('Background voice', str(exc), parent=d.root)
+            self.disable(save=False, show=show_error)
+            d._append('SYSTEM', 'Background microphone unavailable: ' + str(exc))
+            if show_error:
+                self.show()
+                messagebox.showerror('Background voice', str(exc), parent=d.root)
+            return False
+        return True
 
     def persist(self):
         try:
@@ -140,7 +144,7 @@ class BackgroundController:
             self.desktop._append('SYSTEM', 'Settings could not be saved. Check folder permissions/free disk space. This change may not survive restart.')
             return False
 
-    def disable(self, save=True):
+    def disable(self, save=True, show=True):
         self.generation += 1
         self.enabled = False
         self.pending = False
@@ -152,7 +156,8 @@ class BackgroundController:
         except Exception:
             self.desktop._append('SYSTEM', 'Tray cleanup failed; the background microphone is stopped.')
         finally:
-            self.show()
+            if show:
+                self.show()
         if save:
             self.preferences['enabled'] = False
             self.persist()
@@ -247,6 +252,30 @@ class BackgroundController:
             self.disable() if self.enabled else self.enable()
             status.set('ON' if self.enabled else 'OFF')
         ttk.Button(frame, text='Enable / pause background microphone', command=toggle).pack(anchor='w')
+        health = tk.StringVar(value='Check background health to see setup status.')
+        ttk.Label(frame, textvariable=health, wraplength=520, justify='left').pack(anchor='w', pady=6)
+        def check_health():
+            from pathlib import Path
+            from .wake_model import model_valid
+            selected = self.listener.model_path
+            model_ready = bool(selected and model_valid(Path(selected).expanduser()))
+            listening = self.enabled and self.listener.running
+            startup = (Path(os.environ.get('APPDATA', '')) / 'Microsoft/Windows/Start Menu/Programs/Startup/JARVIS OMEGA Background.lnk')
+            sign_in = os.name == 'nt' and bool(os.environ.get('APPDATA')) and startup.is_file()
+            health.set(
+                'Wake model: ' + ('ready' if model_ready else 'missing or incomplete')
+                + '  |  Microphone listener: ' + ('running' if listening else 'stopped')
+                + '  |  Tray: ' + ('running' if self.tray else 'not active')
+                + '  |  Sign-in shortcut: ' + ('present' if sign_in else 'absent')
+                + '  |  Listening preference: ' + ('enabled' if self.preferences.get('enabled') else 'disabled')
+            )
+        ttk.Button(frame, text='Check background health', command=check_health).pack(anchor='w')
+        def retry_now():
+            if not self.enabled:
+                self.enable()
+            status.set('ON' if self.enabled else 'OFF')
+            check_health()
+        ttk.Button(frame, text='Retry microphone now', command=retry_now).pack(anchor='w', pady=4)
         ttk.Button(frame, text='Start JARVIS when I sign in', command=lambda: self.set_startup(True)).pack(anchor='w', pady=4)
         ttk.Button(frame, text='Disable sign-in startup', command=lambda: self.set_startup(False)).pack(anchor='w')
         model_label = tk.StringVar(value='Model: ' + (self.listener.model_path or 'not selected'))
@@ -353,8 +382,12 @@ class BackgroundController:
         collect()
 
     def retry_listener(self):
-        if not getattr(self.desktop, '_closing', False) and self.preferences.get('enabled') and not self.enabled:
-            self.enable()
+        if getattr(self.desktop, '_closing', False) or not self.preferences.get('enabled') or self.enabled:
+            return
+        # Device recovery and listener shutdown can take longer than one timer.
+        # Keep retrying without opening a modal dialog over a hidden desktop.
+        if not self.enable(show_error=False):
+            self.desktop.root.after(30000, self.retry_listener)
 
 
 def install_background_ui():
@@ -374,7 +407,9 @@ def install_background_ui():
         ttk.Button(bar, text='EXIT COMPLETELY', command=self._exit_completely).pack(side='right', padx=8)
         root.protocol('WM_DELETE_WINDOW', self._close)
         if '--background' in sys.argv:
-            root.after(1200, self.background.hide_to_tray)
+            # A sign-in shortcut is not proof that the microphone is listening.
+            # Keep setup visible if the saved listener could not start.
+            root.after(1200, lambda: self.background.hide_to_tray() if self.background.enabled else None)
     def close(self):
         self.background.hide_to_tray()
     def exit_completely(self):
