@@ -26,7 +26,26 @@ try {
     if ($Process.ExitCode -ne 0) { throw ('Installer failed with code ' + $Process.ExitCode + '. Check the install log beside this file.') }
     'Update installed successfully.' | Set-Content -LiteralPath $Log
     if (-not $NoRelaunch) {
-        Start-Process -FilePath (Join-Path $AppDir 'JARVIS-OMEGA-V7.exe') -WorkingDirectory $AppDir
+        $Ready = $Log + '.desktop-ready'
+        Remove-Item -LiteralPath $Ready -ErrorAction SilentlyContinue
+        $env:JARVIS_UPDATE_READY_FILE = $Ready
+        try {
+            $Desktop = Start-Process -FilePath (Join-Path $AppDir 'JARVIS-OMEGA-V7.exe') -WorkingDirectory $AppDir -PassThru
+        } finally {
+            Remove-Item Env:JARVIS_UPDATE_READY_FILE -ErrorAction SilentlyContinue
+        }
+        $Deadline = (Get-Date).AddSeconds(45)
+        while ((Get-Date) -lt $Deadline) {
+            if (Test-Path -LiteralPath $Ready) {
+                $Version = (Get-Content -LiteralPath $Ready -Raw).Trim()
+                ('Update installed; desktop started version ' + $Version) | Set-Content -LiteralPath $Log
+                return
+            }
+            $Desktop.Refresh()
+            if ($Desktop.HasExited) { throw ('Updated desktop exited before readiness (code ' + $Desktop.ExitCode + ').') }
+            Start-Sleep -Milliseconds 250
+        }
+        throw 'Installer finished, but the updated desktop did not report readiness within 45 seconds.'
     }
 } catch {
     $_.Exception.Message | Set-Content -LiteralPath $Log
