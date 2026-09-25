@@ -238,6 +238,24 @@ class BackgroundLifecycleTests(unittest.TestCase):
         desktop.root.deiconify.assert_called_once()
         self.assertIn('device lost', desktop._append.call_args.args[1])
 
+    def test_failed_device_recovery_retries_without_modal_dialog(self):
+        controller, desktop = self.controller()
+        controller.enabled = False
+        controller.preferences['enabled'] = True
+        with patch.object(controller, 'enable', return_value=False) as enable:
+            controller.retry_listener()
+        enable.assert_called_once_with(show_error=False)
+        desktop.root.after.assert_any_call(30000, controller.retry_listener)
+
+    def test_recovery_stops_after_explicit_pause(self):
+        controller, desktop = self.controller()
+        controller.enabled = False
+        controller.preferences['enabled'] = False
+        with patch.object(controller, 'enable') as enable:
+            controller.retry_listener()
+        enable.assert_not_called()
+        self.assertFalse(any(call.args[:1] == (30000,) for call in desktop.root.after.call_args_list))
+
     def test_preferences_round_trip_and_corruption(self):
         with tempfile.TemporaryDirectory() as folder, patch('jarvis.background_ui.preference_path', return_value=Path(folder) / 'background.json'):
             data = {'enabled': True, 'model_path': 'my model', 'location': {'name': 'Patna', 'latitude': 25.6, 'longitude': 85.1}}
