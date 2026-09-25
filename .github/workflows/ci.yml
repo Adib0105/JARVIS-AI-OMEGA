@@ -186,7 +186,8 @@ jobs:
           retention-days: 3
 
   publish-release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Release blocked while security findings in PR #16 remain unresolved.
+    if: ${{ false }}
     needs: [test, windows-regression, windows-package-smoke]
     runs-on: ubuntu-latest
     permissions:
