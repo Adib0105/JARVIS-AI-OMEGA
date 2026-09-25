@@ -29,4 +29,15 @@ $p = Start-Process $InstalledExe -WorkingDirectory $env:TEMP -ArgumentList @('--
 if (-not $p.WaitForExit(60000)) { $p.Kill(); throw 'Installed desktop hung.' }
 if ($p.ExitCode -ne 0 -or -not (Test-Path $Report)) { throw 'Installed desktop failed.' }
 if (-not (Get-Content $Report -Raw | ConvertFrom-Json).ok) { throw 'Installed desktop smoke failed.' }
+# Exercise the normal helper relaunch, not only the -NoRelaunch upgrade path.
+$env:ENABLE_MIC_INPUT = 'false'
+$env:ENABLE_VOICE_OUTPUT = 'false'
+& $PowerShell -NoProfile -NonInteractive -File .\scripts\apply-update.ps1 -Installer $Installer -AppDir $InstallDir -ParentId 0 -Sha256 $Hash
+if ($LASTEXITCODE -ne 0) { throw 'Updated desktop did not report readiness.' }
+$Ready = Join-Path (Split-Path -Parent $Installer) 'update-result.txt.desktop-ready'
+if (-not (Test-Path -LiteralPath $Ready)) { throw 'Updater relaunch readiness file is missing.' }
+if (-not (Get-Content -LiteralPath $Ready -Raw).Trim()) { throw 'Updater relaunch version is missing.' }
+$UpdatedProcesses = Get-CimInstance Win32_Process -Filter "Name = 'JARVIS-OMEGA-V7.exe'" | Where-Object { $_.ExecutablePath -eq $InstalledExe }
+if (-not $UpdatedProcesses) { throw 'Updated desktop is no longer running.' }
+$UpdatedProcesses | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Write-Host 'Installer, desktop shortcut, in-place update, data preservation and installed desktop launch PASS.'

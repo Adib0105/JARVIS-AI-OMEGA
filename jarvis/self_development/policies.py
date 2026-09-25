@@ -6,11 +6,37 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 
+# Generated/self-authored code may improve normal application code, but it must not
+# rewrite the mechanisms that decide what it is allowed to change, how a sandbox is
+# created, how tests are judged, how production is activated, or how rollback works.
+# These paths form the local self-development control plane. Changing them requires
+# a normal human-reviewed engineering change outside the autonomous pipeline.
 IMMUTABLE_SECURITY_PREFIXES = (
     'jarvis/security/',
-    'jarvis/self_development/policies.py',
-    'jarvis/self_development/rollback.py',
+    '.github/',
+    'tests/evaluation/',
+    'tests/test_v7_security.py',
+    'tests/test_final_hardening.py',
+    'tests/test_execution_isolation.py',
+    'scripts/',
+    'installer/',
+    'requirements',
+    'jarvis/logging_utils.py',
+    'jarvis/updater.py',
 )
+
+IMMUTABLE_SELF_DEVELOPMENT_CONTROL_PATHS = frozenset({
+    'jarvis/self_development/policies.py',
+    'jarvis/self_development/sandbox.py',
+    'jarvis/self_development/builder.py',
+    'jarvis/self_development/git_manager.py',
+    'jarvis/self_development/lease.py',
+    'jarvis/self_development/rollback.py',
+    'jarvis/self_development/release.py',
+    'jarvis/self_development/engine.py',
+    'jarvis/self_development/tester.py',
+    'jarvis/skills/activation.py',
+})
 
 PROTECTED_PRODUCTION_PREFIXES = (
     '.git/',
@@ -39,15 +65,16 @@ class PolicyCheck:
 class SelfDevelopmentPolicy:
     """Non-bypassable default policy for generated experiments.
 
-    Self-development can propose changes to security-core files, but normal sandbox
-    automation refuses them. A human-controlled development process can still edit
-    those files outside this engine when deliberately reviewing the security design.
+    This policy is an enforcement boundary, not a prompt preference. Generated
+    changes cannot edit the security core or the self-development control plane,
+    even inside an otherwise isolated worktree.
     """
 
     def __init__(self) -> None:
-        self.max_files_changed = max(1, int(os.getenv('MAX_FILES_CHANGED', '20')))
-        self.max_lines_changed = max(20, int(os.getenv('MAX_LINES_CHANGED', '1200')))
-        self.max_build_time = max(10, int(os.getenv('MAX_BUILD_TIME', '300')))
+        self.max_files_changed = max(1, min(int(os.getenv('MAX_FILES_CHANGED', '20')), 200))
+        self.max_lines_changed = max(20, min(int(os.getenv('MAX_LINES_CHANGED', '1200')), 20000))
+        self.max_build_time = max(10, min(int(os.getenv('MAX_BUILD_TIME', '300')), 1800))
+        self.max_test_time = max(10, min(int(os.getenv('MAX_TEST_TIME', '300')), 1800))
         self.require_approval_for_production = os.getenv(
             'REQUIRE_APPROVAL_FOR_PRODUCTION', 'true'
         ).strip().lower() in {'1', 'true', 'yes', 'on'}
@@ -74,7 +101,9 @@ class SelfDevelopmentPolicy:
         if lower == '.env' or lower.startswith('.env.'):
             return False, 'environment/secret files are protected'
         if any(lower.startswith(prefix.lower()) for prefix in IMMUTABLE_SECURITY_PREFIXES):
-            return False, 'immutable security/rollback policy path'
+            return False, 'immutable security core path'
+        if lower in IMMUTABLE_SELF_DEVELOPMENT_CONTROL_PATHS:
+            return False, 'immutable self-development control-plane path'
         if any(lower.startswith(prefix.lower()) for prefix in PROTECTED_PRODUCTION_PREFIXES):
             return False, 'protected production/runtime data path'
         return True, ''
@@ -93,8 +122,4 @@ class SelfDevelopmentPolicy:
         return PolicyCheck(not reasons, tuple(reasons), len(unique), int(lines_changed))
 
     def can_activate_production(self, *, explicit_user_approval: bool) -> bool:
-        if self.require_approval_for_production:
-            return bool(explicit_user_approval)
-        # Even if config relaxes approval, activation is never allowed through this
-        # policy unless the caller supplies an explicit affirmative decision.
         return bool(explicit_user_approval)

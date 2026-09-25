@@ -36,6 +36,10 @@ jobs:
         run: python -m pip install --upgrade pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Validate installed dependency constraints
+        run: python -m pip check
+      - name: Dedicated adversarial regressions
+        run: python -m unittest discover -s tests -p test_final_hardening.py -v
       - name: Compile all Python
         run: python -m compileall -f -q .
       - name: Full unit integration security evaluation suite
@@ -73,6 +77,10 @@ jobs:
         run: python -m pip install --upgrade pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Validate installed dependency constraints
+        run: python -m pip check
+      - name: Dedicated adversarial regressions
+        run: python -m unittest discover -s tests -p test_final_hardening.py -v
       - name: Compile all Python
         run: python -m compileall -f -q .
       - name: Full Windows regression suite
@@ -186,7 +194,8 @@ jobs:
           retention-days: 3
 
   publish-release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Release remains blocked until FINAL-HARDENING-AUDIT mandatory findings close.
+    if: ${{ false }}
     needs: [test, windows-regression, windows-package-smoke]
     runs-on: ubuntu-latest
     permissions:

@@ -100,7 +100,7 @@ class ComputerActionEngine:
             'resolution_backend': 'local-ocr',
             'action': 'click',
             'verification': {
-                'status': 'PARTIAL',
+                'status': 'UNKNOWN',
                 'verified': False,
                 'evidence': {
                     'ocr_label_resolved': True,
@@ -175,7 +175,7 @@ class ComputerActionEngine:
                 'resolution_backend': 'local-ocr',
                 'action': 'type',
                 'verification': {
-                    'status': 'PARTIAL',
+                    'status': 'UNKNOWN',
                     'verified': False,
                     'evidence': {
                         'ocr_label_resolved': True,
@@ -197,7 +197,7 @@ class ComputerActionEngine:
             }
         else:
             verification = {
-                'status': 'PARTIAL',
+                'status': 'UNKNOWN',
                 'verified': False,
                 'evidence': {'focused': observed.get('focused'), 'value_readback': 'unavailable'},
             }
@@ -212,24 +212,15 @@ class ComputerActionEngine:
 
     @staticmethod
     def _verify_click(before: dict, after: dict, observed: dict) -> dict:
-        if observed.get('focused') is True or observed.get('selected') is True:
-            return {
-                'status': 'VERIFIED',
-                'verified': True,
-                'evidence': {
-                    'focused': observed.get('focused'),
-                    'selected': observed.get('selected'),
-                    'exists': observed.get('exists'),
-                },
-            }
+        # Focus/selection is acknowledgement, not proof of the requested outcome.
         if observed.get('exists') is False:
             return {
-                'status': 'PARTIAL',
+                'status': 'UNKNOWN',
                 'verified': False,
                 'evidence': {'target_disappeared_after_click': True},
             }
         return {
-            'status': 'PARTIAL',
+            'status': 'UNKNOWN',
             'verified': False,
             'evidence': {
                 'focused': observed.get('focused'),

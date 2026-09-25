@@ -65,8 +65,8 @@ class V7ComputerUseTests(unittest.TestCase):
         engine = ComputerActionEngine(FakeBackend([self.downloads]), confidence_threshold=0.82)
         result = engine.semantic_click('Downloads', window_hint='File Explorer')
         self.assertTrue(result['ok'])
-        self.assertEqual(result['verification']['status'], 'VERIFIED')
-        self.assertTrue(result['verification']['verified'])
+        self.assertEqual(result['verification']['status'], 'UNKNOWN')
+        self.assertFalse(result['verification']['verified'])
 
     def test_semantic_type_can_be_partial_when_value_readback_unavailable(self):
         engine = ComputerActionEngine(FakeBackend([self.downloads]), confidence_threshold=0.82)
@@ -74,7 +74,7 @@ class V7ComputerUseTests(unittest.TestCase):
         with patch.dict(sys.modules, {'pyautogui': fake_pyautogui}):
             result = engine.semantic_type('Downloads', 'hello', window_hint='File Explorer')
         self.assertTrue(result['ok'])
-        self.assertEqual(result['verification']['status'], 'PARTIAL')
+        self.assertEqual(result['verification']['status'], 'UNKNOWN')
         self.assertFalse(result['verification']['verified'])
 
     def test_verifier_respects_explicit_partial_evidence(self):

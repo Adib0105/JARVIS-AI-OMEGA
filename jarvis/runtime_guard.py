@@ -104,24 +104,9 @@ def preferred_text_model(configured_model: str, kind: str = 'chat') -> str:
 
 
 def _repair_answer(self, user_text: str, bad_answer: str) -> str:
-    if settings.provider != 'openrouter':
-        return bad_answer
-    try:
-        turn = self.provider.chat(
-            system=(
-                f'You are Friday, the female assistant inside {settings.assistant_name}, created by {settings.creator_name}. '
-                'Answer directly in clean Hinglish/English matching the user. Use only Latin and Devanagari '
-                'unless another script was requested. Do not output broken HTML/template tokens.'
-            ),
-            messages=[{'role': 'user', 'content': user_text}],
-            model=STABLE_FREE_TEXT_MODEL,
-            timeout=settings.ai_timeout_seconds,
-        )
-        self.last_model_used = turn.model or STABLE_FREE_TEXT_MODEL
-        self.last_provider_used = 'openrouter-quality-retry'
-        return turn.text.strip() or bad_answer
-    except Exception:
-        return bad_answer
+    # Re-querying without the original tool transcript can fabricate completion or
+    # strip citations and uncertainty. Preserve the authoritative answer verbatim.
+    return bad_answer
 
 
 def install_runtime_guards() -> None:
@@ -308,4 +293,13 @@ def run_adaptive_gui() -> None:
         pass
     from .desktop_smoke import schedule_smoke_check
     schedule_smoke_check(root, app)
+    ready_file = os.environ.get('JARVIS_UPDATE_READY_FILE')
+    if ready_file:
+        def report_update_ready():
+            try:
+                from pathlib import Path
+                Path(ready_file).write_text(settings.app_version, encoding='utf-8')
+            except OSError:
+                pass  # The helper reports the readiness timeout.
+        root.after(1000, report_update_ready)
     root.mainloop()

@@ -138,6 +138,7 @@ class YoutubeTests(unittest.TestCase):
 
     def test_playback_failure_is_not_success(self):
         registry = MagicMock(spec=ToolRegistry)
+        registry.schemas.return_value = ToolRegistry.schemas(registry, True)
         registry.permissions = MagicMock()
         registry.permissions.check.return_value = Decision(True)
         # Handlers are lambdas, so unused registry collaborators need not be created.
@@ -237,6 +238,24 @@ class BackgroundLifecycleTests(unittest.TestCase):
         self.assertFalse(controller.enabled)
         desktop.root.deiconify.assert_called_once()
         self.assertIn('device lost', desktop._append.call_args.args[1])
+
+    def test_failed_device_recovery_retries_without_modal_dialog(self):
+        controller, desktop = self.controller()
+        controller.enabled = False
+        controller.preferences['enabled'] = True
+        with patch.object(controller, 'enable', return_value=False) as enable:
+            controller.retry_listener()
+        enable.assert_called_once_with(show_error=False)
+        desktop.root.after.assert_any_call(30000, controller.retry_listener)
+
+    def test_recovery_stops_after_explicit_pause(self):
+        controller, desktop = self.controller()
+        controller.enabled = False
+        controller.preferences['enabled'] = False
+        with patch.object(controller, 'enable') as enable:
+            controller.retry_listener()
+        enable.assert_not_called()
+        self.assertFalse(any(call.args[:1] == (30000,) for call in desktop.root.after.call_args_list))
 
     def test_preferences_round_trip_and_corruption(self):
         with tempfile.TemporaryDirectory() as folder, patch('jarvis.background_ui.preference_path', return_value=Path(folder) / 'background.json'):

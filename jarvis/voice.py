@@ -107,6 +107,7 @@ class VoiceOutput:
         self._interrupt_reason: str | None = None
         self._active_epoch = 0
         self.last_error: str | None = None
+        self._last_process_failure: str | None = None
         self._current_text: str | None = None
         self._last_text: str | None = None
         self._process: subprocess.Popen | None = None
@@ -324,6 +325,7 @@ class VoiceOutput:
 
     def _speak_process(self, text: str, engine: str) -> str:
         process = None
+        self._last_process_failure = None
         # Parent owns all temporary files, including when the child is killed.
         with tempfile.TemporaryDirectory(prefix='jarvis-speech-') as directory:
             path = os.path.join(directory, 'speech.txt')
@@ -348,12 +350,16 @@ class VoiceOutput:
                     return_code = process.wait(timeout=max(180, min(900, len(text) / 8)))
                 except subprocess.TimeoutExpired:
                     self._terminate_process(process)
+                    self._last_process_failure = f'{engine} speech worker timed out'
                     return 'interrupted' if self._interrupted() else 'failed'
                 with self._lock:
                     if self._interrupted():
                         return 'interrupted'
+                if return_code != 0:
+                    self._last_process_failure = f'{engine} speech worker exited with code {return_code}'
                 return 'completed' if return_code == 0 else 'failed'
-            except Exception:
+            except Exception as exc:
+                self._last_process_failure = f'{engine} speech worker could not start ({type(exc).__name__})'
                 return 'interrupted' if self._interrupted() else 'failed'
             finally:
                 self._terminate_process(process)
@@ -374,14 +380,14 @@ class VoiceOutput:
             result = self._speak_process(text, engine)
             if result != 'failed':
                 return result
-            self.last_error = f'{engine} voice unavailable; using installed offline voice.'
+            self.last_error = (self._last_process_failure or f'{engine} voice unavailable') + '; using installed offline voice.'
             self._emit('fallback')
         with self._lock:
             if self._interrupted():
                 return 'interrupted'
         result = self._speak_offline(text)
         if result == 'failed':
-            self.last_error = 'Speech failed. Check audio output, voice packages and selected engine credentials.'
+            self.last_error = (self._last_process_failure or 'Speech worker failed') + '. Check audio output and voice packages.'
         return result
 
     def _worker(self) -> None:

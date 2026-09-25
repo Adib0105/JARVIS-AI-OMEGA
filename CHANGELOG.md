@@ -2,6 +2,15 @@
 
 All notable engineering changes to JARVIS AI OMEGA are documented here.
 
+## Remaining-blocker hardening — unreleased, release blocked
+
+- Fail closed for generated/project test execution until OS isolation is validated.
+- Selectively port revisioned mission persistence, legal transitions, address-pinned public reading and protected control-plane policy from existing hardening branches.
+- Reduce false verification, redact tested persistence paths, preserve coding routing and response evidence, filter irrelevant retrieval, bound local reads and use SQLite online migration backups.
+- Enforce enabled tool schemas before dispatch and serialize connection save/apply inside one process.
+- Add deterministic adversarial regressions and retain Windows packaging/Defender gates; disable publication while mandatory findings remain unresolved.
+- Local Linux: 369 tests passed. Windows, transactional rollback and production readiness are not verified. Full evidence and open findings: `docs/FINAL-HARDENING-AUDIT.md`.
+
 ## V7 / V7.5 engineering track — unreleased
 
 ### Reliability and architecture

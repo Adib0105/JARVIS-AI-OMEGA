@@ -9,6 +9,7 @@ from .mission import VerificationResult
 
 
 SIDE_EFFECTING_TOOLS = {
+    'run_project_tests',
     'remember_fact', 'add_note', 'add_todo', 'complete_todo', 'add_reminder',
     'index_local_text_file', 'index_document',
     'open_url', 'open_app', 'open_local_path', 'browser_search', 'youtube_play_first',
@@ -24,7 +25,7 @@ PARTIAL_VERIFICATION_TOOLS = {
 
 _EXPLICIT_STATUSES = {
     'VERIFIED', 'PARTIAL', 'UNVERIFIED', 'FAILED',
-    'ACKNOWLEDGED_NOT_OBSERVED', 'VERIFIED_MODEL_OUTPUT',
+    'ACKNOWLEDGED_NOT_OBSERVED', 'VERIFIED_MODEL_OUTPUT', 'UNKNOWN',
 }
 
 
@@ -97,7 +98,7 @@ class VerificationEngine:
             return self._verify_file_write(event, name, args, result)
         if name == 'run_project_tests':
             code = result.get('returncode') if isinstance(result, dict) else None
-            return _base(event, name, side_effecting=False) | {
+            return _base(event, name, side_effecting=True) | {
                 'verified': code == 0,
                 'status': 'VERIFIED' if code == 0 else 'FAILED',
                 'evidence': {'returncode': code},
@@ -176,8 +177,8 @@ class VerificationEngine:
         if not tool_events:
             ok = bool(result_text.strip())
             return VerificationResult(
-                verified=ok,
-                status='VERIFIED_MODEL_OUTPUT' if ok else 'FAILED',
+                verified=False,
+                status='UNKNOWN' if ok else 'FAILED',
                 summary='Model produced a step result with no external tool action.' if ok else 'No step result was produced.',
                 evidence=[{'type': 'model_output', 'characters': len(result_text)}] if ok else [],
             )

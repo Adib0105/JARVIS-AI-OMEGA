@@ -1,3 +1,5 @@
+from unittest.mock import patch as fixture_patch
+from trusted_fixture_runner import run_fixture
 import shutil
 import subprocess
 import tempfile
@@ -17,6 +19,13 @@ def git(args, cwd):
 
 @unittest.skipUnless(shutil.which('git'), 'Git required for release tests')
 class V75ReleaseTests(unittest.TestCase):
+    def setUp(self):
+        # Exercise proposal/release state with trusted test-authored fixture code.
+        # Untrusted production execution is separately tested to fail closed.
+        patcher = fixture_patch('jarvis.self_development.tester.SelfDevelopmentTester._run', run_fixture)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _repo(self, root: Path) -> Path:
         repo = root / 'repo'; repo.mkdir()
         git(['init'], repo)

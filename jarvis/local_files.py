@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
+import stat
 
 from .config import settings
 
@@ -26,7 +28,9 @@ class LocalFiles:
         resolved = path.expanduser().resolve()
         for root in self.roots:
             try:
-                resolved.relative_to(root)
+                # Resolve both sides: Windows temp/known folders may have aliases or
+                # different casing while still referring to the same approved folder.
+                resolved.relative_to(root.expanduser().resolve())
                 return True
             except ValueError:
                 continue
@@ -67,4 +71,14 @@ class LocalFiles:
         if not path.is_file():
             raise FileNotFoundError(path)
         cap = max(1000, min(max_chars, 50000))
-        return path.read_text(encoding='utf-8', errors='replace')[:cap]
+        # Open only regular bounded files; nonblocking/no-follow prevents Unix
+        # device/FIFO and final-component symlink swaps from hanging the agent.
+        fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NONBLOCK', 0) | getattr(os, 'O_NOFOLLOW', 0))
+        with os.fdopen(fd, 'rb') as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 2_000_000:
+                raise ValueError('Only regular text files up to 2 MB may be read.')
+            raw = stream.read(min(2_000_001, cap * 4 + 4))
+        if b'\0' in raw:
+            raise ValueError('Binary content is not a text file.')
+        return raw.decode('utf-8', errors='replace')[:cap]

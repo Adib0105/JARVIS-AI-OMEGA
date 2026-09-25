@@ -3,6 +3,18 @@ from dataclasses import replace
 import os
 from pathlib import Path
 import tempfile
+import threading
+from functools import wraps
+
+_CONNECTION_LOCK = threading.RLock()
+
+def serialized_connection(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _CONNECTION_LOCK:
+            return function(*args, **kwargs)
+    return wrapped
+
 from dotenv import dotenv_values, set_key
 from .config import ROOT, settings
 from .providers.factory import create_primary_provider
@@ -45,6 +57,7 @@ def close_client(provider):
             pass
 
 
+@serialized_connection
 def save_and_apply(core, provider, key='', model=None, path=None):
     """Call only while no request is running. Applying is not online authentication."""
     if provider not in KEY_FIELDS:
