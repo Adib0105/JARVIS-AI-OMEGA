@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import socket
+import subprocess
+import sys
 import sqlite3
 import tempfile
 import unittest
@@ -40,6 +42,17 @@ class FinalHardeningTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+
+    def test_logging_first_import_has_no_security_cycle(self):
+        result = subprocess.run(
+            [sys.executable, '-c',
+             'from jarvis.logging_utils import redact_text; '
+             'from jarvis.security import AuditStore; '
+             'assert redact_text("password=secret") == "password=[REDACTED]"; '
+             'assert AuditStore.__name__ == "AuditStore"'],
+            capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_generated_execution_fails_closed_for_all_attack_categories(self):
         attacks = {
