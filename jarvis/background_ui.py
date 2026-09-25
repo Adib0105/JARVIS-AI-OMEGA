@@ -252,6 +252,27 @@ class BackgroundController:
             self.disable() if self.enabled else self.enable()
             status.set('ON' if self.enabled else 'OFF')
         ttk.Button(frame, text='Enable / pause background microphone', command=toggle).pack(anchor='w')
+        health = tk.StringVar(value='Check background health to see setup status.')
+        ttk.Label(frame, textvariable=health, wraplength=520, justify='left').pack(anchor='w', pady=6)
+        def check_health():
+            from pathlib import Path
+            from .wake_model import model_valid
+            selected = self.listener.model_path
+            model_ready = bool(selected and model_valid(Path(selected).expanduser()))
+            listening = self.enabled and self.listener.running
+            health.set(
+                'Wake model: ' + ('ready' if model_ready else 'missing or incomplete')
+                + '  |  Microphone listener: ' + ('running' if listening else 'stopped')
+                + '  |  Tray: ' + ('running' if self.tray else 'not active')
+                + '  |  Resume after sign-in: ' + ('enabled' if self.preferences.get('enabled') else 'disabled')
+            )
+        ttk.Button(frame, text='Check background health', command=check_health).pack(anchor='w')
+        def retry_now():
+            if not self.enabled:
+                self.enable()
+            status.set('ON' if self.enabled else 'OFF')
+            check_health()
+        ttk.Button(frame, text='Retry microphone now', command=retry_now).pack(anchor='w', pady=4)
         ttk.Button(frame, text='Start JARVIS when I sign in', command=lambda: self.set_startup(True)).pack(anchor='w', pady=4)
         ttk.Button(frame, text='Disable sign-in startup', command=lambda: self.set_startup(False)).pack(anchor='w')
         model_label = tk.StringVar(value='Model: ' + (self.listener.model_path or 'not selected'))
