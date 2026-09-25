@@ -6,7 +6,7 @@ The current hardening work is partial. No F01–F22 finding is marked CLOSED; se
 - Auto-updater rollback, global mission budgets, distributed mission ownership and restart-safe side-effect deduplication are missing.
 - Browser integration, all-store redaction, all-route capability enforcement, all-reader limits and complete evidence-preserving rendering remain incompletely verified.
 - Config save/apply is serialized only inside one process. Other settings writers and stale/cross-process edits can still conflict; no unified precedence model is claimed.
-- The source batch launcher still requires an existing `.env`.
+- The source batch launchers permit first run without `.env`; that path still needs an on-PC validation.
 - Dependency reproducibility, repository-wide exception classification, remote required checks and real Windows voice/rollback evidence remain outstanding.
 - Automatic release publication is disabled. Existing CI packaging checks remain enabled, but no local Windows/package result is available.
 
