@@ -293,4 +293,13 @@ def run_adaptive_gui() -> None:
         pass
     from .desktop_smoke import schedule_smoke_check
     schedule_smoke_check(root, app)
+    ready_file = os.environ.get('JARVIS_UPDATE_READY_FILE')
+    if ready_file:
+        def report_update_ready():
+            try:
+                from pathlib import Path
+                Path(ready_file).write_text(settings.app_version, encoding='utf-8')
+            except OSError:
+                pass  # The helper reports the readiness timeout.
+        root.after(1000, report_update_ready)
     root.mainloop()
