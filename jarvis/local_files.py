@@ -28,7 +28,9 @@ class LocalFiles:
         resolved = path.expanduser().resolve()
         for root in self.roots:
             try:
-                resolved.relative_to(root)
+                # Resolve both sides: Windows temp/known folders may have aliases or
+                # different casing while still referring to the same approved folder.
+                resolved.relative_to(root.expanduser().resolve())
                 return True
             except ValueError:
                 continue
