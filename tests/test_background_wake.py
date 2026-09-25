@@ -205,6 +205,17 @@ class BackgroundLifecycleTests(unittest.TestCase):
         controller.enabled = True
         return controller, desktop
 
+    def test_support_report_excludes_private_paths_and_keys(self):
+        controller, _ = self.controller()
+        controller.listener.model_path = '/private/model/sk-example-secret'
+        controller.preferences['enabled'] = True
+        with patch('jarvis.wake_model.model_valid', return_value=True):
+            report = controller.health_report()
+        self.assertIn('Wake model: ready', report)
+        self.assertIn('Listening preference: enabled', report)
+        self.assertNotIn('/private/model', report)
+        self.assertNotIn('sk-example-secret', report)
+
     def test_speech_and_busy_suppress_wake(self):
         controller, desktop = self.controller()
         for field in ['speech', 'busy', 'pending']:
