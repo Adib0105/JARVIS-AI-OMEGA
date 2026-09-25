@@ -382,7 +382,9 @@ def install_background_ui():
         ttk.Button(bar, text='EXIT COMPLETELY', command=self._exit_completely).pack(side='right', padx=8)
         root.protocol('WM_DELETE_WINDOW', self._close)
         if '--background' in sys.argv:
-            root.after(1200, self.background.hide_to_tray)
+            # A sign-in shortcut is not proof that the microphone is listening.
+            # Keep setup visible if the saved listener could not start.
+            root.after(1200, lambda: self.background.hide_to_tray() if self.background.enabled else None)
     def close(self):
         self.background.hide_to_tray()
     def exit_completely(self):
