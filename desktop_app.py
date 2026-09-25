@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -14,6 +15,25 @@ if __name__ == '__main__' and sys.argv[1:2] == ['--jarvis-background-check']:
     from jarvis.background_check import main as background_check
     raise SystemExit(background_check())
 
+
+def _report_update_process_ready() -> bool:
+    """Acknowledge a successful updater relaunch before local sign-in blocks.
+
+    A first V7.6 launch legitimately waits at the account screen.  The updater
+    only needs evidence that the new executable initialized and owns the desktop
+    instance; authentication remains a separate user interaction.
+    """
+    ready_file = os.environ.get('JARVIS_UPDATE_READY_FILE', '').strip()
+    if not ready_file:
+        return False
+    try:
+        from jarvis import __version__
+        Path(ready_file).write_text(__version__, encoding='utf-8')
+        return True
+    except OSError:
+        return False
+
+
 def main():
     from jarvis.desktop_instance import acquire_desktop_instance, show_existing_desktop
     if not acquire_desktop_instance():
@@ -22,6 +42,8 @@ def main():
         from tkinter import messagebox
         messagebox.showinfo('JARVIS is running', 'Open JARVIS from its taskbar or system tray icon. Exit that instance before starting another.')
         raise SystemExit(0)
+
+    _report_update_process_ready()
 
     # Packaged smoke tests must remain unattended.  Every ordinary desktop run
     # uses the local account/session flow before config/database modules import,

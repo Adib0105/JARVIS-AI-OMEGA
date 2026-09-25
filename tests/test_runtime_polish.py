@@ -1,4 +1,5 @@
 import json
+import os
 import queue
 import tempfile
 import threading
@@ -16,6 +17,16 @@ from jarvis import youtube_player
 
 
 class SettingsRecoveryTests(unittest.TestCase):
+    def test_updater_readiness_is_reported_before_interactive_login(self):
+        from desktop_app import _report_update_process_ready
+        from jarvis import __version__
+
+        with tempfile.TemporaryDirectory() as folder:
+            ready = Path(folder) / 'desktop-ready.txt'
+            with patch.dict(os.environ, {'JARVIS_UPDATE_READY_FILE': str(ready)}):
+                self.assertTrue(_report_update_process_ready())
+            self.assertEqual(ready.read_text(encoding='utf-8'), __version__)
+
     def test_malformed_background_preferences_do_not_enable_mic(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'prefs.json'
