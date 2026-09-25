@@ -1,4 +1,5 @@
 import json
+import os
 import queue
 import tempfile
 import threading
@@ -16,6 +17,16 @@ from jarvis import youtube_player
 
 
 class SettingsRecoveryTests(unittest.TestCase):
+    def test_updater_readiness_is_reported_before_interactive_login(self):
+        from desktop_app import _report_update_process_ready
+        from jarvis import __version__
+
+        with tempfile.TemporaryDirectory() as folder:
+            ready = Path(folder) / 'desktop-ready.txt'
+            with patch.dict(os.environ, {'JARVIS_UPDATE_READY_FILE': str(ready)}):
+                self.assertTrue(_report_update_process_ready())
+            self.assertEqual(ready.read_text(encoding='utf-8'), __version__)
+
     def test_malformed_background_preferences_do_not_enable_mic(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'prefs.json'
@@ -95,23 +106,13 @@ class BackgroundRecoveryTests(unittest.TestCase):
         self.assertFalse(c.pending)
         d._send_text.assert_not_called()
 
-    def test_unexpected_briefing_failure_releases_pending_state(self):
+    def test_followup_failure_releases_pending_state(self):
         c, d = self.controller()
-        c.heard('')
-        completed = threading.Event()
-        def failed(_):
-            completed.set()
-            raise RuntimeError('bad device')
-        with patch('jarvis.background_ui.build_briefing', side_effect=failed):
-            c.poll()
-            self.assertTrue(completed.wait(2))
-            # Wait for the completion event without relying on thread timing.
-            item = c.events.get(timeout=2) if c.pending else None
-            if item:
-                c.events.put(item)
-                c.poll()
+        c.pending = True
+        c.events.put(('followup', {'text': '', 'error': 'bad device', 'listener_error': ''}, c.generation))
+        c.poll()
         self.assertFalse(c.pending)
-        self.assertIn('available nahi', d.voice.speak.call_args.args[0])
+        self.assertIn('Command sun nahi', d.voice.speak.call_args.args[0])
 
     def test_callback_error_does_not_kill_poll_loop(self):
         c, d = self.controller()

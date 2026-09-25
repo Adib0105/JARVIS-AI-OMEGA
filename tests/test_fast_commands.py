@@ -19,6 +19,12 @@ class FastCommandTests(unittest.TestCase):
     def test_normal_chat_is_not_hijacked(self):
         self.assertIsNone(parse_fast_command('Chrome aur Edge me kya difference hai?'))
 
+    def test_windows_power_command(self):
+        self.assertEqual(parse_fast_command('Jarvis volume badhao'), ('windows_control', {'action': 'volume_up'}))
+
+    def test_windows_power_command_requires_exact_phrase(self):
+        self.assertIsNone(parse_fast_command('volume badhane se speaker kharab hoga kya'))
+
 
 if __name__ == '__main__':
     unittest.main()

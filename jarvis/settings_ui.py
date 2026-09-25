@@ -17,7 +17,7 @@ EDITABLE_KEYS = {
     'ENABLE_VOICE_OUTPUT', 'EDGE_VOICE_RATE', 'EDGE_VOICE_VOLUME', 'EDGE_VOICE_PITCH',
     'ENABLE_MIC_INPUT', 'ENABLE_WAKE_WORD', 'WAKE_WORD', 'SPEECH_LANGUAGE', 'MIC_RECORD_SECONDS',
     'REQUIRE_LOCAL_APPROVAL', 'ENABLE_DESKTOP_AUTOMATION', 'ENABLE_DOCUMENT_INTELLIGENCE',
-    'ENABLE_CODING_TOOLS', 'ENABLE_GOOGLE_WORKSPACE',
+    'ENABLE_CODING_TOOLS', 'ENABLE_GOOGLE_WORKSPACE', 'TRUSTED_LOCAL_MODE',
     'MODEL_ROUTING', 'FAST_MODEL', 'SMART_MODEL', 'VISION_MODEL',
     'ENABLE_LOCAL_FALLBACK', 'LOCAL_AI_BASE_URL', 'LOCAL_AI_MODEL',
     'AUTO_SUMMARIZE', 'SUMMARIZE_AFTER_MESSAGES',
@@ -154,12 +154,19 @@ def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
     text_row('Voice pitch', 'EDGE_VOICE_PITCH', settings.edge_voice_pitch)
 
     section('AGENT + COMPUTER CONTROL')
+    from .security.policy import trusted_local_mode_enabled
+    bool_row('Power mode for allowlisted local actions', 'TRUSTED_LOCAL_MODE', trusted_local_mode_enabled())
     bool_row('Require local action approvals', 'REQUIRE_LOCAL_APPROVAL', settings.require_local_approval)
     bool_row('Desktop automation tools', 'ENABLE_DESKTOP_AUTOMATION', settings.enable_desktop_automation)
     bool_row('Document intelligence', 'ENABLE_DOCUMENT_INTELLIGENCE', settings.enable_document_intelligence)
     bool_row('Coding/Git workspace tools', 'ENABLE_CODING_TOOLS', settings.enable_coding_tools)
     bool_row('Google Workspace tools', 'ENABLE_GOOGLE_WORKSPACE', settings.enable_google_workspace)
     text_row('Mission max steps', 'MISSION_MAX_STEPS', settings.mission_max_steps)
+    tk.Label(
+        body,
+        text='Power mode speeds up ordinary allowlisted actions. Password access, arbitrary shell, deletion, email sending and high-risk keyboard/window actions remain protected.',
+        bg='#091a26', fg='#86a8b8', justify='left', wraplength=600, font=('Segoe UI', 8),
+    ).pack(anchor='w', pady=(3, 6))
 
     section('MODEL ROUTING + FALLBACK')
     text_row('Model routing', 'MODEL_ROUTING', settings.model_routing)

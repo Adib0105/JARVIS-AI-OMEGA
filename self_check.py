@@ -134,7 +134,11 @@ def main() -> None:
         from jarvis.observability import ObservabilityManager
         from jarvis.storage import BackupManager, TARGET_SCHEMA_VERSION
 
-        results.append(check('JARVIS version', __version__ == settings.app_version == '7.0.0', __version__))
+        results.append(check(
+            'JARVIS version',
+            __version__ == settings.app_version and __version__.startswith('7.6.'),
+            __version__,
+        ))
         findings = validate_settings(settings)
         for finding in findings:
             if finding.level == ValidationLevel.FAIL:
@@ -227,7 +231,7 @@ def main() -> None:
     except Exception as exc:
         results.append(check('JARVIS config/memory/V7.5 diagnostics', False, str(exc)))
 
-    print('\nJARVIS OMEGA V7 / V7.5 ENGINEERING CORE:', 'READY' if all(results) else 'NEEDS ATTENTION')
+    print('\nJARVIS OMEGA V7.6 ENGINEERING CORE:', 'READY' if all(results) else 'NEEDS ATTENTION')
 
 
 if __name__ == '__main__':

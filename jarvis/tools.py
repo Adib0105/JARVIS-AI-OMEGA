@@ -17,6 +17,7 @@ from .permissions import PermissionGate
 from .system_tools import current_time, open_app, open_url, system_info, system_metrics
 from .youtube_player import play_first_video
 from .web_tools import read_web_page, search_news, search_web
+from .windows_controls import WINDOWS_CONTROL_ACTIONS, windows_control
 
 
 def _fn(name: str, description: str, properties: dict | None = None, required: list[str] | None = None) -> dict:
@@ -123,6 +124,12 @@ class ToolRegistry:
                 _fn('press_key', 'Press one allowlisted keyboard key. Requires approval.', {'key': s}, ['key']),
                 _fn('hotkey', 'Press an allowlisted 2-4 key hotkey. Requires approval.', {'keys': {'type': 'array', 'items': s, 'minItems': 2, 'maxItems': 4}}, ['keys']),
                 _fn('click_screen', 'Click a visible screen coordinate. Requires approval.', {'x': {'type': 'integer'}, 'y': {'type': 'integer'}, 'button': s}, ['x', 'y', 'button']),
+                _fn(
+                    'windows_control',
+                    'Run one of 20 allowlisted Windows media, window, desktop, lock, or Settings actions. High-risk actions remain permission-gated.',
+                    {'action': {'type': 'string', 'enum': list(WINDOWS_CONTROL_ACTIONS)}},
+                    ['action'],
+                ),
             ]
 
         if settings.enable_coding_tools:
@@ -201,7 +208,10 @@ class ToolRegistry:
             valid = {'string': isinstance(value, str), 'integer': type(value) is int,
                      'number': type(value) in (int, float), 'boolean': type(value) is bool,
                      'array': isinstance(value, list), 'object': isinstance(value, dict)}.get(kind, False)
-            if not valid or ('minimum' in spec and value < spec['minimum']) or ('maximum' in spec and value > spec['maximum']):
+            if (not valid
+                    or ('minimum' in spec and value < spec['minimum'])
+                    or ('maximum' in spec and value > spec['maximum'])
+                    or ('enum' in spec and value not in spec['enum'])):
                 return json.dumps({'ok': False, 'error': 'INVALID_TOOL_ARGUMENTS'})
         decision = self.permissions.check(name, args)
         if not decision.allowed:
@@ -249,6 +259,7 @@ class ToolRegistry:
                 'press_key': lambda: press_key(args['key']),
                 'hotkey': lambda: hotkey(args['keys']),
                 'click_screen': lambda: click_screen(args['x'], args['y'], args['button']),
+                'windows_control': lambda: windows_control(args['action']),
                 'list_code_tree': lambda: self.coding.tree(args['folder'], args['max_items']),
                 'write_local_text_file': lambda: self.coding.write_text(args['file_path'], args['content']),
                 'run_project_tests': lambda: self.coding.run_unit_tests(args['project_dir'], args['timeout']),

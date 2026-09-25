@@ -1,4 +1,6 @@
+import os
 import sys
+from pathlib import Path
 
 if __name__ == '__main__' and sys.argv[1:2] == ['--jarvis-speech-check']:
     from jarvis.speech_check import main as speech_check
@@ -13,7 +15,49 @@ if __name__ == '__main__' and sys.argv[1:2] == ['--jarvis-background-check']:
     from jarvis.background_check import main as background_check
     raise SystemExit(background_check())
 
+
+def _report_update_process_ready() -> bool:
+    """Acknowledge a successful updater relaunch before local sign-in blocks.
+
+    A first V7.6 launch legitimately waits at the account screen.  The updater
+    only needs evidence that the new executable initialized and owns the desktop
+    instance; authentication remains a separate user interaction.
+    """
+    ready_file = os.environ.get('JARVIS_UPDATE_READY_FILE', '').strip()
+    if not ready_file:
+        return False
+    try:
+        from jarvis import __version__
+        Path(ready_file).write_text(__version__, encoding='utf-8')
+        return True
+    except OSError:
+        return False
+
+
 def main():
+    from jarvis.desktop_instance import acquire_desktop_instance, show_existing_desktop
+    if not acquire_desktop_instance():
+        if show_existing_desktop():
+            raise SystemExit(0)
+        from tkinter import messagebox
+        messagebox.showinfo('JARVIS is running', 'Open JARVIS from its taskbar or system tray icon. Exit that instance before starting another.')
+        raise SystemExit(0)
+
+    _report_update_process_ready()
+
+    # Packaged smoke tests must remain unattended.  Every ordinary desktop run
+    # uses the local account/session flow before config/database modules import,
+    # which is what makes per-profile storage isolation deterministic.
+    if '--jarvis-desktop-smoke' not in sys.argv:
+        from jarvis.user_profiles import authenticate_desktop
+        app_root = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parent
+        profile = authenticate_desktop(
+            legacy_data_dir=app_root / 'data',
+            background='--background' in sys.argv,
+        )
+        if profile is None:
+            raise SystemExit(0)
+
     from jarvis.background_ui import install_background_ui
     from jarvis.chat_workspace_ui import install_chat_workspace
     from jarvis.fast_runtime import install_fast_command_runtime
@@ -23,16 +67,6 @@ def main():
     from jarvis.ui_release_extension import install_release_ui
     from jarvis.ui_skill_extension import install_skill_ui
     from jarvis.voice_ui import install_voice_ui
-
-
-
-    from jarvis.desktop_instance import acquire_desktop_instance, show_existing_desktop
-    if not acquire_desktop_instance():
-        if show_existing_desktop():
-            raise SystemExit(0)
-        from tkinter import messagebox
-        messagebox.showinfo('JARVIS is running', 'Open JARVIS from its taskbar or system tray icon. Exit that instance before starting another.')
-        raise SystemExit(0)
     install_exception_hook()
     install_runtime_guards()
     install_fast_command_runtime()

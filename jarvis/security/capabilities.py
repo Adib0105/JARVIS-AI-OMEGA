@@ -108,6 +108,12 @@ TOOL_SECURITY: dict[str, ToolSecurityProfile] = {
     'press_key': profile('press_key', HIGH, {Capability.KEYBOARD_CONTROL}, 'Presses an allowlisted key in the focused desktop application.', True),
     'hotkey': profile('hotkey', HIGH, {Capability.KEYBOARD_CONTROL}, 'Presses an allowlisted keyboard shortcut.', True),
     'click_screen': profile('click_screen', HIGH, {Capability.MOUSE_CONTROL, Capability.SCREEN_CONTROL}, 'Clicks a specified screen coordinate.', True),
+    'windows_control': profile(
+        'windows_control', HIGH,
+        {Capability.APP_CONTROL, Capability.KEYBOARD_CONTROL, Capability.SCREEN_CONTROL},
+        'Runs one exact allowlisted Windows media/window/desktop/settings action; some actions can interrupt work.',
+        True,
+    ),
 
     # Coding / Git - exact registered V6/V7 tool names
     'list_code_tree': profile('list_code_tree', MEDIUM, {Capability.CODE_READ}, 'Reads an approved project directory tree.'),

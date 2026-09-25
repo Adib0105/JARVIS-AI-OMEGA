@@ -49,7 +49,7 @@ try {
     }
 } catch {
     $_.Exception.Message | Set-Content -LiteralPath $Log
-    if (-not $NoRelaunch) {
+    if (-not $NoRelaunch -and $env:CI -ne 'true') {
         Add-Type -AssemblyName PresentationFramework
         [System.Windows.MessageBox]::Show(('Update could not finish. Your data has not been deleted. Details: ' + $Log), 'JARVIS update') | Out-Null
     }

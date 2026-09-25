@@ -102,6 +102,7 @@ def record_until_silence(
     preroll_seconds: float = 0.25,
     on_speech_start: Callable[[], None] | None = None,
     stop_event: threading.Event | None = None,
+    transcriber: Callable[[bytes, int, str], str] | None = None,
 ) -> str:
     """VAD-style capture that stops naturally after the user finishes speaking.
 
@@ -172,7 +173,8 @@ def record_until_silence(
 
     if not captured or (stop_event is not None and stop_event.is_set()):
         return ''
-    text = _transcribe_pcm(b''.join(captured), sample_rate, language)
+    recognize = transcriber or _transcribe_pcm
+    text = recognize(b''.join(captured), sample_rate, language)
     return '' if stop_event is not None and stop_event.is_set() else text
 
 

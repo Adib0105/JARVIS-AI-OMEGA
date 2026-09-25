@@ -46,8 +46,9 @@ def local_identity_answer(text: str) -> str | None:
         '• Web/news research aur local knowledge/memory search\n'
         '• Todos, reminders, notes aur verified mission planning\n'
         '• Approved Windows apps, browser search, typing, hotkeys aur clicks\n'
+        '• 20 permission-gated Windows media, window, desktop aur Settings controls\n'
         '• Approved coding projects inspect/edit karna aur unit tests chalana\n'
-        '• Voice reply, push-to-talk aur optional “Hey Jarvis” wake-word mode\n\n'
+        '• “Wake up Jarvis” background mode with spoken acknowledgement and follow-up listening\n\n'
         'Sensitive computer actions capability policy aur approval ke bina execute nahi hote.'
     )
 
@@ -303,3 +304,8 @@ def run_adaptive_gui() -> None:
                 pass  # The helper reports the readiness timeout.
         root.after(1000, report_update_ready)
     root.mainloop()
+    if getattr(app, '_restart_for_login', False):
+        from .desktop_instance import release_desktop_instance
+        from .user_profiles import sign_out_and_restart
+        release_desktop_instance()
+        sign_out_and_restart()

@@ -20,7 +20,7 @@ from jarvis.agent.verification import VerificationEngine
 
 class WakeTests(unittest.TestCase):
     def test_wake_aliases_and_preserved_query(self):
-        for word in ['Jarvis', 'jarves', 'जार्विस', 'जारविस', 'Hey Jarvis']:
+        for word in ['Jarvis', 'jarves', 'jervis', 'jarvish', 'जार्विस', 'जारविस', 'Hey Jarvis', 'Wake up Jarvis']:
             self.assertEqual(split_wake(word + ', Play Tum Hi Ho'), 'Play Tum Hi Ho')
         self.assertEqual(split_wake('Jarvis'), '')
         self.assertEqual(split_wake('hello omega play', 'hello omega'), 'play')
@@ -34,6 +34,36 @@ class WakeTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'model folder'):
             listener.start()
         self.assertFalse(listener.running)
+
+    def test_start_reports_ready_only_after_microphone_opens(self):
+        with tempfile.TemporaryDirectory() as folder:
+            listener = BackgroundWakeListener(folder, MagicMock(), MagicMock())
+            stream = MagicMock()
+            stream.read.side_effect = lambda _frames: (
+                listener._stop.wait(0.1) or b'\0\0' * 1600,
+                False,
+            )
+            context = MagicMock()
+            context.__enter__.return_value = stream
+            vosk = MagicMock()
+            with patch.dict('sys.modules', {'vosk': vosk, 'sounddevice': MagicMock()}), patch(
+                'jarvis.microphone._exclusive_stream', return_value=context
+            ):
+                self.assertTrue(listener.start(timeout=2))
+                self.assertTrue(listener.ready)
+                self.assertTrue(listener.stop(wait=True))
+
+    def test_start_surfaces_device_open_error(self):
+        with tempfile.TemporaryDirectory() as folder:
+            listener = BackgroundWakeListener(folder, MagicMock(), MagicMock())
+            context = MagicMock()
+            context.__enter__.side_effect = RuntimeError('microphone permission denied')
+            with patch.dict('sys.modules', {'vosk': MagicMock(), 'sounddevice': MagicMock()}), patch(
+                'jarvis.microphone._exclusive_stream', return_value=context
+            ):
+                with self.assertRaisesRegex(RuntimeError, 'permission denied'):
+                    listener.start(timeout=2)
+            self.assertFalse(listener.ready)
 
     def test_stream_cancellation_and_suppression(self):
         listener = BackgroundWakeListener('model', MagicMock(), MagicMock())
@@ -225,13 +255,20 @@ class BackgroundLifecycleTests(unittest.TestCase):
             controller.heard('play music')
             self.assertTrue(controller.events.empty())
 
-    def test_inline_command_restores_window_and_sends_once(self):
+    def test_inline_command_stays_in_background_and_sends_once(self):
         controller, desktop = self.controller()
         controller.heard('play music')
         controller.heard('play music')
         controller.poll()
-        desktop.root.deiconify.assert_called_once()
+        desktop.root.deiconify.assert_not_called()
         desktop._send_text.assert_called_once_with('play music', from_voice=True)
+
+    def test_wake_without_command_starts_followup_listener(self):
+        controller, _desktop = self.controller()
+        controller.heard('')
+        with patch.object(controller, '_start_followup_capture') as followup:
+            controller.poll()
+        followup.assert_called_once_with(controller.generation)
 
     def test_stale_result_after_pause_does_not_speak(self):
         controller, desktop = self.controller()
@@ -241,14 +278,16 @@ class BackgroundLifecycleTests(unittest.TestCase):
         desktop.voice.speak.assert_not_called()
         controller.listener.stop.assert_called_once()
 
-    def test_listener_error_restores_window(self):
+    def test_listener_error_recovers_without_stealing_focus(self):
         controller, desktop = self.controller()
+        controller.preferences['enabled'] = True
         controller.events.put(('error', 'device lost', controller.generation))
         with patch('jarvis.background_ui.save_preferences'):
             controller.poll()
         self.assertFalse(controller.enabled)
-        desktop.root.deiconify.assert_called_once()
-        self.assertIn('device lost', desktop._append.call_args.args[1])
+        desktop.root.deiconify.assert_not_called()
+        self.assertTrue(any('device lost' in str(call.args) for call in desktop._append.call_args_list))
+        desktop.root.after.assert_any_call(3000, controller.retry_listener)
 
     def test_failed_device_recovery_retries_without_modal_dialog(self):
         controller, desktop = self.controller()
@@ -256,8 +295,8 @@ class BackgroundLifecycleTests(unittest.TestCase):
         controller.preferences['enabled'] = True
         with patch.object(controller, 'enable', return_value=False) as enable:
             controller.retry_listener()
-        enable.assert_called_once_with(show_error=False)
-        desktop.root.after.assert_any_call(30000, controller.retry_listener)
+        enable.assert_called_once_with(show_error=False, persist_choice=False)
+        desktop.root.after.assert_any_call(3000, controller.retry_listener)
 
     def test_recovery_stops_after_explicit_pause(self):
         controller, desktop = self.controller()
@@ -266,11 +305,11 @@ class BackgroundLifecycleTests(unittest.TestCase):
         with patch.object(controller, 'enable') as enable:
             controller.retry_listener()
         enable.assert_not_called()
-        self.assertFalse(any(call.args[:1] == (30000,) for call in desktop.root.after.call_args_list))
+        self.assertFalse(any(call.args[:1] in {(3000,), (10000,), (30000,)} for call in desktop.root.after.call_args_list))
 
     def test_preferences_round_trip_and_corruption(self):
         with tempfile.TemporaryDirectory() as folder, patch('jarvis.background_ui.preference_path', return_value=Path(folder) / 'background.json'):
-            data = {'enabled': True, 'model_path': 'my model', 'location': {'name': 'Patna', 'latitude': 25.6, 'longitude': 85.1}}
+            data = {'enabled': True, 'model_path': 'my model', 'show_on_wake': False, 'listen_after_wake': True, 'location': {'name': 'Patna', 'latitude': 25.6, 'longitude': 85.1}}
             save_preferences(data)
             self.assertEqual(load_preferences(), data)
             (Path(folder) / 'background.json').write_text('broken')

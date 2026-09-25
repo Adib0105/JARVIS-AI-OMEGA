@@ -24,10 +24,47 @@ _APP_ALIASES = {
 _OPEN_WORDS = r'(?:open|launch|start|khol|kholo|kholna|chalao|chalu\s+karo)'
 _FILLER = r'(?:please\s+|jarvis\s+|friday\s+|zara\s+|jara\s+|mere\s+liye\s+)*'
 
+_WINDOWS_COMMANDS = {
+    'volume_up': (r'volume up', r'volume badhao', r'awaz badhao', r'awaaz badhao'),
+    'volume_down': (r'volume down', r'volume kam karo', r'awaz kam karo', r'awaaz kam karo'),
+    'volume_mute': (r'mute', r'unmute', r'volume mute', r'awaz band karo', r'awaaz band karo'),
+    'media_play_pause': (r'play pause', r'pause music', r'resume music', r'music pause karo'),
+    'media_next': (r'next track', r'next song', r'agla gana', r'agla gaana'),
+    'media_previous': (r'previous track', r'previous song', r'pichla gana', r'pichla gaana'),
+    'show_desktop': (r'show desktop', r'desktop dikhao'),
+    'switch_window': (r'switch window', r'agla window', r'window badlo'),
+    'minimize_window': (r'minimize window', r'window minimize karo'),
+    'maximize_window': (r'maximize window', r'window maximize karo'),
+    'close_window': (r'close current window', r'current window close karo'),
+    'new_virtual_desktop': (r'new virtual desktop', r'naya desktop banao'),
+    'next_virtual_desktop': (r'next virtual desktop', r'agla desktop'),
+    'previous_virtual_desktop': (r'previous virtual desktop', r'pichla desktop'),
+    'lock_pc': (r'lock pc', r'lock computer', r'computer lock karo'),
+    'open_wifi_settings': (r'open wifi settings', r'wifi settings kholo'),
+    'open_bluetooth_settings': (r'open bluetooth settings', r'bluetooth settings kholo'),
+    'open_display_settings': (r'open display settings', r'display settings kholo'),
+    'open_sound_settings': (r'open sound settings', r'sound settings kholo'),
+    'open_apps_settings': (r'open apps settings', r'apps settings kholo'),
+}
+
+
+def parse_windows_command(text: str) -> tuple[str, dict] | None:
+    normalized = ' '.join(str(text or '').lower().strip(' .!?').split())
+    normalized = re.sub(r'^(?:(?:hey|please|jarvis|jarves|jervis|friday|zara|jara)[,\s]+)+', '', normalized)
+    if not normalized or len(normalized) > 100:
+        return None
+    for action, patterns in _WINDOWS_COMMANDS.items():
+        if any(re.fullmatch(pattern, normalized, re.I) for pattern in patterns):
+            return ('windows_control', {'action': action})
+    return None
+
 
 def parse_fast_command(text: str) -> tuple[str, dict] | None:
     """Recognize deterministic, low-risk commands without an LLM round trip."""
     normalized = ' '.join(str(text or '').lower().strip().split())
+    windows = parse_windows_command(normalized)
+    if windows:
+        return windows
     search = parse_youtube_search(normalized)
     if search:
         return ('browser_search', {'engine': 'youtube', 'query': search})
@@ -69,6 +106,31 @@ def execute_fast_command(jarvis, text: str) -> str | None:
         if isinstance(payload, dict) and payload.get('ok') is True:
             return 'YouTube search aapke default browser mein khol di. Video apne aap play nahi kiya.'
         return 'YouTube search complete nahi hui. Browser permission/result check kijiye.'
+    if tool == 'windows_control':
+        if not isinstance(payload, dict) or payload.get('ok') is not True:
+            error = payload.get('error', 'Permission ya Windows action failed') if isinstance(payload, dict) else payload
+            return f'Windows control complete nahi hua: {error}'
+        labels = {
+            'volume_up': 'Volume-up command Windows ko bhej diya',
+            'volume_down': 'Volume-down command Windows ko bhej diya',
+            'volume_mute': 'Mute-toggle command Windows ko bhej diya',
+            'media_play_pause': 'Media play/pause command bhej diya',
+            'media_next': 'Next track command bhej diya', 'media_previous': 'Previous track command bhej diya',
+            'show_desktop': 'Desktop shortcut bhej diya', 'switch_window': 'Window switch command bhej diya',
+            'minimize_window': 'Current window minimize command bhej diya',
+            'maximize_window': 'Current window maximize command bhej diya',
+            'close_window': 'Current window close command bhej diya',
+            'new_virtual_desktop': 'Naya virtual desktop command bhej diya',
+            'next_virtual_desktop': 'Next virtual desktop command bhej diya',
+            'previous_virtual_desktop': 'Previous virtual desktop command bhej diya',
+            'lock_pc': 'Computer lock request complete hua',
+            'open_wifi_settings': 'Wi-Fi settings open request bhej diya',
+            'open_bluetooth_settings': 'Bluetooth settings open request bhej diya',
+            'open_display_settings': 'Display settings open request bhej diya',
+            'open_sound_settings': 'Sound settings open request bhej diya',
+            'open_apps_settings': 'Apps settings open request bhej diya',
+        }
+        return labels.get(args['action'], 'Windows control request bhej diya.')
     if not isinstance(payload, dict) or payload.get('ok') is not True:
         # A recognized command is terminal even when denied or malformed.
         # Falling through to the model can retry an action the user just denied.
