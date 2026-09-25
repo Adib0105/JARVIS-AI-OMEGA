@@ -231,6 +231,23 @@ class BackgroundController:
                     d._append('JARVIS', value)
                     d.voice.speak(value)
 
+    def health_report(self):
+        """Small support snapshot without keys, device names or filesystem paths."""
+        from pathlib import Path
+        from .wake_model import model_valid
+        selected = self.listener.model_path
+        model_ready = bool(selected and model_valid(Path(selected).expanduser()))
+        startup = Path(os.environ.get('APPDATA', '')) / 'Microsoft/Windows/Start Menu/Programs/Startup/JARVIS OMEGA Background.lnk'
+        sign_in = os.name == 'nt' and bool(os.environ.get('APPDATA')) and startup.is_file()
+        return (
+            'JARVIS ' + settings.app_version + '\n'
+            + 'Wake model: ' + ('ready' if model_ready else 'missing or incomplete') + '\n'
+            + 'Microphone listener: ' + ('running' if self.enabled and self.listener.running else 'stopped') + '\n'
+            + 'Tray: ' + ('running' if self.tray else 'not active') + '\n'
+            + 'Sign-in shortcut: ' + ('present' if sign_in else 'absent') + '\n'
+            + 'Listening preference: ' + ('enabled' if self.preferences.get('enabled') else 'disabled')
+        )
+
     def settings_dialog(self):
         win = tk.Toplevel(self.desktop.root)
         win.title('Background wake and weather')
@@ -255,21 +272,14 @@ class BackgroundController:
         health = tk.StringVar(value='Check background health to see setup status.')
         ttk.Label(frame, textvariable=health, wraplength=520, justify='left').pack(anchor='w', pady=6)
         def check_health():
-            from pathlib import Path
-            from .wake_model import model_valid
-            selected = self.listener.model_path
-            model_ready = bool(selected and model_valid(Path(selected).expanduser()))
-            listening = self.enabled and self.listener.running
-            startup = (Path(os.environ.get('APPDATA', '')) / 'Microsoft/Windows/Start Menu/Programs/Startup/JARVIS OMEGA Background.lnk')
-            sign_in = os.name == 'nt' and bool(os.environ.get('APPDATA')) and startup.is_file()
-            health.set(
-                'Wake model: ' + ('ready' if model_ready else 'missing or incomplete')
-                + '  |  Microphone listener: ' + ('running' if listening else 'stopped')
-                + '  |  Tray: ' + ('running' if self.tray else 'not active')
-                + '  |  Sign-in shortcut: ' + ('present' if sign_in else 'absent')
-                + '  |  Listening preference: ' + ('enabled' if self.preferences.get('enabled') else 'disabled')
-            )
+            health.set(self.health_report())
         ttk.Button(frame, text='Check background health', command=check_health).pack(anchor='w')
+        def copy_diagnostics():
+            report = self.health_report()
+            self.desktop.root.clipboard_clear()
+            self.desktop.root.clipboard_append(report)
+            health.set('Support diagnostics copied. Paste them when reporting a problem.\n' + report)
+        ttk.Button(frame, text='Copy support diagnostics', command=copy_diagnostics).pack(anchor='w', pady=4)
         def retry_now():
             if not self.enabled:
                 self.enable()
