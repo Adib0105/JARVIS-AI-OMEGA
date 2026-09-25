@@ -128,7 +128,7 @@ class BackgroundController:
             if '--background' in sys.argv:
                 d.root.withdraw()
         except Exception as exc:
-            self.disable(save=False)
+            self.disable(save=False, show=show_error)
             d._append('SYSTEM', 'Background microphone unavailable: ' + str(exc))
             if show_error:
                 self.show()
@@ -144,7 +144,7 @@ class BackgroundController:
             self.desktop._append('SYSTEM', 'Settings could not be saved. Check folder permissions/free disk space. This change may not survive restart.')
             return False
 
-    def disable(self, save=True):
+    def disable(self, save=True, show=True):
         self.generation += 1
         self.enabled = False
         self.pending = False
@@ -156,7 +156,8 @@ class BackgroundController:
         except Exception:
             self.desktop._append('SYSTEM', 'Tray cleanup failed; the background microphone is stopped.')
         finally:
-            self.show()
+            if show:
+                self.show()
         if save:
             self.preferences['enabled'] = False
             self.persist()
