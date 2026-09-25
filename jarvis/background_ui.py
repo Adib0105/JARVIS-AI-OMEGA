@@ -260,11 +260,14 @@ class BackgroundController:
             selected = self.listener.model_path
             model_ready = bool(selected and model_valid(Path(selected).expanduser()))
             listening = self.enabled and self.listener.running
+            startup = (Path(os.environ.get('APPDATA', '')) / 'Microsoft/Windows/Start Menu/Programs/Startup/JARVIS OMEGA Background.lnk')
+            sign_in = os.name == 'nt' and bool(os.environ.get('APPDATA')) and startup.is_file()
             health.set(
                 'Wake model: ' + ('ready' if model_ready else 'missing or incomplete')
                 + '  |  Microphone listener: ' + ('running' if listening else 'stopped')
                 + '  |  Tray: ' + ('running' if self.tray else 'not active')
-                + '  |  Resume after sign-in: ' + ('enabled' if self.preferences.get('enabled') else 'disabled')
+                + '  |  Sign-in shortcut: ' + ('present' if sign_in else 'absent')
+                + '  |  Listening preference: ' + ('enabled' if self.preferences.get('enabled') else 'disabled')
             )
         ttk.Button(frame, text='Check background health', command=check_health).pack(anchor='w')
         def retry_now():
