@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 import threading
 import tkinter as tk
 from datetime import datetime
@@ -73,6 +75,8 @@ class JarvisDesktop:
         self._poll_reminders()
         if settings.enable_wake_word and settings.enable_mic_input:
             self._toggle_wake_word()
+        if os.getenv('JARVIS_ACTIVE_PROFILE_ID') and '--background' not in sys.argv:
+            self.root.after(900, lambda: self.voice.speak(f'Welcome back, {settings.user_name}. Friday is ready.'))
 
     def _build(self) -> None:
         self._build_header()
@@ -131,8 +135,13 @@ class JarvisDesktop:
         provider = {'openrouter': 'OPENROUTER', 'openai': 'OPENAI', 'local': 'LOCAL AI'}.get(settings.provider, settings.provider.upper())
         tk.Label(
             operator,
-            text=f'OPERATOR: {settings.creator_name.upper()}',
+            text=f'OPERATOR: {settings.user_name.upper()}',
             bg='#061725', fg=GREEN, font=('Consolas', 11, 'bold'),
+        ).pack(anchor='e')
+        tk.Label(
+            operator,
+            text=f'CREATOR: {settings.creator_name.upper()}',
+            bg='#061725', fg=GOLD, font=('Consolas', 7, 'bold'),
         ).pack(anchor='e')
         self.connection_label = tk.Label(
             operator,
@@ -140,6 +149,13 @@ class JarvisDesktop:
             bg='#061725', fg=MUTED, font=('Consolas', 8),
         )
         self.connection_label.pack(anchor='e')
+        if os.getenv('JARVIS_ACTIVE_PROFILE_ID'):
+            tk.Button(
+                operator, text='SIGN OUT / SWITCH USER', command=self._sign_out,
+                bg='#0b2a3a', fg=CYAN, activebackground='#12445b',
+                activeforeground='white', relief='flat', cursor='hand2',
+                padx=7, pady=2, font=('Segoe UI', 7, 'bold'),
+            ).pack(anchor='e', pady=(4, 0))
 
     def _build_input_bar(self) -> None:
         bottom = tk.Frame(self.root, bg='#061725', padx=14, pady=11)
@@ -264,9 +280,20 @@ class JarvisDesktop:
         self.chat.configure(state='disabled')
         self._append(
             'JARVIS',
-            f'OMEGA V6 ARC core online. Welcome, {settings.creator_name}. Type, use MIC, attach images, '
+            f'OMEGA V6 ARC core online. Welcome, {settings.user_name}. Type, use MIC, attach images, '
             'run a Mission, inspect documents, or use approved desktop tools. All sensitive local actions stay permission-gated.'
         )
+
+    def _sign_out(self) -> None:
+        if not messagebox.askyesno(
+            'JARVIS // Sign out',
+            f'Sign out {settings.user_name} and return to the login screen?',
+            parent=self.root,
+        ):
+            return
+        self._restart_for_login = True
+        exit_method = getattr(self, '_exit_completely', self._close)
+        exit_method()
 
     @staticmethod
     def _button(parent, text: str, command, accent: str = CYAN):
@@ -760,7 +787,7 @@ class JarvisDesktop:
         messagebox.showinfo(
             'OMEGA V6 // Core Status',
             f'Version: {settings.app_version}\n'
-            f'Operator / Creator: {settings.creator_name}\n'
+            f'Operator: {settings.user_name}\nCreator: {settings.creator_name}\n'
             f'Provider: {provider}\nModel: {settings.model}\nLast model: {self.jarvis.last_model_used}\n'
             f'Last request: {self.jarvis.last_request_kind}\nTool mode: {self.jarvis.last_tool_mode}\n'
             f'Desktop automation: {settings.enable_desktop_automation}\n'

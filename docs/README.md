@@ -1,6 +1,6 @@
 # JARVIS AI OMEGA — Documentation Hub
 
-This directory is the source of truth for the V7/V7.5 engineering track.
+This directory is the source of truth for the V7/V7.5/V7.6 engineering track.
 
 > `main` is the stable V6 line. `v7-development` contains V7/V7.5 engineering work until workstation validation and final release.
 
@@ -8,6 +8,8 @@ This directory is the source of truth for the V7/V7.5 engineering track.
 
 | Goal | Document |
 |---|---|
+| Review the V7.6 background-wake launch pack | [V7.6-LAUNCH-PACK.md](V7.6-LAUNCH-PACK.md) |
+| Configure always-on wake and tray behavior | [BACKGROUND-WAKE.md](BACKGROUND-WAKE.md) |
 | Install and run V7.5 | [V7-SETUP.md](V7-SETUP.md) |
 | Understand the architecture | [V7-ARCHITECTURE.md](V7-ARCHITECTURE.md) |
 | See current implementation status | [V7.5-STATUS.md](V7.5-STATUS.md) |

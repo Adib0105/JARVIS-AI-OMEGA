@@ -1,11 +1,11 @@
-# JARVIS AI OMEGA V7.5 — Reliable ARC Desktop Agent
+# JARVIS AI OMEGA V7.6 — Reliable ARC Desktop Agent
 
 <p align="center">
   <strong>Multimodal • Evidence-Driven • Capability-Aware • Windows-First AI Agent</strong>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/JARVIS-V7.5-00d9ff">
+  <img alt="Version" src="https://img.shields.io/badge/JARVIS-V7.6-00d9ff">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11--3.14-3776ab">
   <img alt="Branch" src="https://img.shields.io/badge/Branch-main-2ea44f">
   <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Adib0105/JARVIS-AI-OMEGA/ci.yml?branch=main&label=CI">
@@ -20,7 +20,7 @@
 
 ---
 
-JARVIS AI OMEGA V7.5 is a Windows-first multimodal desktop AI agent designed around a strict runtime loop:
+JARVIS AI OMEGA V7.6 is a Windows-first multimodal desktop AI agent designed around a strict runtime loop:
 
 ```text
 UNDERSTAND → PLAN → PERMISSION → EXECUTE → VERIFY → RECOVER / REPLAN
@@ -96,6 +96,21 @@ JARVIS should not claim that a real-world action succeeded without evidence.
 - THINKING / LISTENING / SPEAKING / PAUSED / ERROR states
 - live CPU / RAM / disk / battery / process telemetry
 - Agent Command Center
+- verified-ready background microphone state instead of an optimistic ON label
+- “Wake up Jarvis” → “Yes boss, kya chahiye?” → offline follow-up command capture
+- tray-first wake behavior that does not bring JARVIS over Chrome unless enabled
+- bounded automatic microphone recovery after device loss
+
+### Local accounts and Windows Power Pack
+
+- local login ID/password with salted PBKDF2 digests; plaintext passwords are never stored
+- remembered session for Windows sign-in background startup
+- per-user name, database, preferences, Google token and exports
+- sign out / switch user from the desktop header
+- 20 exact permission-gated Windows media, window, virtual-desktop, lock and Settings actions
+- common English/Hinglish shortcuts routed locally without an AI round trip
+
+See [V7.6 launch pack](docs/V7.6-LAUNCH-PACK.md). Local accounts are not a cloud subscription/billing backend.
 
 ### Vision and Computer Use V2
 

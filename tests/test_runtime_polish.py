@@ -95,23 +95,13 @@ class BackgroundRecoveryTests(unittest.TestCase):
         self.assertFalse(c.pending)
         d._send_text.assert_not_called()
 
-    def test_unexpected_briefing_failure_releases_pending_state(self):
+    def test_followup_failure_releases_pending_state(self):
         c, d = self.controller()
-        c.heard('')
-        completed = threading.Event()
-        def failed(_):
-            completed.set()
-            raise RuntimeError('bad device')
-        with patch('jarvis.background_ui.build_briefing', side_effect=failed):
-            c.poll()
-            self.assertTrue(completed.wait(2))
-            # Wait for the completion event without relying on thread timing.
-            item = c.events.get(timeout=2) if c.pending else None
-            if item:
-                c.events.put(item)
-                c.poll()
+        c.pending = True
+        c.events.put(('followup', {'text': '', 'error': 'bad device', 'listener_error': ''}, c.generation))
+        c.poll()
         self.assertFalse(c.pending)
-        self.assertIn('available nahi', d.voice.speak.call_args.args[0])
+        self.assertIn('Command sun nahi', d.voice.speak.call_args.args[0])
 
     def test_callback_error_does_not_kill_poll_loop(self):
         c, d = self.controller()

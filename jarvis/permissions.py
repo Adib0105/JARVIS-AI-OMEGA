@@ -27,6 +27,7 @@ class PermissionGate:
         'read_document', 'index_document',
         'open_url', 'open_app', 'browser_search', 'youtube_play_first', 'open_local_path',
         'type_text', 'press_key', 'hotkey', 'click_screen', 'capture_screen',
+        'windows_control',
         'list_code_tree', 'write_local_text_file', 'run_project_tests',
         'git_status', 'git_diff', 'git_log',
         # Google account data always remains approval-gated, including reads.

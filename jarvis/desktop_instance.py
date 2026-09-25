@@ -24,6 +24,17 @@ def acquire_desktop_instance():
     return True
 
 
+def release_desktop_instance():
+    """Release the per-user mutex before an intentional sign-out restart."""
+    global _handle
+    handle, _handle = _handle, None
+    if os.name != 'nt' or not handle:
+        return
+    import ctypes
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.CloseHandle(handle)
+
+
 def show_existing_desktop():
     if os.name != 'nt':
         return False

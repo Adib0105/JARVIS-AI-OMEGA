@@ -35,7 +35,7 @@ def main() -> int:
             warnings += 1
             line('WARN', name, detail)
 
-    print('JARVIS AI OMEGA V7.5 // ENGINEERING SELF CHECK')
+    print('JARVIS AI OMEGA V7.6 // ENGINEERING SELF CHECK')
     print('=' * 64)
     report(sys.version_info >= (3, 10), 'Python', sys.version.split()[0])
 
@@ -171,12 +171,12 @@ def main() -> int:
         ),
     }, indent=2))
     if failures:
-        print('JARVIS OMEGA V7.5: NOT READY')
+        print('JARVIS OMEGA V7.6: NOT READY')
         return 1
     if readiness_summary and readiness_summary.get('final_release_ready'):
-        print('JARVIS OMEGA V7.5: RELEASE READY')
+        print('JARVIS OMEGA V7.6: RELEASE READY')
     else:
-        print('JARVIS OMEGA V7.5: SOFTWARE READY / LIVE SMOKE EVIDENCE PENDING')
+        print('JARVIS OMEGA V7.6: SOFTWARE READY / LIVE SMOKE EVIDENCE PENDING')
     return 0
 
 

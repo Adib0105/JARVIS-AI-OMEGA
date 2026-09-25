@@ -2,6 +2,16 @@
 
 All notable engineering changes to JARVIS AI OMEGA are documented here.
 
+## V7.6 background/account launch pack — unreleased
+
+- Background listening now reports READY only after Vosk loads and Windows actually opens the microphone.
+- “Wake up Jarvis” now answers “Yes boss, kya chahiye?”, releases the hotword stream, listens for one offline follow-up command, and safely restarts hotword listening.
+- Wake actions stay in the tray by default instead of stealing focus from Chrome or the current foreground app.
+- Device loss keeps the tray alive and retries with bounded 3/10/30/60/120-second backoff.
+- Added secure local multi-user profiles: salted PBKDF2 password digests, bounded lockout, remembered background sessions, per-profile data, sign-out/switch-user and name-aware greetings.
+- Added the permission-gated 20-action Windows Power Pack for media, active windows, virtual desktops, workstation lock and Windows Settings.
+- These changes are release-candidate code. Real Windows microphone, clean-install, upgrade, installer, Defender and subscription-backend validation remain required before public sale.
+
 ## Remaining-blocker hardening — unreleased, release blocked
 
 - Fail closed for generated/project test execution until OS isolation is validated.

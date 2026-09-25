@@ -20,7 +20,7 @@ class V7SecurityTests(unittest.TestCase):
             'google_status', 'gmail_search', 'gmail_send', 'calendar_upcoming', 'calendar_create',
             'list_allowed_roots', 'search_local_files', 'read_local_text_file', 'index_local_text_file',
             'read_document', 'index_document', 'open_url', 'open_app', 'open_local_path', 'browser_search',
-            'type_text', 'press_key', 'hotkey', 'click_screen', 'list_code_tree', 'write_local_text_file',
+            'type_text', 'press_key', 'hotkey', 'click_screen', 'windows_control', 'list_code_tree', 'write_local_text_file',
             'run_project_tests', 'git_status', 'git_diff', 'git_log',
         }
         self.assertTrue(expected.issubset(set(TOOL_SECURITY)))

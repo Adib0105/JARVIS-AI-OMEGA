@@ -13,6 +13,12 @@ ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) el
 # It must win over a stale/blank Windows environment variable.
 load_dotenv(ROOT / '.env', override=True, encoding='utf-8-sig')
 
+# ``desktop_app`` authenticates a local profile before importing this module.
+# Profile-scoped state intentionally wins over legacy .env data paths so two
+# local accounts cannot silently share chat history, tokens or preferences.
+_ACTIVE_DATA_RAW = os.getenv('JARVIS_ACTIVE_DATA_DIR', '').strip()
+ACTIVE_DATA_DIR = Path(_ACTIVE_DATA_RAW).expanduser().resolve() if _ACTIVE_DATA_RAW else None
+
 
 def _bool(name: str, default: bool) -> bool:
     return os.getenv(name, str(default)).strip().lower() in {'1', 'true', 'yes', 'on'}
@@ -82,7 +88,8 @@ class Settings:
     local_model_provider: str = os.getenv('LOCAL_MODEL_PROVIDER', 'openai-compatible').strip().lower()
     self_evaluation_interval: int = _int('SELF_EVALUATION_INTERVAL', 0)
     creator_name: str = os.getenv('CREATOR_NAME', 'Adib Azam').strip() or 'Adib Azam'
-    user_name: str = os.getenv('USER_NAME', 'Adib').strip() or 'Adib'
+    user_name: str = (os.getenv('JARVIS_ACTIVE_DISPLAY_NAME', '').strip()
+                      or os.getenv('USER_NAME', 'Adib').strip() or 'Adib')
     assistant_name: str = os.getenv('JARVIS_NAME', 'JARVIS OMEGA').strip() or 'JARVIS OMEGA'
     language_mode: str = os.getenv('LANGUAGE_MODE', 'auto').strip().lower()
     enable_web_search: bool = _bool('ENABLE_WEB_SEARCH', True)
@@ -95,7 +102,8 @@ class Settings:
     enable_coding_tools: bool = _bool('ENABLE_CODING_TOOLS', True)
     enable_google_workspace: bool = _bool('ENABLE_GOOGLE_WORKSPACE', False)
     google_credentials_file: Path = _path('GOOGLE_OAUTH_CLIENT_FILE', ROOT / 'google_credentials.json')
-    google_token_file: Path = _path('GOOGLE_TOKEN_FILE', ROOT / 'data' / 'google_token.json')
+    google_token_file: Path = (ACTIVE_DATA_DIR / 'google_token.json' if ACTIVE_DATA_DIR
+                               else _path('GOOGLE_TOKEN_FILE', ROOT / 'data' / 'google_token.json'))
     enable_voice_output: bool = _bool('ENABLE_VOICE_OUTPUT', True)
     voice_engine: str = os.getenv('VOICE_ENGINE', 'edge').strip().lower()
     voice_hindi: str = os.getenv('VOICE_HINDI', 'hi-IN-SwaraNeural').strip()
@@ -133,8 +141,10 @@ class Settings:
     system_refresh_ms: int = _int('SYSTEM_REFRESH_MS', 1200)
     reminder_poll_seconds: float = _float('REMINDER_POLL_SECONDS', 5.0)
     log_level: str = os.getenv('JARVIS_LOG_LEVEL', 'INFO').strip().upper() or 'INFO'
-    db_path: Path = _path('JARVIS_DB_PATH', ROOT / 'data' / 'jarvis.db')
-    export_dir: Path = _path('JARVIS_EXPORT_DIR', ROOT / 'exports')
+    db_path: Path = (ACTIVE_DATA_DIR / 'jarvis.db' if ACTIVE_DATA_DIR
+                     else _path('JARVIS_DB_PATH', ROOT / 'data' / 'jarvis.db'))
+    export_dir: Path = (ACTIVE_DATA_DIR / 'exports' if ACTIVE_DATA_DIR
+                        else _path('JARVIS_EXPORT_DIR', ROOT / 'exports'))
 
     @property
     def api_key(self) -> str:

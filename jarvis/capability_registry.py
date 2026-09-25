@@ -195,6 +195,20 @@ class CapabilityRegistry:
             tests=('tests/test_v7_computer_use.py', 'tests/test_v75_computer_use_integration.py', 'tests/test_v75_visual_fallback.py'),
             implementation_path='jarvis/computer_use/', detail=computer_detail,
         )
+        records['Windows Power Pack'] = self._record(
+            'Windows Power Pack',
+            'Twenty exact allowlisted media, active-window, virtual-desktop, lock and Windows Settings controls.',
+            CapabilityStatus.AVAILABLE if os.name == 'nt' and settings.enable_desktop_automation else (
+                CapabilityStatus.DISABLED if not settings.enable_desktop_automation else CapabilityStatus.DEGRADED
+            ),
+            dependencies=('Windows', 'pyautogui'),
+            permissions=('APP_CONTROL', 'KEYBOARD_CONTROL', 'SCREEN_CONTROL'),
+            risk='HIGH',
+            tests=('tests/test_windows_launch_pack.py',),
+            implementation_path='jarvis/windows_controls.py; jarvis/fast_commands.py',
+            detail='All actions are exact allowlisted operations; permission policy and audit remain active.',
+            version='1.0',
+        )
 
         records['Browser'] = self._record(
             'Browser', 'Browser navigation/read/search with public-address checks, prompt-injection scanning and untrusted-content handling.',
