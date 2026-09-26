@@ -69,7 +69,7 @@ class Billing:
             # Serializes checkout retries and webhook reconciliation across workers.
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT * FROM users WHERE id=?', (user['id'],)).fetchone()
-            if db.execute("SELECT 1 FROM subscriptions WHERE user_id=? AND status IN ('active','trialing','past_due','unpaid','incomplete','paused') AND period_end>?", (user['id'], int(time.time()))).fetchone():
+            if db.execute("SELECT 1 FROM subscriptions WHERE user_id=? AND status IN ('active','trialing','past_due','unpaid','incomplete','paused') ", (user['id'],)).fetchone():
                 raise ValueError('An existing subscription needs attention in Manage billing.')
             customer = row['customer']
             if not customer:

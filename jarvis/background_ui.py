@@ -180,6 +180,8 @@ class BackgroundController:
         except Exception as exc:
             self._stop_listener_only()
             d._append('SYSTEM', 'Background microphone unavailable: ' + str(exc))
+            if not show_error and self.preferences.get('enabled'):
+                self._schedule_retry()
             if show_error:
                 self.show()
                 messagebox.showerror('Background voice', str(exc), parent=d.root)
@@ -267,6 +269,11 @@ class BackgroundController:
         d = self.desktop
         if getattr(d, '_closing', False):
             return
+        last_audio = getattr(self.listener, 'last_audio_at', 0.0)
+        if (self.enabled and self.listener.ready and isinstance(last_audio, (int, float))
+                and last_audio > 0 and time.monotonic() - last_audio > 20
+                and not (self.followup_thread and self.followup_thread.is_alive())):
+            self._listener_failed('Microphone stopped delivering audio; recovering the device.')
         self._refresh_weather()
         if d.voice.state != 'idle':
             self.suppress_until = time.monotonic() + 0.35
@@ -638,7 +645,7 @@ class BackgroundController:
             return
         # Device recovery and listener shutdown can take longer than one timer.
         # Keep retrying without opening a modal dialog over a hidden desktop.
-        if not self.enable(show_error=False, persist_choice=False):
+        if not self.enable(show_error=False, persist_choice=False) and self.retry_after_id is None:
             self._schedule_retry()
 
 

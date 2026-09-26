@@ -156,6 +156,12 @@ class BillingHTTPTests(unittest.TestCase):
         self.send_event(eid='evt_expired')
         self.assertEqual(self.me()['subscription']['plan'], 'free')
 
+    def test_delinquent_subscription_blocks_double_billing_even_after_period_expiry(self):
+        self.activate()
+        with self.app.state.store.db() as db:
+            db.execute("UPDATE subscriptions SET status='past_due',period_end=?", (int(time.time()) - 100,))
+        self.assertEqual(self.checkout().status_code, 400)
+
     def test_cancel_at_end_keeps_paid_time_and_blocks_second_checkout(self):
         self.activate()
         sub = self.gateway.subscriptions['sub_123']

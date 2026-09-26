@@ -164,6 +164,37 @@ class WakeLatencyTests(unittest.TestCase):
         self.assertEqual(results[-1][1]['text'], 'time batao')
         controller.listener.start.assert_called_once()
 
+    def test_initial_background_start_failure_schedules_recovery(self):
+        from jarvis.background_ui import BackgroundController
+        desktop = MagicMock()
+        desktop._closing = False
+        desktop.wake_listener.running = False
+        desktop._live_listening = desktop._live_voice_enabled = False
+        with patch('jarvis.background_ui.load_preferences', return_value={'enabled': True}):
+            controller = BackgroundController(desktop)
+        controller.listener = MagicMock()
+        controller.listener.start.side_effect = RuntimeError('device temporarily missing')
+        with patch.object(controller, 'ensure_tray'), patch('jarvis.background_ui.settings', replace(settings, enable_mic_input=True)):
+            self.assertFalse(controller.enable(show_error=False, persist_choice=False))
+        self.assertTrue(any(call.args[0] == 3000 for call in desktop.root.after.call_args_list))
+        self.assertTrue(controller.preferences['enabled'])
+
+    def test_stalled_microphone_is_recovered_without_foreground_focus(self):
+        from jarvis.background_ui import BackgroundController
+        import time
+        desktop = MagicMock()
+        desktop._closing = False
+        desktop.voice.state = 'idle'
+        with patch('jarvis.background_ui.load_preferences', return_value={'enabled': True}):
+            controller = BackgroundController(desktop)
+        controller.listener = MagicMock()
+        controller.listener.last_audio_at = time.monotonic() - 30
+        controller.enabled = True
+        controller._poll_events()
+        self.assertFalse(controller.enabled)
+        controller.listener.stop.assert_called_once()
+        desktop.root.deiconify.assert_not_called()
+
 
 class AccountTests(unittest.TestCase):
     def test_password_change_rotates_session_and_old_password_fails(self):

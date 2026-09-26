@@ -70,6 +70,7 @@ class BackgroundWakeListener:
         self._startup_error = ''
         self.ready_at = 0.0
         self.last_heard_at = 0.0
+        self.last_audio_at = 0.0
 
     @property
     def running(self):
@@ -146,9 +147,11 @@ class BackgroundWakeListener:
                 with self._stream_lock:
                     self._stream = stream
                 self.ready_at = time.time()
+                self.last_audio_at = time.monotonic()
                 self._ready.set()
                 while not self._stop.is_set():
                     data, overflowed = stream.read(1600)
+                    self.last_audio_at = time.monotonic()
                     if self._stop.is_set():
                         break
                     if self.suspended() or overflowed:
