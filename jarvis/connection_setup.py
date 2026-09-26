@@ -53,7 +53,7 @@ def open_connection_setup(desktop):
             state.set('Could not apply connection. Check folder write permission. Existing connection was kept.')
             return
         key.delete(0, 'end')
-        desktop.connection_label.configure(text=f'{settings.provider.upper()}  //  {settings.model}  //  CORE {settings.app_version}')
+        desktop.connection_label.configure(text=f'{settings.provider.upper()}  //  {settings.model}  //  5-LAYER CORE {settings.app_version}')
         desktop._append('SYSTEM', message)
         state.set(message)
     results = queue.Queue()

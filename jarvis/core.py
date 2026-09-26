@@ -1,4 +1,4 @@
-"""Public JARVIS OMEGA V7/V7.5 compatibility core.
+"""Public JARVIS OMEGA V7.7 compatibility core.
 
 `JarvisOmega` preserves the established public API while layering verified missions,
 security, memory, capability awareness, evaluation, observability, skill proposals
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from typing import Callable
 
@@ -19,6 +20,7 @@ from .capability_registry import CapabilityRegistry
 from .config import settings
 from .core_v7 import JarvisOmega as _ProviderCore
 from .evaluation import CapabilityGapDetector, SelfEvaluationEngine
+from .intelligence import FiveLayerIntelligence
 from .memory_v7 import MemoryKind, V7MemoryStore
 from .observability import JarvisHealthSystem, ObservabilityManager
 from .prompt import system_prompt
@@ -34,8 +36,15 @@ class JarvisOmega(_ProviderCore):
         self.memory = V7MemoryStore(db_path)
         self.context_manager = ContextManager(self.memory)
         self.capability_registry = CapabilityRegistry()
-        self.model_router = ModelRouter()
+        self.model_router = ModelRouter(config=settings)
         self.observability = ObservabilityManager(db_path)
+        self.intelligence = FiveLayerIntelligence(
+            config=settings,
+            router=self.model_router,
+            model_path=db_path.parent / 'adaptive-route-model.json',
+        )
+        self.last_intelligence_decision = None
+        self._intelligence_context = threading.local()
 
         # Wrap already-created providers instead of rewriting the stable provider core.
         # The wrapper records normalized success/failure/latency/usage and explicit
@@ -84,10 +93,63 @@ class JarvisOmega(_ProviderCore):
         self.last_context_stats: dict = {}
 
     def _select_model(self, text: str, kind: str = 'chat') -> str:
-        """Use the V7.5 category router while keeping the V6/V7 method contract."""
-        route = self.model_router.select(text, kind)
-        self.last_route = route.category.lower()
-        return route.model or settings.model
+        """Run the five ordered layers while keeping the V6/V7 method contract."""
+        decision = self.intelligence.decide(text, kind)
+        self.last_intelligence_decision = decision
+        if str(kind or '').strip().lower() == 'chat':
+            # Keep the chat decision isolated from a nested auto-summary route and
+            # from work occurring on another desktop/background thread.
+            self._intelligence_context.chat_decision = decision
+        self.last_route = decision.category.lower()
+        return decision.model or settings.model
+
+    def _record_intelligence_outcome(self, text: str, *, success: bool, decision) -> None:
+        if decision is None:
+            return
+        learned = self.intelligence.observe(text, decision.category, success=success)
+        try:
+            self.observability.record(
+                category='INTELLIGENCE',
+                event_type='five_layer.route',
+                status='SUCCESS' if success else 'FAILED',
+                session_id=self.session_id,
+                mission_id=getattr(getattr(self, 'orchestrator', None), 'current_mission_id', None),
+                provider=getattr(self, 'last_provider_used', None),
+                model=decision.model,
+                metadata={
+                    'route': decision.category,
+                    'confidence': decision.confidence,
+                    'generation_mode': decision.generation_mode,
+                    'tool_strategy': decision.tool_strategy,
+                    'adaptive_observation_added': bool(learned),
+                    'request_characters': len(str(text)),
+                    'raw_prompt_stored': False,
+                },
+            )
+        except Exception:
+            # Telemetry/adaptation must never make a valid chat fail.
+            pass
+
+    def chat(self, text: str) -> str:
+        clean = str(text or '').strip()
+        if not clean:
+            return ''
+        self._intelligence_context.chat_decision = None
+        try:
+            answer = super().chat(clean)
+        except Exception:
+            self._record_intelligence_outcome(
+                clean,
+                success=False,
+                decision=getattr(self._intelligence_context, 'chat_decision', None),
+            )
+            raise
+        self._record_intelligence_outcome(
+            clean,
+            success=True,
+            decision=getattr(self._intelligence_context, 'chat_decision', None),
+        )
+        return answer
 
     def _latest_user_request(self) -> str:
         try:
@@ -125,7 +187,17 @@ class JarvisOmega(_ProviderCore):
                     prompt += '\n\nV7 LOCAL CONTEXT BUNDLE:\n' + bundle.text
             except Exception:
                 pass
+        decision = self.last_intelligence_decision
+        if decision is not None:
+            prompt += '\n\n' + decision.prompt_summary()
         return prompt
+
+    def intelligence_status(self) -> dict:
+        return self.intelligence.status()
+
+    def reset_adaptive_routing(self) -> dict:
+        """Reset only learned route weights; chats, memory and settings stay intact."""
+        return self.intelligence.reset_adaptive_model()
 
     def capability_status(self, *, refresh: bool = True) -> list[dict]:
         return self.capability_registry.snapshot(refresh=refresh)

@@ -1,16 +1,17 @@
 # JARVIS AI OMEGA — Documentation Hub
 
-This directory is the source of truth for the V7/V7.5/V7.6 engineering track.
+This directory is the source of truth for the V7.7 engineering track and its V7/V7.5/V7.6 foundations.
 
-> `main` is the stable V6 line. `v7-development` contains V7/V7.5 engineering work until workstation validation and final release.
+> `main` contains the promoted V7 line. New release claims still require the documented automated and real-Windows evidence gates.
 
 ## Start here
 
 | Goal | Document |
 |---|---|
+| Understand V7.7 five-layer routing and privacy | [V7.7-FIVE-LAYER-INTELLIGENCE.md](V7.7-FIVE-LAYER-INTELLIGENCE.md) |
 | Review the V7.6 background-wake launch pack | [V7.6-LAUNCH-PACK.md](V7.6-LAUNCH-PACK.md) |
 | Configure always-on wake and tray behavior | [BACKGROUND-WAKE.md](BACKGROUND-WAKE.md) |
-| Install and run V7.5 | [V7-SETUP.md](V7-SETUP.md) |
+| Install and run the current V7 line | [V7-SETUP.md](V7-SETUP.md) |
 | Understand the architecture | [V7-ARCHITECTURE.md](V7-ARCHITECTURE.md) |
 | See current implementation status | [V7.5-STATUS.md](V7.5-STATUS.md) |
 | Run tests and quality gates | [V7-TESTING.md](V7-TESTING.md) |
@@ -22,6 +23,7 @@ This directory is the source of truth for the V7/V7.5/V7.6 engineering track.
 
 - [V7-AUDIT.md](V7-AUDIT.md) — repository audit and technical debt baseline
 - [V7-ARCHITECTURE.md](V7-ARCHITECTURE.md) — runtime architecture and reliability model
+- [V7.7-FIVE-LAYER-INTELLIGENCE.md](V7.7-FIVE-LAYER-INTELLIGENCE.md) — ordered AI/ML/deep-learning/GenAI/LLM routing, privacy and controls
 - [V7-ARCHITECTURE-ASSESSMENT.md](V7-ARCHITECTURE-ASSESSMENT.md) — deeper design assessment
 - [V7-AGENT.md](V7-AGENT.md) — mission state machine, planning, verification and recovery
 - [V7-MEMORY.md](V7-MEMORY.md) — layered memory, RAG and lifecycle behavior
@@ -60,4 +62,4 @@ Production self-modification remains disabled by default.
 
 ## Legacy documentation
 
-[V6-USER-GUIDE.md](V6-USER-GUIDE.md) is retained for the stable V6 branch and historical behavior. For current development, prefer V7/V7.5 documents above.
+[V6-USER-GUIDE.md](V6-USER-GUIDE.md) is retained for historical behavior. For current development, prefer the V7.7 and V7 documents above.

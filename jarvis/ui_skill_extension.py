@@ -60,14 +60,14 @@ def install_skill_ui() -> None:
     def create_skill_from_gap(self):
         gap = self._selected_gap() if hasattr(self, '_selected_gap') else None
         if not gap:
-            messagebox.showinfo('JARVIS V7.5', 'Select a capability gap in SELF DEVELOPMENT first.', parent=self)
+            messagebox.showinfo(f'JARVIS {ui.settings.app_version}', 'Select a capability gap in SELF DEVELOPMENT first.', parent=self)
             return
         try:
             result = self.jarvis.propose_skill_from_gap(gap)
             self._refresh_skills()
             self._set_text(self.skill_detail, ui._pretty(result))
         except Exception as exc:
-            messagebox.showerror('JARVIS V7.5', f'{type(exc).__name__}: {exc}', parent=self)
+            messagebox.showerror(f'JARVIS {ui.settings.app_version}', f'{type(exc).__name__}: {exc}', parent=self)
 
     def prepare_skill(self):
         skill = self._selected_skill()
@@ -83,7 +83,7 @@ def install_skill_ui() -> None:
         if not skill:
             return
         if not messagebox.askyesno(
-            'JARVIS V7.5 // SKILL BUILD',
+            f'JARVIS {ui.settings.app_version} // SKILL BUILD',
             'Run bounded AI coding and the full regression/security suite inside the isolated skill sandbox?\n\n'
             'This does not activate or deploy the skill.',
             parent=self,
@@ -99,7 +99,7 @@ def install_skill_ui() -> None:
         if not skill:
             return
         if not messagebox.askyesno(
-            'JARVIS V7.5 // ACTIVATE SKILL',
+            f'JARVIS {ui.settings.app_version} // ACTIVATE SKILL',
             'Activate this skill only if its linked improvement is already DEPLOYED and evaluation metadata is PASS/VERIFIED?',
             parent=self,
         ):
@@ -113,7 +113,7 @@ def install_skill_ui() -> None:
         skill = self._selected_skill()
         if not skill:
             return
-        if not messagebox.askyesno('JARVIS V7.5', 'Disable this active skill?', parent=self):
+        if not messagebox.askyesno(f'JARVIS {ui.settings.app_version}', 'Disable this active skill?', parent=self):
             return
         self._background(
             lambda: self.jarvis.disable_skill(skill['id'], explicit_user_approval=True),

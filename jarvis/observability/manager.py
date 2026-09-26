@@ -98,7 +98,7 @@ class ObservabilityManager:
 
     ALLOWED_CATEGORIES = {
         'INFO', 'WARNING', 'ERROR', 'SECURITY', 'AUDIT', 'MISSION', 'TOOL',
-        'MODEL', 'SELF_DEVELOPMENT', 'MEMORY', 'SYSTEM',
+        'MODEL', 'INTELLIGENCE', 'SELF_DEVELOPMENT', 'MEMORY', 'SYSTEM',
     }
 
     def __init__(self, db_path: Path | None = None) -> None:

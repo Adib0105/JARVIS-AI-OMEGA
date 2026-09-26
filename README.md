@@ -1,11 +1,11 @@
-# JARVIS AI OMEGA V7.6 — Reliable ARC Desktop Agent
+# JARVIS AI OMEGA V7.7 — Five-Layer ARC Desktop Agent
 
 <p align="center">
   <strong>Multimodal • Evidence-Driven • Capability-Aware • Windows-First AI Agent</strong>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/JARVIS-V7.6-00d9ff">
+  <img alt="Version" src="https://img.shields.io/badge/JARVIS-V7.7-00d9ff">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11--3.14-3776ab">
   <img alt="Branch" src="https://img.shields.io/badge/Branch-main-2ea44f">
   <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Adib0105/JARVIS-AI-OMEGA/ci.yml?branch=main&label=CI">
@@ -20,7 +20,7 @@
 
 ---
 
-JARVIS AI OMEGA V7.6 is a Windows-first multimodal desktop AI agent designed around a strict runtime loop:
+JARVIS AI OMEGA V7.7 is a Windows-first multimodal desktop AI agent designed around a strict runtime loop:
 
 ```text
 UNDERSTAND → PLAN → PERMISSION → EXECUTE → VERIFY → RECOVER / REPLAN
@@ -28,11 +28,12 @@ UNDERSTAND → PLAN → PERMISSION → EXECUTE → VERIFY → RECOVER / REPLAN
 
 It combines typed chat, voice, screen/image vision, local documents, memory/RAG, browser research, Windows computer use, coding/Git tools, productivity workflows, observability, evaluation and controlled self-development.
 
-> **Current branch strategy:** `main` now contains the promoted V7/V7.5 codebase. `v7-development` is retained as the engineering branch for future experimental work before promotion back into `main`.
+> **Current branch strategy:** `main` contains the promoted V7 release line. Experimental work stays on reviewed feature branches until tests and release gates pass.
 
 ## Quick navigation
 
 - [What JARVIS can do](#what-jarvis-can-do)
+- [Five-layer intelligence](#five-layer-intelligence)
 - [Architecture](#architecture)
 - [Engineering status](#engineering-status)
 - [Quick start](#quick-start)
@@ -157,6 +158,20 @@ See [V7.6 launch pack](docs/V7.6-LAUNCH-PACK.md). Local accounts are not a cloud
 - optional Gmail and Calendar integration
 - database backup / restore / export / import
 
+### Five-layer intelligence
+
+Every routed request now produces one ordered, inspectable decision trace:
+
+1. **Artificial Intelligence** — deterministic intent, context, capability and safety orchestration.
+2. **Machine Learning** — a bounded local classifier adapts to successful user vocabulary using token fingerprints; it does not persist raw prompts.
+3. **Deep Learning** — the configured neural provider supplies language/vision capability, with an optional explicitly configured embedding router.
+4. **Generative AI** — selects a grounded chat, reasoning, coding, planning, review, summary or vision generation strategy.
+5. **Large Language Model** — selects the final FAST / SMART / specialist model route.
+
+Specialist routes cannot be downgraded by learned predictions, neural routing needs local-ML consensus, and model choice cannot bypass permission, audit or verification policy. The **INTELLIGENCE** Command Center tab shows all five layers, confidence and the last decision, and can reset only the local learned routing weights.
+
+These terms describe a nested technical taxonomy, not five independent foundation models or a claim of human-level intelligence. See [the V7.7 design and privacy notes](docs/V7.7-FIVE-LAYER-INTELLIGENCE.md).
+
 ### V7.5 engineering intelligence
 
 - Capability Registry
@@ -186,7 +201,7 @@ USER / OPERATOR
 Context Manager + Capability Registry
       │
       ▼
-Provider-Neutral AI + Model Router
+Five-Layer Intelligence + Provider-Neutral Model Router
       │
       ▼
 Mission Orchestrator
@@ -223,6 +238,7 @@ Detailed architecture: [docs/V7-ARCHITECTURE.md](docs/V7-ARCHITECTURE.md)
 
 | System | Status |
 |---|---|
+| Five-layer intelligence / private adaptive routing | ✅ Implemented / regression verified |
 | Provider abstraction / model router | ✅ Implemented / CI verified |
 | Provider circuit breaker | ✅ Implemented / CI verified |
 | Mission state / recovery / verification | ✅ Implemented / CI verified |
@@ -249,9 +265,9 @@ Detailed architecture: [docs/V7-ARCHITECTURE.md](docs/V7-ARCHITECTURE.md)
 | Controlled release / rollback | 🧪 Experimental / tested |
 | Windows V7 PyInstaller build | ✅ CI package smoke |
 | Inno Setup installer | 🖥️ Local workstation validation required |
-| V7/V7.5 promotion to `main` | ✅ Completed |
+| V7 release line on `main` | ✅ Completed |
 
-Full status: [docs/V7.5-STATUS.md](docs/V7.5-STATUS.md)
+Current routing design: [docs/V7.7-FIVE-LAYER-INTELLIGENCE.md](docs/V7.7-FIVE-LAYER-INTELLIGENCE.md). Foundation status: [docs/V7.5-STATUS.md](docs/V7.5-STATUS.md).
 
 ---
 
@@ -508,6 +524,7 @@ Key documents:
 - [V7 Setup](docs/V7-SETUP.md)
 - [V7 Troubleshooting](docs/V7-TROUBLESHOOTING.md)
 - [V7 Architecture](docs/V7-ARCHITECTURE.md)
+- [V7.7 Five-Layer Intelligence](docs/V7.7-FIVE-LAYER-INTELLIGENCE.md)
 - [V7.5 Engineering Status](docs/V7.5-STATUS.md)
 - [V7 Agent / Missions](docs/V7-AGENT.md)
 - [V7 Security](docs/V7-SECURITY.md)

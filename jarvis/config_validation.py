@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -37,6 +38,20 @@ def validate_settings(settings) -> list[ValidationFinding]:
 
     add('AI_PROVIDER', settings.provider in {'openrouter', 'openai', 'local'}, 'Provider must be openrouter, openai or local.')
     add('MODEL', bool(settings.model.strip()), 'A primary model must be configured.')
+    adaptive_ml_min_confidence = float(getattr(settings, 'adaptive_ml_min_confidence', 0.72))
+    adaptive_ml_max_observations = int(getattr(settings, 'adaptive_ml_max_observations', 5_000))
+    neural_routing_min_confidence = float(getattr(settings, 'neural_routing_min_confidence', 0.76))
+    add('ADAPTIVE_ML_MIN_CONFIDENCE', 0.5 <= adaptive_ml_min_confidence <= 0.99,
+        'Adaptive ML confidence must be between 0.50 and 0.99.')
+    add('ADAPTIVE_ML_MAX_OBSERVATIONS', 100 <= adaptive_ml_max_observations <= 50_000,
+        'Adaptive ML observation limit must be between 100 and 50000.')
+    add('NEURAL_ROUTING_MIN_CONFIDENCE', 0.5 <= neural_routing_min_confidence <= 0.99,
+        'Neural routing confidence must be between 0.50 and 0.99.')
+    if bool(getattr(settings, 'enable_neural_semantic_routing', False)):
+        add('EMBEDDING_BASE_URL', bool(os.getenv('EMBEDDING_BASE_URL', '').strip()),
+            'Neural semantic routing needs an explicit EMBEDDING_BASE_URL.', warning=True)
+        add('EMBEDDING_MODEL', bool(os.getenv('EMBEDDING_MODEL', '').strip()),
+            'Neural semantic routing needs an explicit EMBEDDING_MODEL.', warning=True)
     # A desktop user must be able to open Settings and add a key. Missing cloud
     # credentials are handled on the first AI request, not by crashing startup.
     add('API_KEY', bool(settings.api_key.strip()), f'{settings.provider} API key must be configured.',

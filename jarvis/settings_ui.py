@@ -19,6 +19,10 @@ EDITABLE_KEYS = {
     'REQUIRE_LOCAL_APPROVAL', 'ENABLE_DESKTOP_AUTOMATION', 'ENABLE_DOCUMENT_INTELLIGENCE',
     'ENABLE_CODING_TOOLS', 'ENABLE_GOOGLE_WORKSPACE', 'TRUSTED_LOCAL_MODE',
     'MODEL_ROUTING', 'FAST_MODEL', 'SMART_MODEL', 'VISION_MODEL',
+    'ENABLE_FIVE_LAYER_INTELLIGENCE', 'ENABLE_ADAPTIVE_ML_ROUTING',
+    'ADAPTIVE_ML_MIN_CONFIDENCE', 'ADAPTIVE_ML_MAX_OBSERVATIONS',
+    'ENABLE_NEURAL_SEMANTIC_ROUTING', 'NEURAL_ROUTING_MIN_CONFIDENCE',
+    'EMBEDDING_BASE_URL', 'EMBEDDING_MODEL',
     'ENABLE_LOCAL_FALLBACK', 'LOCAL_AI_BASE_URL', 'LOCAL_AI_MODEL',
     'AUTO_SUMMARIZE', 'SUMMARIZE_AFTER_MESSAGES',
     'MISSION_MAX_STEPS', 'SYSTEM_REFRESH_MS', 'REMINDER_POLL_SECONDS',
@@ -169,6 +173,14 @@ def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
     ).pack(anchor='w', pady=(3, 6))
 
     section('MODEL ROUTING + FALLBACK')
+    bool_row('Five-layer AI → ML → DL → GenAI → LLM stack', 'ENABLE_FIVE_LAYER_INTELLIGENCE', settings.enable_five_layer_intelligence)
+    bool_row('Local adaptive ML routing', 'ENABLE_ADAPTIVE_ML_ROUTING', settings.enable_adaptive_ml_routing)
+    text_row('Adaptive ML confidence (0.50–0.99)', 'ADAPTIVE_ML_MIN_CONFIDENCE', settings.adaptive_ml_min_confidence)
+    text_row('Adaptive ML observation cap (100–50000)', 'ADAPTIVE_ML_MAX_OBSERVATIONS', settings.adaptive_ml_max_observations)
+    bool_row('Optional embedding-based neural routing', 'ENABLE_NEURAL_SEMANTIC_ROUTING', settings.enable_neural_semantic_routing)
+    text_row('Neural routing confidence (0.50–0.99)', 'NEURAL_ROUTING_MIN_CONFIDENCE', settings.neural_routing_min_confidence)
+    text_row('Embedding base URL', 'EMBEDDING_BASE_URL', os.getenv('EMBEDDING_BASE_URL', ''))
+    text_row('Embedding model', 'EMBEDDING_MODEL', os.getenv('EMBEDDING_MODEL', ''))
     text_row('Model routing', 'MODEL_ROUTING', settings.model_routing)
     text_row('Fast model (blank=primary)', 'FAST_MODEL', settings.fast_model)
     text_row('Smart model (blank=primary)', 'SMART_MODEL', settings.smart_model)
@@ -176,6 +188,11 @@ def show_settings_dialog(root: tk.Misc, on_saved=None) -> None:
     bool_row('Enable local AI fallback', 'ENABLE_LOCAL_FALLBACK', settings.enable_local_fallback)
     text_row('Local base URL', 'LOCAL_AI_BASE_URL', settings.local_ai_base_url)
     text_row('Local model', 'LOCAL_AI_MODEL', settings.local_ai_model)
+    tk.Label(
+        body,
+        text='Adaptive ML stores bounded token hashes, never raw prompts. Neural routing uses EMBEDDING_* only when explicitly enabled.',
+        bg='#091a26', fg='#86a8b8', justify='left', wraplength=600, font=('Segoe UI', 8),
+    ).pack(anchor='w', pady=(3, 6))
 
     section('MEMORY + DASHBOARD')
     bool_row('Auto session summaries', 'AUTO_SUMMARIZE', settings.auto_summarize)

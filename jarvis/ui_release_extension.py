@@ -54,21 +54,21 @@ def install_release_ui() -> None:
     def deploy_selected(self):
         proposal = self._selected_proposal() if hasattr(self, '_selected_proposal') else None
         if not proposal:
-            messagebox.showinfo('JARVIS V7.5', 'Select an APPROVED proposal in SELF DEVELOPMENT first.', parent=self)
+            messagebox.showinfo(f'JARVIS {settings.app_version}', 'Select an APPROVED proposal in SELF DEVELOPMENT first.', parent=self)
             return
         if proposal.get('status') != 'APPROVED':
-            messagebox.showwarning('JARVIS V7.5', f"Proposal status is {proposal.get('status')}; APPROVED is required.", parent=self)
+            messagebox.showwarning(f'JARVIS {settings.app_version}', f"Proposal status is {proposal.get('status')}; APPROVED is required.", parent=self)
             return
         if not settings.production_self_modification:
             messagebox.showwarning(
-                'JARVIS V7.5 // PRODUCTION LOCKED',
+                f'JARVIS {settings.app_version} // PRODUCTION LOCKED',
                 'Production self-modification is OFF. This is the safe default.\n\n'
                 'Set PRODUCTION_SELF_MODIFICATION=true deliberately in .env only when you want the reviewed release engine enabled.',
                 parent=self,
             )
             return
         if not messagebox.askyesno(
-            'JARVIS V7.5 // DEPLOY APPROVED CHANGE',
+            f'JARVIS {settings.app_version} // DEPLOY APPROVED CHANGE',
             'Deploy this reviewed proposal to the current production branch?\n\n'
             'JARVIS will re-run regression tests and policy checks before touching production. '
             'The merge is fast-forward only. Continue?',
@@ -94,10 +94,10 @@ def install_release_ui() -> None:
     def rollback_selected(self):
         proposal = self._selected_proposal() if hasattr(self, '_selected_proposal') else None
         if not proposal:
-            messagebox.showinfo('JARVIS V7.5', 'Select a deployed proposal first.', parent=self)
+            messagebox.showinfo(f'JARVIS {settings.app_version}', 'Select a deployed proposal first.', parent=self)
             return
         if not messagebox.askyesno(
-            'JARVIS V7.5 // ROLLBACK',
+            f'JARVIS {settings.app_version} // ROLLBACK',
             'Create a history-preserving Git revert for the selected deployed improvement and re-run the full regression suite?',
             parent=self,
         ):

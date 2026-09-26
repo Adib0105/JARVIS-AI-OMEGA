@@ -56,10 +56,16 @@ def _all_modules(*names: str) -> bool:
 
 
 def _provider_ready() -> tuple[bool, str]:
-    primary_key = bool(settings.api_key.strip())
+    key = settings.api_key.strip()
+    placeholders = {
+        'put_your_openrouter_key_here',
+        'put_your_api_key_here',
+        'yahan_apni_openrouter_key',
+    }
+    primary_key = bool(key and key.casefold() not in placeholders)
     if primary_key:
         return True, f'primary provider configured: {settings.provider}'
-    if settings.enable_local_fallback and settings.local_ai_model.strip():
+    if settings.enable_local_fallback and settings.local_ai_model.strip() and settings.local_ai_base_url.strip():
         return True, 'local OpenAI-compatible fallback configured'
     return False, 'no configured hosted API key or local fallback model'
 
@@ -115,6 +121,32 @@ class CapabilityRegistry:
             dependencies=('openai-compatible SDK',), permissions=('WEB_READ',), risk='LOW',
             tests=('tests/test_v7_foundation.py', 'tests/test_runtime_guard.py'),
             implementation_path='jarvis/core_v7.py; jarvis/providers/', detail=provider_detail,
+        )
+
+        stack_exists = _module('jarvis.intelligence.stack') and _module('jarvis.intelligence.adaptive')
+        stack_enabled = bool(getattr(settings, 'enable_five_layer_intelligence', True))
+        if not stack_enabled:
+            stack_status = CapabilityStatus.DISABLED
+            stack_detail = 'five-layer routing disabled; deterministic legacy model router remains available'
+        elif not stack_exists:
+            stack_status = CapabilityStatus.MISSING
+            stack_detail = 'five-layer intelligence package is missing'
+        elif provider_ready:
+            stack_status = CapabilityStatus.AVAILABLE
+            stack_detail = 'AI executive + privacy-conscious adaptive ML + neural capability + GenAI strategy + LLM router active'
+        else:
+            stack_status = CapabilityStatus.DEGRADED
+            stack_detail = 'local AI/ML routing is ready, but generation needs a configured hosted key or local model'
+        records['Five-Layer Intelligence'] = self._record(
+            'Five-Layer Intelligence',
+            'Ordered AI, adaptive ML, deep-learning capability, generative strategy and LLM model-selection runtime.',
+            stack_status,
+            dependencies=('agent orchestration', 'local hashed-feature ML', 'configured neural/LLM provider'),
+            permissions=(), risk='MEDIUM',
+            tests=('tests/test_five_layer_intelligence.py',),
+            implementation_path='jarvis/intelligence/; jarvis/core.py',
+            detail=stack_detail,
+            version='1.0',
         )
 
         vision_deps = _all_modules('PIL')

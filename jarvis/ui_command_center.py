@@ -6,6 +6,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from .config import settings
 from .storage import BackupManager
 
 
@@ -31,7 +32,7 @@ class AgentCommandCenter(tk.Toplevel):
     def __init__(self, parent, jarvis) -> None:
         super().__init__(parent)
         self.jarvis = jarvis
-        self.title('JARVIS V7.5 // AGENT COMMAND CENTER')
+        self.title(f'JARVIS {settings.app_version} // AGENT COMMAND CENTER')
         self.configure(bg=BG)
         self.geometry('1180x720')
         self.minsize(980, 620)
@@ -46,7 +47,7 @@ class AgentCommandCenter(tk.Toplevel):
         header = tk.Frame(self, bg=BG)
         header.pack(fill='x', padx=14, pady=(12, 8))
         tk.Label(
-            header, text='J A R V I S   V7.5  //  AGENT COMMAND CENTER',
+            header, text=f'J A R V I S   {settings.app_version}  //  AGENT COMMAND CENTER',
             bg=BG, fg=CYAN, font=('Consolas', 16, 'bold'),
         ).pack(side='left')
         self.overall = tk.Label(header, text='● REFRESHING', bg=BG, fg=GOLD, font=('Consolas', 10, 'bold'))
@@ -70,6 +71,7 @@ class AgentCommandCenter(tk.Toplevel):
 
         self._build_missions()
         self._build_health()
+        self._build_intelligence()
         self._build_capabilities()
         self._build_observability()
         self._build_security()
@@ -113,7 +115,7 @@ class AgentCommandCenter(tk.Toplevel):
                 error = exc
             def finish():
                 if error is not None:
-                    messagebox.showerror('JARVIS V7.5', f'{type(error).__name__}: {error}', parent=self)
+                    messagebox.showerror(f'JARVIS {settings.app_version}', f'{type(error).__name__}: {error}', parent=self)
                 elif done:
                     done(result)
             try:
@@ -144,7 +146,7 @@ class AgentCommandCenter(tk.Toplevel):
     def _mission_action(self, action: str):
         mission_id = getattr(self.jarvis, 'last_mission_id', None)
         if not mission_id:
-            messagebox.showinfo('JARVIS V7.5', 'No active/recent mission ID is available.', parent=self)
+            messagebox.showinfo(f'JARVIS {settings.app_version}', 'No active/recent mission ID is available.', parent=self)
             return
         fn = {'pause': self.jarvis.pause_mission, 'resume': self.jarvis.resume_mission, 'cancel': self.jarvis.cancel_mission}[action]
         try:
@@ -204,6 +206,53 @@ class AgentCommandCenter(tk.Toplevel):
         self.health_tree.delete(*self.health_tree.get_children())
         for item in report['checks']:
             self.health_tree.insert('', 'end', values=(item['status'], item['name'], item['detail']))
+
+    # ---- Five-layer intelligence ----
+    def _build_intelligence(self):
+        frame = self._tab('INTELLIGENCE')
+        top = tk.Frame(frame, bg=BG); top.pack(fill='x', pady=8)
+        self.intelligence_label = tk.Label(
+            top, text='AI → ML → DEEP LEARNING → GEN AI → LLM',
+            bg=BG, fg=PURPLE, font=('Consolas', 12, 'bold'),
+        )
+        self.intelligence_label.pack(side='left', padx=6)
+        self._button(top, 'RESET ADAPTIVE ML', self._reset_adaptive_ml, RED).pack(side='right', padx=4)
+        self._button(top, 'REFRESH STACK', self.refresh_intelligence, CYAN).pack(side='right', padx=4)
+        self.intelligence_tree = ttk.Treeview(
+            frame,
+            columns=('order', 'status', 'layer', 'role', 'detail'),
+            show='headings', style='Jarvis.Treeview', height=8,
+        )
+        for name, width in (('order', 55), ('status', 100), ('layer', 180), ('role', 285), ('detail', 520)):
+            self.intelligence_tree.heading(name, text=name.upper())
+            self.intelligence_tree.column(name, width=width, anchor='w')
+        self.intelligence_tree.pack(fill='x', padx=4, pady=4)
+        self.intelligence_detail = self._text(frame)
+        self.intelligence_detail.pack(fill='both', expand=True, padx=4, pady=8)
+
+    def refresh_intelligence(self):
+        report = self.jarvis.intelligence_status()
+        self.intelligence_tree.delete(*self.intelligence_tree.get_children())
+        for layer in report['layers']:
+            self.intelligence_tree.insert('', 'end', values=(
+                layer['order'], layer['status'], layer['name'], layer['role'], layer['detail'],
+            ))
+        self.intelligence_label.configure(
+            text=f"5-LAYER STACK: {'ACTIVE' if report['enabled'] else 'DISABLED'}  //  ML OBSERVATIONS: {report['adaptive_ml']['observations']}",
+            fg=GREEN if report['enabled'] else GOLD,
+        )
+        self._set_text(self.intelligence_detail, _pretty(report))
+
+    def _reset_adaptive_ml(self):
+        if not messagebox.askyesno(
+            'RESET ADAPTIVE ML',
+            'Reset only locally learned routing weights?\n\nChats, memory, accounts and settings will NOT be deleted.',
+            parent=self,
+        ):
+            return
+        report = self.jarvis.reset_adaptive_routing()
+        self.refresh_intelligence()
+        self._set_text(self.intelligence_detail, _pretty(report))
 
     # ---- Capabilities ----
     def _build_capabilities(self):
@@ -310,20 +359,20 @@ class AgentCommandCenter(tk.Toplevel):
     def _create_selected_proposal(self):
         gap = self._selected_gap()
         if not gap:
-            messagebox.showinfo('JARVIS V7.5', 'Select a detected gap first.', parent=self); return
+            messagebox.showinfo(f'JARVIS {settings.app_version}', 'Select a detected gap first.', parent=self); return
         self._background(lambda: self.jarvis.propose_improvement(gap), lambda data: (self._refresh_proposals(), self._set_text(self.selfdev_detail, _pretty(data))))
 
     def _prepare_selected_sandbox(self):
         proposal = self._selected_proposal()
         if not proposal:
-            messagebox.showinfo('JARVIS V7.5', 'Select a proposal first.', parent=self); return
+            messagebox.showinfo(f'JARVIS {settings.app_version}', 'Select a proposal first.', parent=self); return
         self._background(lambda: self.jarvis.prepare_improvement_sandbox(proposal['id']), lambda data: (self._refresh_proposals(), self._set_text(self.selfdev_detail, _pretty(data))))
 
     def _run_selected_build(self):
         proposal = self._selected_proposal()
         if not proposal:
-            messagebox.showinfo('JARVIS V7.5', 'Select a prepared proposal first.', parent=self); return
-        if not messagebox.askyesno('JARVIS V7.5 // SANDBOX BUILD', 'Run bounded AI coding + full tests in the isolated sandbox?\n\nProduction code will NOT be merged.', parent=self):
+            messagebox.showinfo(f'JARVIS {settings.app_version}', 'Select a prepared proposal first.', parent=self); return
+        if not messagebox.askyesno(f'JARVIS {settings.app_version} // SANDBOX BUILD', 'Run bounded AI coding + full tests in the isolated sandbox?\n\nProduction code will NOT be merged.', parent=self):
             return
         self._background(lambda: self.jarvis.run_self_coding(proposal['id']), lambda data: (self._refresh_proposals(), self._set_text(self.selfdev_detail, _pretty(data))))
 
@@ -331,13 +380,13 @@ class AgentCommandCenter(tk.Toplevel):
         proposal = self._selected_proposal()
         if not proposal:
             return
-        if not messagebox.askyesno('JARVIS V7.5 // RELEASE APPROVAL', 'Approve this tested proposal for the later controlled release stage?\n\nThis button does NOT deploy or merge production code.', parent=self):
+        if not messagebox.askyesno(f'JARVIS {settings.app_version} // RELEASE APPROVAL', 'Approve this tested proposal for the later controlled release stage?\n\nThis button does NOT deploy or merge production code.', parent=self):
             return
         try:
             data = self.jarvis.approve_improvement_for_release(proposal['id'], explicit_user_approval=True)
             self._refresh_proposals(); self._set_text(self.selfdev_detail, _pretty(data))
         except Exception as exc:
-            messagebox.showerror('JARVIS V7.5', f'{type(exc).__name__}: {exc}', parent=self)
+            messagebox.showerror(f'JARVIS {settings.app_version}', f'{type(exc).__name__}: {exc}', parent=self)
 
     def _reject_selected(self):
         proposal = self._selected_proposal()
@@ -390,6 +439,8 @@ class AgentCommandCenter(tk.Toplevel):
         try: self.refresh_missions()
         except Exception: pass
         try: self.refresh_health()
+        except Exception: pass
+        try: self.refresh_intelligence()
         except Exception: pass
         try: self.refresh_capabilities()
         except Exception: pass

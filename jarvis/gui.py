@@ -121,7 +121,7 @@ class JarvisDesktop:
         title_box.pack(side='left')
         tk.Label(
             title_box,
-            text='J A R V I S   O M E G A   V6',
+            text=f'J A R V I S   O M E G A   {settings.app_version}',
             bg='#061725', fg=CYAN, font=('Segoe UI', 19, 'bold'),
         ).pack(anchor='w')
         tk.Label(
@@ -145,7 +145,7 @@ class JarvisDesktop:
         ).pack(anchor='e')
         self.connection_label = tk.Label(
             operator,
-            text=f'{provider}  //  {settings.model}  //  CORE {settings.app_version}',
+            text=f'{provider}  //  {settings.model}  //  5-LAYER CORE {settings.app_version}',
             bg='#061725', fg=MUTED, font=('Consolas', 8),
         )
         self.connection_label.pack(anchor='e')
@@ -785,10 +785,11 @@ class JarvisDesktop:
         provider = {'openrouter': 'OpenRouter', 'openai': 'OpenAI', 'local': 'Local AI'}.get(settings.provider, settings.provider)
         stats = self.jarvis.memory.stats()
         messagebox.showinfo(
-            'OMEGA V6 // Core Status',
+            f'OMEGA {settings.app_version} // Core Status',
             f'Version: {settings.app_version}\n'
             f'Operator: {settings.user_name}\nCreator: {settings.creator_name}\n'
             f'Provider: {provider}\nModel: {settings.model}\nLast model: {self.jarvis.last_model_used}\n'
+            f'Five-layer intelligence: {self.jarvis.intelligence_status()["enabled"]}\nLast route: {self.jarvis.last_route}\n'
             f'Last request: {self.jarvis.last_request_kind}\nTool mode: {self.jarvis.last_tool_mode}\n'
             f'Desktop automation: {settings.enable_desktop_automation}\n'
             f'Document intelligence: {settings.enable_document_intelligence}\n'

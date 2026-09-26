@@ -91,6 +91,7 @@ def main() -> None:
         ('V7.5 Self Development', 'jarvis.self_development', 'SelfDevelopmentEngine'),
         ('V7.5 Skill Registry', 'jarvis.skills', 'SkillRegistry'),
         ('V7.5 Backup Manager', 'jarvis.storage', 'BackupManager'),
+        ('V7.7 Five-Layer Intelligence', 'jarvis.intelligence', 'FiveLayerIntelligence'),
     ]
     for label, module_name, attr in foundation_checks:
         try:
@@ -131,12 +132,14 @@ def main() -> None:
         from jarvis.config_validation import ValidationLevel, validate_settings
         from jarvis.memory_lifecycle import MemoryLifecycleManager
         from jarvis.memory_v7 import V7MemoryStore
+        from jarvis.intelligence import FIVE_LAYER_NAMES, FiveLayerIntelligence
         from jarvis.observability import ObservabilityManager
+        from jarvis.providers.router import ModelRouter
         from jarvis.storage import BackupManager, TARGET_SCHEMA_VERSION
 
         results.append(check(
             'JARVIS version',
-            __version__ == settings.app_version and __version__.startswith('7.6.'),
+            __version__ == settings.app_version and __version__.startswith('7.7.'),
             __version__,
         ))
         findings = validate_settings(settings)
@@ -165,6 +168,19 @@ def main() -> None:
         results.append(check('Image attachments', settings.max_image_attachments >= 1, f'max={settings.max_image_attachments}'))
         results.append(check('AI timeout', settings.ai_timeout_seconds > 0, f'{settings.ai_timeout_seconds}s'))
         results.append(check('Vision timeout', settings.vision_timeout_seconds > 0, f'{settings.vision_timeout_seconds}s'))
+
+        intelligence = FiveLayerIntelligence(
+            config=settings,
+            router=ModelRouter(config=settings),
+            model_path=settings.db_path.parent / 'adaptive-route-model.json',
+        )
+        intelligence_status = intelligence.status()
+        results.append(check(
+            'V7.7 five-layer intelligence',
+            intelligence_status.get('layer_count') == 5
+            and tuple(item['name'] for item in intelligence_status.get('layers', ())) == FIVE_LAYER_NAMES,
+            'AI -> ML -> Deep Learning -> Generative AI -> LLM',
+        ))
 
         memory = V7MemoryStore(settings.db_path)
         memory_stats = memory.v7_stats()
@@ -231,7 +247,7 @@ def main() -> None:
     except Exception as exc:
         results.append(check('JARVIS config/memory/V7.5 diagnostics', False, str(exc)))
 
-    print('\nJARVIS OMEGA V7.6 ENGINEERING CORE:', 'READY' if all(results) else 'NEEDS ATTENTION')
+    print('\nJARVIS OMEGA V7.7 ENGINEERING CORE:', 'READY' if all(results) else 'NEEDS ATTENTION')
 
 
 if __name__ == '__main__':
