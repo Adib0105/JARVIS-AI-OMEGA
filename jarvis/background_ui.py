@@ -25,6 +25,10 @@ def load_preferences():
         if not isinstance(data, dict):
             return {}
         clean = {'enabled': data.get('enabled') is True}
+        if 'wake_weather' in data:
+            clean['wake_weather'] = data.get('wake_weather') is True
+        if 'fast_ack' in data:
+            clean['fast_ack'] = data.get('fast_ack') is not False
         if 'auto_updates' in data:
             clean['auto_updates'] = data.get('auto_updates') is True
         if 'show_on_wake' in data:
@@ -55,6 +59,9 @@ def _wait_until_voice_finishes(voice, stop_event, *, start_timeout=1.5, finish_t
     short time while its worker dequeues the text.  A muted/disabled voice never
     becomes active, so the short start timeout lets command capture continue.
     """
+    from .voice import VoiceOutput
+    if isinstance(voice, VoiceOutput):
+        return voice.wait_idle(stop_event, timeout=finish_timeout)
     if not getattr(voice, 'enabled', False) or getattr(voice, 'muted', False):
         return True
     started = time.monotonic()
@@ -88,6 +95,11 @@ class BackgroundController:
         self.followup_stop = threading.Event()
         self.followup_thread = None
         self.tray = None
+        self.weather_snapshot = None
+        self.weather_refreshing = False
+        self.weather_next_refresh = 0.0
+        self.last_wake_latency_ms = None
+        self.heard_at = 0.0
         from .wake_model import MODEL_NAME, model_valid
         installed_model = settings.db_path.parent / 'models' / MODEL_NAME
         selected_model = self.preferences.get('model_path') or settings.vosk_model_path
@@ -107,6 +119,7 @@ class BackgroundController:
         if self.suspended():
             return
         self.pending = True
+        self.heard_at = time.monotonic()
         self.events.put(('wake', command, self.generation))
 
     def show(self):
@@ -254,8 +267,9 @@ class BackgroundController:
         d = self.desktop
         if getattr(d, '_closing', False):
             return
+        self._refresh_weather()
         if d.voice.state != 'idle':
-            self.suppress_until = time.monotonic() + 1.2
+            self.suppress_until = time.monotonic() + 0.35
         for _ in range(20):
             try:
                 kind, value, generation = self.events.get_nowait()
@@ -281,11 +295,6 @@ class BackgroundController:
                         self.pending = False
                         self.suppress_until = time.monotonic() + 2
                         d._send_text(value, from_voice=True)
-                    elif not self.preferences.get('listen_after_wake', True):
-                        self.pending = False
-                        acknowledgement = 'Yes boss, kya chahiye?'
-                        d._append('JARVIS', acknowledgement)
-                        d.voice.speak(acknowledgement)
                     else:
                         self._start_followup_capture(generation)
                 elif kind == 'followup':
@@ -304,6 +313,8 @@ class BackgroundController:
                         d.voice.speak('Command sun nahi paayi. Please Wake up Jarvis bolkar dobara try kijiye.')
                     else:
                         d._append('SYSTEM', 'Wake acknowledged; no follow-up command was heard.')
+                elif kind == 'weather_spoken':
+                    d._append('JARVIS', value)
                 elif kind == 'brief':
                     self.pending = False
                     if d.busy:
@@ -316,9 +327,7 @@ class BackgroundController:
         if self.followup_thread and self.followup_thread.is_alive():
             return
         self.followup_stop = threading.Event()
-        acknowledgement = 'Yes boss, kya chahiye?'
-        self.desktop._append('JARVIS', acknowledgement)
-        self.desktop.voice.speak(acknowledgement)
+        self._acknowledge()
         self.followup_thread = threading.Thread(
             target=self._followup_worker,
             args=(generation, self.followup_stop),
@@ -338,7 +347,24 @@ class BackgroundController:
                 raise RuntimeError('Voice acknowledgement did not finish in time.')
             if stop_event.is_set() or generation != self.generation or not self.enabled:
                 return
+            # Weather is prefetched while idle; the wake acknowledgement never
+            # waits for a weather API. A missing snapshot is stated honestly.
+            if self.preferences.get('wake_weather', True):
+                snapshot = self.weather_snapshot
+                location = self.preferences.get('location')
+                if snapshot and snapshot[0] == location and time.monotonic() - snapshot[1] < 300:
+                    report = snapshot[2]
+                else:
+                    report = 'Weather abhi ready nahi hai. Weather now bolkar pooch sakte hain.' if location else 'Mausam ke liye Background Settings mein shehar chuniye.'
+                self.events.put(('weather_spoken', report, generation))
+                self.desktop.voice.speak(report)
+                if not _wait_until_voice_finishes(self.desktop.voice, stop_event, finish_timeout=60.0):
+                    raise RuntimeError('Weather speech did not finish; please retry.')
+            if stop_event.is_set() or generation != self.generation or not self.enabled:
+                return
 
+            if not self.preferences.get('listen_after_wake', True):
+                return
             from .microphone import record_until_silence
             from .offline_speech import transcribe_vosk
 
@@ -365,6 +391,33 @@ class BackgroundController:
             if not stop_event.is_set():
                 self.events.put(('followup', payload, generation))
 
+    def _acknowledge(self):
+        from .daily_briefing import wake_greeting
+        greeting = wake_greeting(settings.user_name)
+        self.desktop._append('JARVIS', greeting)
+        if self.preferences.get('fast_ack', True):
+            self.desktop.voice.acknowledge(greeting)
+        else:
+            self.desktop.voice.speak(greeting)
+        self.last_wake_latency_ms = round((time.monotonic() - self.heard_at) * 1000) if self.heard_at else None
+
+    def _refresh_weather(self):
+        location = self.preferences.get('location')
+        if (not self.enabled or not self.preferences.get('wake_weather', True)
+                or not valid_location(location) or self.weather_refreshing
+                or time.monotonic() < self.weather_next_refresh):
+            return
+        self.weather_refreshing = True
+        self.weather_next_refresh = time.monotonic() + 240
+        location = dict(location)
+        def worker():
+            try:
+                from .daily_briefing import rich_weather_report
+                self.weather_snapshot = (location, time.monotonic(), rich_weather_report(location))
+            finally:
+                self.weather_refreshing = False
+        threading.Thread(target=worker, daemon=True, name='jarvis-weather-cache').start()
+
     def health_report(self):
         """Small support snapshot without keys, device names or filesystem paths."""
         from pathlib import Path
@@ -381,6 +434,7 @@ class BackgroundController:
             + 'Sign-in shortcut: ' + ('present' if sign_in else 'absent') + '\n'
             + 'Listening preference: ' + ('enabled' if self.preferences.get('enabled') else 'disabled') + '\n'
             + 'Wake follow-up: ' + ('listen for command' if self.preferences.get('listen_after_wake', True) else 'acknowledge only') + '\n'
+            + 'Wake dispatch latency: ' + (str(self.last_wake_latency_ms) + ' ms (queue only)' if self.last_wake_latency_ms is not None else 'not measured') + '\n'
             + 'Wake focus: ' + ('show window' if self.preferences.get('show_on_wake') else 'stay in background')
         )
 
@@ -437,13 +491,23 @@ class BackgroundController:
         ttk.Button(frame, text='Enable always-on mode (wake + tray + sign-in)', command=enable_always_on).pack(anchor='w', pady=4)
         ttk.Button(frame, text='Start JARVIS when I sign in', command=lambda: self.set_startup(True)).pack(anchor='w', pady=4)
         ttk.Button(frame, text='Disable sign-in startup', command=lambda: self.set_startup(False)).pack(anchor='w')
+        for key, label in (
+            ('wake_weather', 'Read my city weather and pollution after the name greeting'),
+            ('fast_ack', 'Fast wake greeting using the installed offline voice'),
+        ):
+            variable = tk.BooleanVar(value=self.preferences.get(key, True))
+            def save_option(k=key, v=variable):
+                self.preferences[k] = v.get()
+                self.weather_next_refresh = 0.0
+                self.persist()
+            ttk.Checkbutton(frame, text=label, variable=variable, command=save_option).pack(anchor='w', pady=3)
         followup = tk.BooleanVar(value=self.preferences.get('listen_after_wake', True))
         def save_followup():
             self.preferences['listen_after_wake'] = followup.get()
             self.persist()
         ttk.Checkbutton(
             frame,
-            text='After “Wake up Jarvis”, say “Yes boss” and listen for my command',
+            text='After the wake greeting and optional weather, listen for my command',
             variable=followup,
             command=save_followup,
         ).pack(anchor='w', pady=(10, 2))
@@ -559,6 +623,8 @@ class BackgroundController:
                 return
             row = locations[results.curselection()[0]]
             self.preferences['location'] = {k: row[k] for k in ('name', 'latitude', 'longitude')}
+            self.weather_snapshot = None
+            self.weather_next_refresh = 0.0
             if not self.persist():
                 return
             location_label.set('Weather location: ' + row['name'])
@@ -589,6 +655,10 @@ def install_background_ui():
         bar = ttk.Frame(root)
         bar.pack(side='bottom', fill='x')
         ttk.Button(bar, text='BACKGROUND / WEATHER', command=self.background.settings_dialog).pack(side='left', padx=8)
+        from .account_ui import show_account_dialog
+        ttk.Button(bar, text='ACCOUNT / SUBSCRIPTION', command=lambda: show_account_dialog(self)).pack(side='left', padx=8)
+        ttk.Button(bar, text='AQI', command=lambda: self._send_text('air quality')).pack(side='left', padx=4)
+        ttk.Button(bar, text='TOMORROW', command=lambda: self._send_text('tomorrow weather')).pack(side='left', padx=4)
         ttk.Button(bar, text='WEATHER NOW', command=lambda: self._send_text('weather report')).pack(side='left', padx=8)
         ttk.Button(bar, text='EXIT COMPLETELY', command=self._exit_completely).pack(side='right', padx=8)
         root.protocol('WM_DELETE_WINDOW', self._close)

@@ -108,6 +108,7 @@ class VoiceOutput:
         self._active_epoch = 0
         self.last_error: str | None = None
         self._last_process_failure: str | None = None
+        self._active_local = False
         self._current_text: str | None = None
         self._last_text: str | None = None
         self._process: subprocess.Popen | None = None
@@ -164,7 +165,32 @@ class VoiceOutput:
             if self._shutdown:
                 return
             self._last_text = spoken
+            if self._state == 'idle':
+                self._state = 'queued'
             self._queue.put((self._cancel_epoch, spoken))
+
+    def acknowledge(self, text: str) -> None:
+        """Short wake replies use installed speech, avoiding a cloud TTS wait."""
+        if not self.enabled or self.muted:
+            return
+        spoken = clean_for_speech(text)
+        with self._lock:
+            if spoken and not self._shutdown:
+                self._last_text = spoken
+                if self._state == 'idle':
+                    self._state = 'queued'
+                self._queue.put((self._cancel_epoch, spoken, True))
+
+    def wait_idle(self, stop_event, timeout=45.0) -> bool:
+        deadline = time.monotonic() + timeout
+        while not stop_event.is_set():
+            with self._lock:
+                if self._queue.empty() and self._current_text is None and self._state == 'idle':
+                    return True
+            if time.monotonic() >= deadline:
+                return False
+            stop_event.wait(0.04)
+        return False
 
     def play(self) -> bool:
         """Resume paused speech, or replay the last utterance after STOP."""
@@ -347,7 +373,7 @@ class VoiceOutput:
                     )
                     self._process = process
                 try:
-                    return_code = process.wait(timeout=max(180, min(900, len(text) / 8)))
+                    return_code = process.wait(timeout=15 if self._active_local else max(180, min(900, len(text) / 8)))
                 except subprocess.TimeoutExpired:
                     self._terminate_process(process)
                     self._last_process_failure = f'{engine} speech worker timed out'
@@ -375,7 +401,7 @@ class VoiceOutput:
 
     def _play_text(self, text: str) -> str:
         self.last_error = None
-        engine = self.engine
+        engine = 'pyttsx3' if self._active_local else self.engine
         if engine in {'edge', 'openai'}:
             result = self._speak_process(text, engine)
             if result != 'failed':
@@ -395,7 +421,8 @@ class VoiceOutput:
             item = self._queue.get()
             if item is _SENTINEL:
                 break
-            epoch, text = item
+            epoch, text = item[:2]
+            self._active_local = len(item) > 2 and item[2] is True
             with self._condition:
                 if self._shutdown:
                     break

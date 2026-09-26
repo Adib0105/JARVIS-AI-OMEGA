@@ -6,6 +6,7 @@ _SECRET_KEY_RE = re.compile(
     r'(?i)(api[_-]?key|authorization|password|passwd|secret|token|refresh[_-]?token|access[_-]?token|cookie|credential)'
 )
 _SECRET_VALUE_PATTERNS = [
+    re.compile(r'\b(?:(?:sk|rk)_(?:live|test)_|whsec_)[A-Za-z0-9]{8,}\b'),
     re.compile(r'\bsk-[A-Za-z0-9_-]{4,}\b'),
     re.compile(r'\bsk-or-v1-[A-Za-z0-9_-]{4,}\b'),
     re.compile(r'(?i)(bearer\s+)[A-Za-z0-9._~+/=-]{4,}'),

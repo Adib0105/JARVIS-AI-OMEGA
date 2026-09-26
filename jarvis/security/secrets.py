@@ -11,6 +11,7 @@ class SecretFinding:
 
 
 _PATTERNS: tuple[tuple[str, re.Pattern, str], ...] = (
+    ('billing_key', re.compile(r'\b(?:(?:sk|rk)_(?:live|test)_|whsec_)[A-Za-z0-9]{8,}\b'), 'Billing secret'),
     ('openai_key', re.compile(r'\bsk-(?:proj-|or-v1-)?[A-Za-z0-9_-]{16,}\b'), 'API-key-like value'),
     ('bearer_token', re.compile(r'(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}'), 'Bearer token'),
     ('private_key', re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----'), 'Private key block'),
