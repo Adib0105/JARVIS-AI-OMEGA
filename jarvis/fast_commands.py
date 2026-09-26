@@ -179,14 +179,15 @@ def local_quick_reply(text):
     clean = ' '.join(str(text).lower().strip(' .!?').split())
     clean = re.sub(r'^(?:(?:hey|jarvis|jarves|friday|please)\s+)+', '', clean)
     if clean in {'hi', 'hello', 'hey', 'namaste', 'kaisi ho', 'kaise ho', 'hello friday'}:
-        return 'Hello boss! Main Friday hoon. Bataiye, kya karna hai?'
+        from .config import settings
+        return f'Hello {settings.user_name}! Main Friday hoon. Bataiye, kya karna hai?'
     if clean in {'time', 'what time is it', 'kitne baje hain', 'kitna time hua', 'time batao'}:
         return 'Abhi ' + datetime.now().strftime('%I:%M %p') + ' hua hai, boss.'
     if clean in {'system status', 'system report', 'cpu usage', 'ram usage', 'system kitna use ho raha hai'}:
         from .daily_briefing import system_report
         return system_report()
-    if clean in {'weather', 'weather report', 'weather batao', 'mausam batao', 'aaj ka mausam', 'aaj barish hogi', 'aaj barish hogi ya nahi', 'aaj barish hogi ya nhi'}:
-        from .daily_briefing import weather_report
+    if clean in {'weather', 'weather report', 'weather batao', 'mausam batao', 'aaj ka mausam', 'aaj barish hogi', 'aaj barish hogi ya nahi', 'aaj barish hogi ya nhi', 'weather now', 'kal ka mausam', 'tomorrow weather', 'air quality', 'aqi', 'pollution', 'pollution kitna hai'}:
+        from .daily_briefing import weather_report, rich_weather_report, air_report
         from .config import settings
         try:
             preferences = json.loads((settings.db_path.parent / 'background-settings.json').read_text(encoding='utf-8'))
@@ -194,7 +195,11 @@ def local_quick_reply(text):
         except (OSError, ValueError):
             location = None
         try:
-            return weather_report(location)
+            if clean in {'air quality', 'aqi', 'pollution', 'pollution kitna hai'}:
+                return air_report(location)
+            if clean in {'kal ka mausam', 'tomorrow weather'}:
+                return weather_report(location, mode='tomorrow')
+            return rich_weather_report(location)
         except Exception:
             return 'Weather service abhi available nahi hai. Internet check karke dobara boliye.'
     return None

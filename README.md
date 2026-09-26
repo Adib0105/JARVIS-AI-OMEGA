@@ -1,11 +1,11 @@
-# JARVIS AI OMEGA V7.7 — Five-Layer ARC Desktop Agent
+# JARVIS AI OMEGA V7.8 — Personal Wake, Weather & Accounts
 
 <p align="center">
   <strong>Multimodal • Evidence-Driven • Capability-Aware • Windows-First AI Agent</strong>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/JARVIS-V7.7-00d9ff">
+  <img alt="Version" src="https://img.shields.io/badge/JARVIS-V7.8-00d9ff">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11--3.14-3776ab">
   <img alt="Branch" src="https://img.shields.io/badge/Branch-main-2ea44f">
   <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Adib0105/JARVIS-AI-OMEGA/ci.yml?branch=main&label=CI">
@@ -29,6 +29,12 @@ UNDERSTAND → PLAN → PERMISSION → EXECUTE → VERIFY → RECOVER / REPLAN
 It combines typed chat, voice, screen/image vision, local documents, memory/RAG, browser research, Windows computer use, coding/Git tools, productivity workflows, observability, evaluation and controlled self-development.
 
 > **Current branch strategy:** `main` contains the promoted V7 release line. Experimental work stays on reviewed feature branches until tests and release gates pass.
+
+## V7.8 update
+
+Personalized low-latency wake greetings, weather/cloud/rain/AQI briefings, account settings and an optional subscription backend are integrated. [All 20 changes and setup](docs/V7.8-WEATHER-ACCOUNTS.md) · [Account server setup](server/README.md).
+
+Local wake, chat and basic weather remain available without payment. Monthly/yearly checkout, billing portal and paid 7-day forecasts require a deployed HTTPS backend and the owner's payment/weather credentials. The repository does not contain a running payment service. Existing production audit and physical Windows validation gates remain open.
 
 ## Quick navigation
 

@@ -47,6 +47,14 @@ def schedule_smoke_check(root, app):
             for child in root.winfo_children():
                 if isinstance(child, tk.Toplevel):
                     child.destroy()
+            from .account_ui import show_account_dialog
+            account = show_account_dialog(app)
+            account.account_tabs.select(1)
+            root.update_idletasks()
+            account.account_canvas.yview_moveto(1)
+            root.update_idletasks()
+            assert account.account_canvas.yview()[1] > 0.99, 'Subscription controls inaccessible'
+            account.destroy()
             # Change focus to another real window, then minimize and close-to-tray.
             other = tk.Toplevel(root)
             other.title('Another application focus check')

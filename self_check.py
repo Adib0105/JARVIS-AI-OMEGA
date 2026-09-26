@@ -139,7 +139,7 @@ def main() -> None:
 
         results.append(check(
             'JARVIS version',
-            __version__ == settings.app_version and __version__.startswith('7.7.'),
+            __version__ == settings.app_version and __version__.startswith('7.8.'),
             __version__,
         ))
         findings = validate_settings(settings)
@@ -247,7 +247,7 @@ def main() -> None:
     except Exception as exc:
         results.append(check('JARVIS config/memory/V7.5 diagnostics', False, str(exc)))
 
-    print('\nJARVIS OMEGA V7.7 ENGINEERING CORE:', 'READY' if all(results) else 'NEEDS ATTENTION')
+    print('\nJARVIS OMEGA V7.8 ENGINEERING CORE:', 'READY' if all(results) else 'NEEDS ATTENTION')
 
 
 if __name__ == '__main__':

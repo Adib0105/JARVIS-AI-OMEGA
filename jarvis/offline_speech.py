@@ -23,11 +23,7 @@ def transcribe_vosk(data: bytes, sample_rate: int, model_path: str) -> str:
         import vosk
     except ImportError as exc:
         raise RuntimeError('Install optional offline speech: python -m pip install -r requirements-offline-voice.txt') from exc
-    with _model_lock:
-        if _model is None or _model_path != str(path):
-            candidate = vosk.Model(str(path))
-            _model, _model_path = candidate, str(path)
-        model = _model
+    model = get_vosk_model(str(path))
     recognizer = vosk.KaldiRecognizer(model, sample_rate)
     parts = []
     for offset in range(0, len(data), 8000):
@@ -35,3 +31,15 @@ def transcribe_vosk(data: bytes, sample_rate: int, model_path: str) -> str:
             parts.append(json.loads(recognizer.Result()).get('text', ''))
     parts.append(json.loads(recognizer.FinalResult()).get('text', ''))
     return ' '.join(part.strip() for part in parts if isinstance(part, str) and part.strip())
+
+
+def get_vosk_model(model_path: str):
+    """Share one loaded acoustic model; each stream owns its recognizer."""
+    global _model, _model_path
+    import vosk
+    path = str(Path(model_path).expanduser().resolve())
+    with _model_lock:
+        if _model is None or _model_path != path:
+            candidate = vosk.Model(path)
+            _model, _model_path = candidate, path
+        return _model

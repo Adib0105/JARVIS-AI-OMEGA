@@ -1,6 +1,6 @@
 #define MyAppName "JARVIS AI OMEGA V7"
 #ifndef MyAppVersion
-#define MyAppVersion "7.7.0"
+#define MyAppVersion "7.8.0"
 #endif
 #define MyAppPublisher "Adib Azam"
 #define MyAppExeName "JARVIS-OMEGA-V7.exe"
