@@ -127,7 +127,7 @@ jobs:
       - name: Assign increasing release version
         shell: pwsh
         run: |
-          $Version = "7.6.$env:GITHUB_RUN_NUMBER"
+          $Version = "7.7.$env:GITHUB_RUN_NUMBER"
           "__version__ = '$Version'" | Set-Content jarvis/__init__.py -Encoding utf8
           $Version | Set-Content build-version.txt
       - name: Build V7 Windows application

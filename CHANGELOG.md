@@ -2,6 +2,17 @@
 
 All notable engineering changes to JARVIS AI OMEGA are documented here.
 
+## V7.7 five-layer intelligence — unreleased
+
+- Added an ordered AI → Machine Learning → Deep Learning → Generative AI → LLM routing runtime for chat, vision and specialist model selection.
+- Added a bounded local online intent classifier for English, Hindi and Hinglish vocabulary; it learns only from successful routes, stores token fingerprints instead of prompt text, rejects secret-like input and supports operator reset.
+- Added optional embedding-based neural semantic routing behind explicit configuration. It cannot override specialist routes and influences a generic route only when the local ML signal agrees.
+- Added grounded generation modes and final FAST / SMART / CODING / PLANNING / REVIEW / SUMMARY / VISION / LOCAL model selection without bypassing capability permissions, audit or verification.
+- Added an INTELLIGENCE Command Center view, dynamic V7.7 desktop labels, runtime status/reset APIs, capability reporting and privacy-safe route observability.
+- Added configuration validation, self-check coverage and deterministic regression tests for ordering, safety, adaptation, corruption recovery, secret rejection, reset and neural consensus.
+- Versioned source, installer defaults and CI-built installers as V7.7.
+- This is software evidence, not a claim of human-level intelligence or zero defects. Real Windows microphone/tray/focus and installation soak evidence remains a release gate.
+
 ## V7.6 background/account launch pack — unreleased
 
 - Background listening now reports READY only after Vosk loads and Windows actually opens the microphone.

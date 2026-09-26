@@ -20,6 +20,9 @@ class ModelRoute:
 class ModelRouter:
     """Deterministic route selector; provider switching remains explicit/fallback-only."""
 
+    def __init__(self, config=None) -> None:
+        self.config = config or settings
+
     SMART_HINTS = {
         'analyze', 'analyse', 'debug', 'error', 'architecture', 'compare', 'reason',
         'why', 'research', 'security', 'document', 'problem', 'issue', 'advanced',
@@ -39,30 +42,30 @@ class ModelRouter:
         kind = (kind or 'chat').strip().lower()
         lower = str(text).lower()
         if kind in {'image', 'vision'}:
-            return ModelRoute('VISION', settings.routed_vision_model, 'multimodal request')
+            return ModelRoute('VISION', self.config.routed_vision_model, 'multimodal request')
         if kind in {'coding', 'code', 'self-coding'}:
-            return ModelRoute('CODING', settings.routed_coding_model, 'coding workflow')
+            return ModelRoute('CODING', self.config.routed_coding_model, 'coding workflow')
         if kind in {'planning', 'plan', 'mission', 'mission-plan'}:
-            return ModelRoute('PLANNING', settings.routed_planning_model, 'mission/planning workflow')
+            return ModelRoute('PLANNING', self.config.routed_planning_model, 'mission/planning workflow')
         if kind in {'review', 'verification'}:
-            return ModelRoute('REVIEW', settings.routed_review_model, 'review/verification workflow')
+            return ModelRoute('REVIEW', self.config.routed_review_model, 'review/verification workflow')
         if kind in {'summary', 'summarize'}:
-            return ModelRoute('SUMMARY', settings.routed_summary_model, 'summary workflow')
+            return ModelRoute('SUMMARY', self.config.routed_summary_model, 'summary workflow')
         if kind in {'local', 'offline'}:
-            return ModelRoute('LOCAL', settings.local_ai_model, 'explicit local/offline route')
+            return ModelRoute('LOCAL', self.config.local_ai_model, 'explicit local/offline route')
 
-        if settings.model_routing not in {'auto', 'on', 'true'}:
-            return ModelRoute('DEFAULT', settings.model, 'model routing disabled')
+        if self.config.model_routing not in {'auto', 'on', 'true'}:
+            return ModelRoute('DEFAULT', self.config.model, 'model routing disabled')
 
         if self._matches(lower, self.CODING_HINTS):
-            return ModelRoute('CODING', settings.routed_coding_model, 'coding keywords')
+            return ModelRoute('CODING', self.config.routed_coding_model, 'coding keywords')
         if self._matches(lower, self.PLAN_HINTS):
-            return ModelRoute('PLANNING', settings.routed_planning_model, 'planning keywords')
+            return ModelRoute('PLANNING', self.config.routed_planning_model, 'planning keywords')
         if self._matches(lower, self.REVIEW_HINTS):
-            return ModelRoute('REVIEW', settings.routed_review_model, 'review keywords')
+            return ModelRoute('REVIEW', self.config.routed_review_model, 'review keywords')
         if self._matches(lower, self.SUMMARY_HINTS):
-            return ModelRoute('SUMMARY', settings.routed_summary_model, 'summary keywords')
+            return ModelRoute('SUMMARY', self.config.routed_summary_model, 'summary keywords')
         smart = len(str(text)) > 700 or self._matches(lower, self.SMART_HINTS)
         if smart:
-            return ModelRoute('SMART', settings.routed_smart_model, 'complexity/analysis heuristic')
-        return ModelRoute('FAST', settings.routed_fast_model, 'short/general request')
+            return ModelRoute('SMART', self.config.routed_smart_model, 'complexity/analysis heuristic')
+        return ModelRoute('FAST', self.config.routed_fast_model, 'short/general request')

@@ -1,7 +1,7 @@
-# JARVIS AI OMEGA V7 / V7.5 — Architecture
+# JARVIS AI OMEGA V7.7 — Architecture
 
-**Development branch:** `v7-development`  
-**Stable baseline:** V6 on `main`
+**Current release line:** V7 on `main`
+**Legacy baseline:** V6 documentation is retained for reference
 
 ## Design goal
 
@@ -31,7 +31,8 @@ A successful tool call is not automatically a verified successful outcome.
                                │
                                ▼
 ┌─────────────────────────────────────────────────────────────┐
-│            PROVIDER-NEUTRAL AI + MODEL ROUTER              │
+│       FIVE-LAYER INTELLIGENCE + PROVIDER-NEUTRAL ROUTER    │
+│ AI → ML → Deep Learning → Generative AI → LLM             │
 │ FAST • SMART • VISION • CODING • PLANNING • REVIEW • LOCAL│
 └──────────────────────────────┬──────────────────────────────┘
                                │
@@ -73,7 +74,9 @@ A successful tool call is not automatically a verified successful outcome.
                  CONTROLLED RELEASE / ROLLBACK
 ```
 
-## 1. Provider layer
+## 1. Five-layer intelligence and provider layer
+
+Every routed request receives an inspectable decision trace across AI orchestration, local adaptive ML, configured neural/deep-learning capability, generative strategy and final LLM selection. These are nested technical responsibilities, not five independent foundation models. Specialist routes remain stable, optional embedding routing requires explicit configuration and agreement gates, and no routing result can override security policy.
 
 Provider-specific behavior lives behind provider-neutral contracts. Core mission logic should not depend directly on one vendor SDK.
 
@@ -84,6 +87,8 @@ FAST | SMART | VISION | CODING | PLANNING | REVIEW | SUMMARY | LOCAL
 ```
 
 The router selects a configured model/provider path while observability records safe success/failure/latency/fallback metadata.
+
+See [V7.7-FIVE-LAYER-INTELLIGENCE.md](V7.7-FIVE-LAYER-INTELLIGENCE.md).
 
 ## 2. Mission engine
 

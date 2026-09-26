@@ -1,4 +1,4 @@
-# JARVIS AI OMEGA V7 / V7.5 — Testing & Evaluation
+# JARVIS AI OMEGA V7.7 — Testing & Evaluation
 
 ## Quality rule
 
@@ -25,7 +25,7 @@ Run the full suite after touching shared runtime, security, memory, computer-use
 
 ## CI matrix
 
-The V7.5 workflow targets:
+The V7.7 workflow targets:
 
 - Linux Python 3.11
 - Linux Python 3.12
@@ -60,6 +60,17 @@ The repository includes coverage for:
 - typed/configuration errors
 - model/provider error classification
 - route/model behavior
+
+### Five-layer intelligence
+
+- exact AI → ML → Deep Learning → Generative AI → LLM ordering
+- deterministic specialist-route stability
+- successful-route-only local adaptation and bounded feature storage
+- no raw prompts in the adaptive model or intelligence telemetry
+- secret-like request exclusion from learning and semantic embeddings
+- corrupt/unwritable model recovery and reset isolation
+- optional neural-backend failure containment and local-ML consensus
+- configuration bounds, capability reporting and observability integration
 
 ### Missions / agent reliability
 
