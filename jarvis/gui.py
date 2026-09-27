@@ -40,10 +40,20 @@ def desktop_work_area(root):
         import ctypes
         from ctypes import wintypes
         bounds = wintypes.RECT()
-        api = ctypes.WinDLL('user32', use_last_error=True).SystemParametersInfoW
+        user = ctypes.WinDLL('user32', use_last_error=True)
+        api = user.SystemParametersInfoW
         api.argtypes = [wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.RECT), wintypes.UINT]
         api.restype = wintypes.BOOL
         if api(0x0030, 0, ctypes.byref(bounds), 0):  # SPI_GETWORKAREA
+            # SPI returns physical pixels even for a DPI-virtualized process.
+            # Use this window's coordinate space for Tk sizing and assertions.
+            convert = user.PhysicalToLogicalPointForPerMonitorDPI
+            convert.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+            convert.restype = wintypes.BOOL
+            start, end = wintypes.POINT(bounds.left, bounds.top), wintypes.POINT(bounds.right, bounds.bottom)
+            handle = root.winfo_id()
+            if convert(handle, ctypes.byref(start)) and convert(handle, ctypes.byref(end)):
+                return start.x, start.y, end.x, end.y
             return bounds.left, bounds.top, bounds.right, bounds.bottom
     return 0, 0, root.winfo_screenwidth(), root.winfo_screenheight()
 
