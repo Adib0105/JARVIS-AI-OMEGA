@@ -36,10 +36,18 @@ function Get-OwnedManifest([string]$Root) {
     $Rows = foreach ($Name in $Owned) {
         $From = Join-Path $Root $Name
         if (Test-Path -LiteralPath $From) {
-            $Items = @((Get-Item -LiteralPath $From)) + @(Get-ChildItem -LiteralPath $From -Recurse -Force)
+            $Top = Get-Item -LiteralPath $From
+            $Items = @($Top) + @(Get-ChildItem -LiteralPath $From -Recurse -Force)
             if ($Items | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }) { throw 'Linked files are not valid checkpoint contents.' }
-            foreach ($Item in ($Items | Where-Object { -not $_.PSIsContainer })) {
-                [PSCustomObject]@{ path=$Item.FullName.Substring($Root.Length + 1); sha256=(Get-FileHash -LiteralPath $Item.FullName -Algorithm SHA256).Hash; size=$Item.Length }
+            if ($Top.PSIsContainer) {
+                # Ask the provider for relative names. Substring of FullName is
+                # unsafe when Windows expands a short (8.3) parent path.
+                foreach ($Relative in (Get-ChildItem -LiteralPath $From -Recurse -Force -File -Name)) {
+                    $Item = Get-Item -LiteralPath (Join-Path $From $Relative)
+                    [PSCustomObject]@{ path=(Join-Path $Name $Relative); sha256=(Get-FileHash -LiteralPath $Item.FullName -Algorithm SHA256).Hash; size=$Item.Length }
+                }
+            } else {
+                [PSCustomObject]@{ path=$Name; sha256=(Get-FileHash -LiteralPath $Top.FullName -Algorithm SHA256).Hash; size=$Top.Length }
             }
         }
     }
