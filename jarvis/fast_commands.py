@@ -108,12 +108,14 @@ def execute_fast_command(jarvis, text: str) -> str | None:
         return result.get('message', 'YouTube playback verify nahi hua.') if isinstance(result, dict) else 'YouTube playback verify nahi hua.'
     if tool == 'browser_search':
         if isinstance(payload, dict) and payload.get('ok') is True:
-            return 'YouTube search aapke default browser mein khol di. Video apne aap play nahi kiya.'
+            return 'YouTube search kholne ki request browser ko bhej di; page abhi verify nahi hua.'
         return 'YouTube search complete nahi hui. Browser permission/result check kijiye.'
     if tool == 'windows_control':
         if not isinstance(payload, dict) or payload.get('ok') is not True:
             error = payload.get('error', 'Permission ya Windows action failed') if isinstance(payload, dict) else payload
             return f'Windows control complete nahi hua: {error}'
+        if args['action'] in {'volume_mute', 'volume_unmute'} and (payload.get('verification') or {}).get('verified') is not True:
+            return 'Volume request bhej di; mute state abhi verify nahi hui.'
         labels = {
             'volume_up': 'Volume-up command Windows ko bhej diya',
             'volume_down': 'Volume-down command Windows ko bhej diya',
@@ -146,7 +148,7 @@ def execute_fast_command(jarvis, text: str) -> str | None:
         return f'App open nahi hua: {error}'
     app = args['app']
     names = {'vscode': 'VS Code', 'chrome': 'Chrome', 'edge': 'Edge', 'explorer': 'File Explorer'}
-    return f"Done. {names.get(app, app.title())} open kar diya."
+    return f"{names.get(app, app.title())} kholne ki request bhej di; app window abhi verify nahi hui."
 
 
 def parse_youtube_command(text: str) -> str | None:

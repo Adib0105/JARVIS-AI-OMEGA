@@ -239,6 +239,8 @@ jobs:
           audit-tools/bin/python -m pip install pip-audit==2.10.1
           site=$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
           audit-tools/bin/python -m pip_audit --path "$site" --format json --output vulnerabilities.json
+      - name: Audit the pinned Windows build dependency set
+        run: audit-tools/bin/python -m pip_audit -r constraints/windows-py314.txt --no-deps --disable-pip --format json --output windows-vulnerabilities.json
       - name: Preserve dependency evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -247,6 +249,7 @@ jobs:
           path: |
             dependency-inventory.json
             vulnerabilities.json
+            windows-vulnerabilities.json
 
   publish-release:
     # Release remains blocked until FINAL-HARDENING-AUDIT mandatory findings close.

@@ -32,7 +32,15 @@ def read_connection_file(path=None):
     path = Path(path) if path is not None else ROOT / '.env'
     from .local_secrets import reveal
     values = dict(dotenv_values(path, encoding='utf-8-sig', interpolate=False)) if path.exists() else {}
-    return {key: reveal(value) if key.endswith('_API_KEY') else value for key, value in values.items()}
+    for key, value in values.items():
+        if key.endswith('_API_KEY'):
+            try:
+                values[key] = reveal(value)
+            except (RuntimeError, ValueError, UnicodeError):
+                # A copied install must still allow a replacement credential to
+                # be entered under the new Windows account.
+                values[key] = ''
+    return values
 
 
 def _atomic_save_locked(path, values):

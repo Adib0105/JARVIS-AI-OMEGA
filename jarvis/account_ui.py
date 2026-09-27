@@ -109,10 +109,11 @@ def show_account_dialog(desktop):
         cached = getattr(desktop, '_subscription_client', None)
         requested = origin.get().strip().rstrip('/')
         if cached is None or cached.origin != requested:
+            replacement = SubscriptionClient(requested)
             if cached is not None:
                 cached._token = ''
                 cached._persist()
-            cached = SubscriptionClient(requested)
+            cached = replacement
             desktop._subscription_client = cached
         return cached
 

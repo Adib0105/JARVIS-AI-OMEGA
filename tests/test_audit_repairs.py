@@ -239,6 +239,23 @@ class HealthRoutingBudgetRepairs(unittest.TestCase):
         core.intelligence.observe.assert_called_once_with('test request', 'SMART', success=False)
 
 class RecoveryStorageRepairs(unittest.TestCase):
+    def test_foreign_windows_secret_does_not_block_connection_replacement(self):
+        from jarvis.connection_manager import read_connection_file
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / '.env'
+            path.write_text('OPENAI_API_KEY=dpapi:v1:foreign\nAI_PROVIDER=openai\n')
+            with patch('jarvis.local_secrets.reveal', side_effect=RuntimeError('foreign OS account')):
+                values = read_connection_file(path)
+            self.assertEqual(values['OPENAI_API_KEY'], '')
+            self.assertEqual(values['AI_PROVIDER'], 'openai')
+
+    def test_fast_commands_do_not_claim_unobserved_success(self):
+        from jarvis.fast_commands import execute_fast_command
+        app = SimpleNamespace(tools=MagicMock())
+        app.tools.call.return_value = json.dumps({'ok': True, 'result': {}})
+        for command in ['open chrome', 'mute', 'search cats on youtube']:
+            self.assertIn('verify nahi', execute_fast_command(app, command), command)
+
     def test_local_recovery_codes_are_one_use_and_revoke_sessions(self):
         from jarvis.user_profiles import ProfileStore
         with tempfile.TemporaryDirectory() as folder, patch('jarvis.user_profiles.PBKDF2_ITERATIONS', 1000):
