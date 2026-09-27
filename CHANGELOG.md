@@ -1,3 +1,13 @@
+## V7.8 — personalized wake, weather and subscription integration
+
+- Recognize stable partial wake phrases; reuse the Vosk model across listening and transcription.
+- Queue an immediate offline name greeting, then optionally read prefetched city weather/AQI.
+- Add grounded sky/feels-like/cloud/rain, tomorrow, sunrise/sunset, gust/thunderstorm and US AQI/PM2.5 reports.
+- Add local profile rename and password/session rotation controls.
+- Add an optional HTTPS account service with opaque sessions, monthly/yearly Stripe checkout, billing portal, signed idempotent webhook reconciliation, and server-gated extended forecasts.
+- Add billing-secret redaction, account-service CI, and a packaged subscription-screen smoke check.
+- See docs/V7.8-WEATHER-ACCOUNTS.md for the 20-item feature map and explicit deployment/device limits.
+
 # Changelog
 
 All notable engineering changes to JARVIS AI OMEGA are documented here.

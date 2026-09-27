@@ -24,6 +24,39 @@ def split_wake(text: str, wake_word: str = 'jarvis') -> str | None:
     return text[match.end():].strip(' ,.!?।') if match else None
 
 
+class PartialWakeDetector:
+    """Stable bare wake phrases can acknowledge before the final ASR endpoint.
+
+    Text with an inline command is reserved for the final result, preserving it.
+    """
+    def __init__(self, wake_word, clock=time.monotonic):
+        self.wake_word, self.clock = wake_word, clock
+        self.reset()
+
+    def reset(self):
+        self.text, self.since, self.emitted = '', 0.0, False
+
+    def feed(self, text, final=False):
+        command = split_wake(text, self.wake_word)
+        if final:
+            result = None if self.emitted else command
+            self.reset()
+            return result
+        if self.emitted:
+            return None
+        if command != '':
+            self.text, self.since = '', 0.0
+            return None
+        normalized = text.strip().lower()
+        now = self.clock()
+        if normalized != self.text:
+            self.text, self.since = normalized, now
+        elif now - self.since >= 0.45:
+            self.emitted = True
+            return ''
+        return None
+
+
 class BackgroundWakeListener:
     def __init__(self, model_path, on_wake, on_error, suspended=lambda: False, wake_word='jarvis'):
         self.model_path = model_path
@@ -37,6 +70,7 @@ class BackgroundWakeListener:
         self._startup_error = ''
         self.ready_at = 0.0
         self.last_heard_at = 0.0
+        self.last_audio_at = 0.0
 
     @property
     def running(self):
@@ -105,26 +139,34 @@ class BackgroundWakeListener:
             import vosk
             import sounddevice as sd
             from .microphone import _exclusive_stream, input_device
-            model = vosk.Model(str(Path(self.model_path).expanduser().resolve()))
+            from .offline_speech import get_vosk_model
+            model = get_vosk_model(self.model_path)
+            detector = PartialWakeDetector(self.wake_word)
             recognizer = vosk.KaldiRecognizer(model, 16000)
             with _exclusive_stream(sd, samplerate=16000, blocksize=1600, dtype='int16', channels=1, device=input_device()) as stream:
                 with self._stream_lock:
                     self._stream = stream
                 self.ready_at = time.time()
+                self.last_audio_at = time.monotonic()
                 self._ready.set()
                 while not self._stop.is_set():
                     data, overflowed = stream.read(1600)
+                    self.last_audio_at = time.monotonic()
                     if self._stop.is_set():
                         break
                     if self.suspended() or overflowed:
                         recognizer.Reset()
+                        detector.reset()
                         continue
-                    if recognizer.AcceptWaveform(bytes(data)):
-                        command = split_wake(json.loads(recognizer.Result()).get('text', ''), self.wake_word)
-                        if command is not None and not self._stop.is_set() and not self.suspended():
-                            self.last_heard_at = time.time()
-                            self.on_wake(command)
-                            recognizer.Reset()
+                    final = bool(recognizer.AcceptWaveform(bytes(data)))
+                    raw = recognizer.Result() if final else recognizer.PartialResult()
+                    decoded = json.loads(raw)
+                    text = decoded.get('text' if final else 'partial', '')
+                    command = detector.feed(text, final) if isinstance(text, str) else None
+                    if command is not None and not self._stop.is_set() and not self.suspended():
+                        self.last_heard_at = time.time()
+                        self.on_wake(command)
+                        recognizer.Reset()
         except Exception as exc:
             self._startup_error = str(exc)
             self._ready.set()

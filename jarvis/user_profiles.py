@@ -243,6 +243,25 @@ class ProfileStore:
                 self.session_path.unlink(missing_ok=True)
             return self._profile(account)
 
+    def update_profile(self, username, current_password, *, display_name=None, new_password=None, remember=True):
+        """Re-authenticate before a rename/password change; rotate remembered sessions."""
+        name = _clean_display_name(display_name) if display_name is not None else None
+        password = _validate_password(new_password) if new_password is not None else None
+        with self._lock:
+            profile = self.authenticate(username, current_password, remember=False)
+            data = self._load()
+            account = data['accounts'][profile.username]
+            if name is not None:
+                account['display_name'] = name
+            if password is not None:
+                salt = secrets.token_bytes(16)
+                account['password_salt'] = _encode(salt)
+                account['password_digest'] = _encode(_password_digest(password, salt))
+            _atomic_json(self.accounts_path, data)
+            if remember:
+                self._create_session_locked(data, account)
+            return self._profile(account)
+
     def _create_session_locked(self, data: dict, account: dict) -> None:
         token = secrets.token_urlsafe(32)
         now = int(time.time())

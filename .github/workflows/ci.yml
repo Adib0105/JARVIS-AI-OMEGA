@@ -55,6 +55,27 @@ jobs:
           path: test-output.txt
           if-no-files-found: ignore
 
+  account-service:
+    name: account-service (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.14']
+    env:
+      PYTHONWARNINGS: error::ResourceWarning
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install isolated service dependencies
+        run: python -m pip install -r requirements-server.txt
+      - name: Validate service dependencies
+        run: python -m pip check
+      - name: Account and subscription HTTP/security suite
+        run: python -m unittest discover -s tests_server -v
+
   windows-regression:
     name: windows-regression (3.14)
     runs-on: windows-latest
@@ -127,7 +148,7 @@ jobs:
       - name: Assign increasing release version
         shell: pwsh
         run: |
-          $Version = "7.7.$env:GITHUB_RUN_NUMBER"
+          $Version = "7.8.$env:GITHUB_RUN_NUMBER"
           "__version__ = '$Version'" | Set-Content jarvis/__init__.py -Encoding utf8
           $Version | Set-Content build-version.txt
       - name: Build V7 Windows application
@@ -196,7 +217,7 @@ jobs:
   publish-release:
     # Release remains blocked until FINAL-HARDENING-AUDIT mandatory findings close.
     if: ${{ false }}
-    needs: [test, windows-regression, windows-package-smoke]
+    needs: [test, account-service, windows-regression, windows-package-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: write

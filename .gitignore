@@ -16,3 +16,6 @@ htmlcov/
 .vscode/
 .idea/
 models/
+
+server-data/
+server/.env

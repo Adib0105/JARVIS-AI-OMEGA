@@ -133,11 +133,12 @@ class JarvisDesktop:
         operator = tk.Frame(header, bg='#061725')
         operator.pack(side='right')
         provider = {'openrouter': 'OPENROUTER', 'openai': 'OPENAI', 'local': 'LOCAL AI'}.get(settings.provider, settings.provider.upper())
-        tk.Label(
+        self.operator_label = tk.Label(
             operator,
             text=f'OPERATOR: {settings.user_name.upper()}',
             bg='#061725', fg=GREEN, font=('Consolas', 11, 'bold'),
-        ).pack(anchor='e')
+        )
+        self.operator_label.pack(anchor='e')
         tk.Label(
             operator,
             text=f'CREATOR: {settings.creator_name.upper()}',
