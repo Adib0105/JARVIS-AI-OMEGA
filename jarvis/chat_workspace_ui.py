@@ -163,7 +163,8 @@ def install_chat_workspace():
         root.bind('<Control-k>', lambda _: open_command_palette(self))
         root.bind('<Control-h>', lambda _: open_chat_library(self))
         bar = tk.Frame(root, bg='#061725', padx=12, pady=4)
-        bar.pack(side='bottom', fill='x')
+        # Reserve fixed controls before the expanding conversation panel.
+        bar.pack(side='bottom', fill='x', before=self.main_panel)
         for label, command in [('QUICK COMMANDS · Ctrl+K', lambda: open_command_palette(self)), ('SAVED CHATS · Ctrl+H', lambda: open_chat_library(self))]:
             ttk.Button(bar, text=label, command=command).pack(side='left', padx=4)
     JarvisDesktop.__init__ = init

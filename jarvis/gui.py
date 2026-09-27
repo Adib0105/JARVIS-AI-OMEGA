@@ -38,8 +38,12 @@ class JarvisDesktop:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title('JARVIS AI OMEGA V6 // ARC DESKTOP AGENT')
-        self.root.geometry('1440x900')
-        self.root.minsize(1120, 720)
+        # A tray restore may return to normal geometry rather than maximized.
+        # Keep that geometry inside the display so the composer stays reachable.
+        available_width = max(640, self.root.winfo_screenwidth() - 40)
+        available_height = max(480, self.root.winfo_screenheight() - 100)
+        self.root.geometry(f'{min(1440, available_width)}x{min(900, available_height)}')
+        self.root.minsize(min(1120, available_width), min(720, available_height))
         self.root.configure(bg=BG)
 
         self.hud: ArcReactorHUD | None = None
@@ -83,6 +87,7 @@ class JarvisDesktop:
         self._build_input_bar()
 
         main = tk.Frame(self.root, bg=BG)
+        self.main_panel = main
         main.pack(side='top', fill='both', expand=True, padx=10, pady=(6, 10))
 
         self.sidebar_canvases = []
