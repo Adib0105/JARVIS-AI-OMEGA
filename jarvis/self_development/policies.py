@@ -6,12 +6,15 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 
-# Generated/self-authored code may improve normal application code, but it must not
-# rewrite the mechanisms that decide what it is allowed to change, how a sandbox is
-# created, how tests are judged, how production is activated, or how rollback works.
-# These paths form the local self-development control plane. Changing them requires
-# a normal human-reviewed engineering change outside the autonomous pipeline.
+# Production imports are transitively trusted, including document and automation
+# adapters. Generated experiments cannot rewrite that runtime. Production changes
+# require a normal human-reviewed engineering change outside this pipeline.
 IMMUTABLE_SECURITY_PREFIXES = (
+    'jarvis/',
+    'jarvis/agent/',
+    'jarvis/self_development/',
+    'jarvis/skills/',
+    'server/',
     'jarvis/security/',
     '.github/',
     'tests/evaluation/',
@@ -21,8 +24,35 @@ IMMUTABLE_SECURITY_PREFIXES = (
     'scripts/',
     'installer/',
     'requirements',
+    'constraints/',
+    'deploy/',
     'jarvis/logging_utils.py',
     'jarvis/updater.py',
+    'jarvis/tools.py',
+    'jarvis/core',
+    'jarvis/config',
+    'jarvis/runtime_guard.py',
+    'jarvis/local_secrets.py',
+    'jarvis/file_mutex.py',
+    'jarvis/recover_action.py',
+    'jarvis/safe_files.py',
+    'jarvis/update_health.py',
+    'jarvis/user_profiles.py',
+    'jarvis/connection_manager.py',
+    'jarvis/readiness.py',
+    'jarvis/observability/',
+    'jarvis/providers/',
+    'jarvis/__init__.py',
+    'jarvis/__main__.py',
+    'main.py',
+    'desktop_app.py',
+    'self_check.py',
+    'setup',
+    'build_',
+    'docs/release-gates.json',
+    'pyproject.toml',
+    'sitecustomize.py',
+    'usercustomize.py',
 )
 
 IMMUTABLE_SELF_DEVELOPMENT_CONTROL_PATHS = frozenset({
@@ -98,6 +128,8 @@ class SelfDevelopmentPolicy:
             return False, 'absolute paths are not allowed'
         if '..' in PurePosixPath(value).parts:
             return False, 'path traversal is not allowed'
+        if any(':' in part or part.rstrip(' .') != part for part in PurePosixPath(value).parts):
+            return False, 'ambiguous Windows path or alternate stream is not allowed'
         if lower == '.env' or lower.startswith('.env.'):
             return False, 'environment/secret files are protected'
         if any(lower.startswith(prefix.lower()) for prefix in IMMUTABLE_SECURITY_PREFIXES):

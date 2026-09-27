@@ -187,13 +187,17 @@ class FinalHardeningTests(unittest.TestCase):
         self.assertEqual(mission.revision, old_revision)
 
     def test_initial_persistence_failure_releases_core_ownership(self):
-        store = Mock()
+        store = Mock(db_path=self.root / 'mission-failure.db')
         store.save_with_event.side_effect = sqlite3.OperationalError('injected')
         orchestrator = MissionOrchestrator(SimpleNamespace(session_id='s'), store)
         with self.assertRaises(sqlite3.OperationalError):
             orchestrator.run('goal')
         self.assertIsNone(orchestrator.current_mission_id)
         self.assertEqual(orchestrator._controls, {})
+        with orchestrator.store.db_path.open('rb'):
+            with sqlite3.connect(orchestrator.store.db_path) as db:
+                self.assertEqual(db.execute('SELECT count(*) FROM mission_owners').fetchone()[0], 0)
+            db.close()
 
     def test_active_core_rejects_second_mission(self):
         core = SimpleNamespace(session_id='s')

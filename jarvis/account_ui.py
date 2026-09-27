@@ -9,10 +9,11 @@ import webbrowser
 from tkinter import ttk
 
 from .config import settings
+from datetime import datetime, timezone
 
 
 def show_account_dialog(desktop):
-    from .subscription_client import SubscriptionClient
+    from .subscription_client import SubscriptionClient, restore_session
     from .user_profiles import ProfileStore
     win = tk.Toplevel(desktop.root)
     win.title('JARVIS — Account / Subscription')
@@ -83,14 +84,26 @@ def show_account_dialog(desktop):
         run(lambda: ProfileStore().update_profile(username, values[0], display_name=values[1], new_password=values[2], remember=values[3]), 'profile')
 
     button(local, 'Save name / change password', save_local)
+    def generate_recovery():
+        password_value = current.get()
+        current.set('')
+        run(lambda: ProfileStore().recovery_codes(username, password_value), 'recovery_codes')
+    button(local, 'Generate replacement local recovery codes', generate_recovery)
     button(local, 'Sign out / switch local user', desktop._sign_out)
     ttk.Label(local, text='Saving rechecks your password and rotates the remembered sign-in token. Each local user keeps a separate data folder.', wraplength=540).pack(anchor='w', pady=12)
 
-    origin = field(online, 'Your JARVIS account server (HTTPS)', os.getenv('JARVIS_ACCOUNT_SERVER', ''))
+    if getattr(desktop, '_subscription_client', None) is None:
+        desktop._subscription_client = restore_session()
+    restored = desktop._subscription_client
+    origin = field(online, 'Your JARVIS account server (HTTPS)', restored.origin if restored else os.getenv('JARVIS_ACCOUNT_SERVER', ''))
     email = field(online, 'Online account email')
     password = field(online, 'Online password (12+ characters when creating an account)', secret=True)
     cloud_name = field(online, 'Name for a new online account', settings.user_name)
-    ttk.Label(online, text='Online account is separate from this PC login. Session lasts until you close JARVIS. Card entry happens on Stripe’s hosted page.', wraplength=540).pack(anchor='w', pady=8)
+    cloud_remember = tk.BooleanVar(value=bool(restored and restored.remember))
+    use_online_name = tk.BooleanVar(value=bool(restored and restored.use_online_name))
+    ttk.Checkbutton(online, text='Remember online sign-in on this Windows account', variable=cloud_remember).pack(anchor='w', pady=4)
+    ttk.Checkbutton(online, text='Use signed-in online name for wake greeting', variable=use_online_name).pack(anchor='w', pady=4)
+    ttk.Label(online, text='Online identity stays separate from local chat history. Remembered sign-in expires within 7 days. Card entry happens on Stripe’s hosted page.', wraplength=540).pack(anchor='w', pady=8)
 
     def client():
         cached = getattr(desktop, '_subscription_client', None)
@@ -98,6 +111,7 @@ def show_account_dialog(desktop):
         if cached is None or cached.origin != requested:
             if cached is not None:
                 cached._token = ''
+                cached._persist()
             cached = SubscriptionClient(requested)
             desktop._subscription_client = cached
         return cached
@@ -107,9 +121,9 @@ def show_account_dialog(desktop):
             api = client()
         except ValueError as exc:
             status.set(str(exc)); return
-        values = (email.get(), password.get(), cloud_name.get() if create else None)
+        values = (email.get(), password.get(), cloud_name.get() if create else None, cloud_remember.get(), use_online_name.get())
         password.set('')
-        run(lambda: api.sign_in(values[0], values[1], name=values[2]), 'me')
+        run(lambda: api.sign_in(values[0], values[1], name=values[2], remember=values[3], use_online_name=values[4]), 'me')
 
     def action(fn, kind='status'):
         try:
@@ -120,6 +134,23 @@ def show_account_dialog(desktop):
 
     button(online, 'Create online account', lambda: login(True))
     button(online, 'Sign in online', login)
+    code = field(online, 'Email verification / password reset code', secret=True)
+    reset_password = field(online, 'New online password for reset (12+ characters)', secret=True)
+    def request_code(kind):
+        body = {'email': email.get(), 'kind': kind}
+        action(lambda api: api.request('POST', '/auth/request-code', body))
+    def verify_code():
+        body = {'code': code.get()}
+        code.set('')
+        action(lambda api: api.request('POST', '/auth/verify-email', body))
+    button(online, 'Send email verification code', lambda: request_code('verify'))
+    button(online, 'Verify email', lambda: verify_code())
+    button(online, 'Forgot online password — send reset code', lambda: request_code('reset'))
+    def reset_online():
+        values = {'code': code.get(), 'new_password': reset_password.get()}
+        code.set(''); reset_password.set('')
+        action(lambda api: api.request('POST', '/auth/reset-password', values), 'reset')
+    button(online, 'Reset password with code', reset_online)
     button(online, 'Monthly Pro — open checkout', lambda: action(lambda api: api.payment_link('monthly'), 'url'))
     button(online, 'Yearly Pro — open checkout', lambda: action(lambda api: api.payment_link('yearly'), 'url'))
     button(online, 'Manage billing / cancel / invoices', lambda: action(lambda api: api.payment_link(), 'url'))
@@ -144,6 +175,10 @@ def show_account_dialog(desktop):
             item.configure(state='normal')
         if error:
             status.set(error)
+        elif kind == 'recovery_codes':
+            from tkinter import messagebox
+            messagebox.showinfo('Save these codes privately', 'Shown once. Keep offline. Any reset invalidates all remaining codes.\n\n' + '\n'.join(value), parent=win)
+            status.set('Recovery codes replaced. Sign in again to restore remembered background startup.')
         elif kind == 'profile':
             value.activate()
             object.__setattr__(settings, 'user_name', value.display_name)
@@ -155,14 +190,20 @@ def show_account_dialog(desktop):
         elif kind in ('me', 'subscription'):
             desktop.background.weather_next_refresh = 0.0
             sub = value.get('subscription', value)
-            status.set(f"Plan: {sub.get('plan', 'free')} | Status: {sub.get('status', 'none')} | Cancel at renewal: {bool(sub.get('cancel_at_period_end'))}")
+            def date(value):
+                return datetime.fromtimestamp(value, timezone.utc).strftime('%d %b %Y %H:%M UTC') if isinstance(value, (int, float)) and 0 < value < 253402300800 else 'unavailable'
+            status.set(f"Plan: {sub.get('plan', 'free')} | Status: {sub.get('status', 'none')} | Ends: {date(sub.get('expires_at'))} | Last checked: {date(sub.get('checked_at'))}")
+        elif kind == 'reset':
+            client()._token = ''
+            client()._persist()
+            status.set('Password reset. Sign in again; previous sessions were revoked.')
         elif kind == 'forecast':
             report = str(value.get('report', 'Forecast unavailable.'))
             desktop._append('JARVIS', report)
             desktop.voice.speak(report)
             status.set('7-day forecast added to the conversation.')
         else:
-            status.set('Done.')
+            status.set(value.get('message', 'Done. Refresh account status if needed.') if isinstance(value, dict) else 'Done.')
         win.after(80, collect)
     collect()
     return win

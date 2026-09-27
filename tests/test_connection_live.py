@@ -69,7 +69,7 @@ class LiveConnectionTests(unittest.TestCase):
             self.assertEqual(config.openrouter_api_key, 'previous')
             self.assertIs(core.provider, old)
             self.assertEqual(path.read_text(), 'OPENROUTER_API_KEY=previous\n')
-            self.assertEqual(list(Path(folder).iterdir()), [path])
+            self.assertEqual(sorted(p.name for p in Path(folder).iterdir()), sorted([path.name, path.name + '.lock']))
         new.client.close.assert_called_once()
 
     def test_blank_entry_uses_saved_key_and_provider_switch_clears_old_routes(self):

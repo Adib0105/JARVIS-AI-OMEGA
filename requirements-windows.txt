@@ -1,5 +1,5 @@
-pyautogui>=0.9.54
-sounddevice>=0.4.7
-SpeechRecognition>=3.10.4
-pystray>=0.19.5
-playwright>=1.50
+pyautogui==0.9.54
+sounddevice==0.5.6
+SpeechRecognition==3.17.0
+pystray==0.19.5
+playwright==1.63.0

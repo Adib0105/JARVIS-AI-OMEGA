@@ -31,7 +31,8 @@ class OpenAICompatibleEmbeddingBackend:
     def __init__(self, base_url: str, api_key: str, model: str) -> None:
         from openai import OpenAI
         self.model = model
-        self.client = OpenAI(api_key=api_key or 'local', base_url=base_url or None, max_retries=0)
+        # Optional routing/retrieval must not inherit the SDK's long default.
+        self.client = OpenAI(api_key=api_key or 'local', base_url=base_url or None, max_retries=0, timeout=3.0)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         response = self.client.embeddings.create(model=self.model, input=texts)

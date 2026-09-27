@@ -52,6 +52,8 @@ class BillingHTTPTests(unittest.TestCase):
     def register(self, email):
         r = self.client.post('/auth/register', json={'email': email, 'name': 'Adib', 'password': 'long-test-password'})
         self.assertEqual(r.status_code, 200, r.text)
+        with self.app.state.store.db() as db:
+            db.execute('UPDATE users SET email_verified=1 WHERE email=?', (email,))
         return {'Authorization': 'Bearer ' + r.json()['access_token']}
 
     def checkout(self, auth=None, plan='monthly'):

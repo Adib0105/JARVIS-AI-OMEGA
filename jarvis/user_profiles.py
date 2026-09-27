@@ -125,7 +125,8 @@ class ProfileStore:
         self.root = Path(root) if root is not None else account_root()
         self.accounts_path = self.root / 'accounts.json'
         self.session_path = self.root / 'session.json'
-        self._lock = threading.RLock()
+        from .file_mutex import FileMutex
+        self._lock = FileMutex(self.accounts_path)
 
     def _empty(self) -> dict:
         return {'schema': SCHEMA_VERSION, 'accounts': {}}
@@ -257,10 +258,36 @@ class ProfileStore:
                 salt = secrets.token_bytes(16)
                 account['password_salt'] = _encode(salt)
                 account['password_digest'] = _encode(_password_digest(password, salt))
+                account['recovery_digests'] = []
             _atomic_json(self.accounts_path, data)
             if remember:
                 self._create_session_locked(data, account)
             return self._profile(account)
+
+    def recovery_codes(self, username, password):
+        """Rotate five high-entropy single-use codes, shown once after re-auth."""
+        with self._lock:
+            profile = self.authenticate(username, password, remember=False)
+            data = self._load()
+            codes = [secrets.token_hex(16) for _ in range(5)]
+            data['accounts'][profile.username]['recovery_digests'] = [hashlib.sha256(c.encode()).hexdigest() for c in codes]
+            _atomic_json(self.accounts_path, data)
+            return codes
+
+    def recover(self, username, code, new_password):
+        username, password = _clean_username(username), _validate_password(new_password)
+        code_hash = hashlib.sha256(str(code).strip().encode()).hexdigest()
+        with self._lock:
+            data = self._load()
+            account = data['accounts'].get(username)
+            if not account or not any(hmac.compare_digest(code_hash, str(item)) for item in account.get('recovery_digests', [])):
+                raise PermissionError('Recovery code is invalid or already used.')
+            salt = secrets.token_bytes(16)
+            account.update(password_salt=_encode(salt), password_digest=_encode(_password_digest(password, salt)),
+                           recovery_digests=[], session_digest='', session_expires_at=0, failed_attempts=0, locked_until=0)
+            _atomic_json(self.accounts_path, data)
+            self.session_path.unlink(missing_ok=True)
+        return self._profile(account)
 
     def _create_session_locked(self, data: dict, account: dict) -> None:
         token = secrets.token_urlsafe(32)
@@ -275,7 +302,7 @@ class ProfileStore:
         _atomic_json(self.session_path, {
             'schema': SCHEMA_VERSION,
             'username': account['username'],
-            'token': token,
+            'token': __import__('jarvis.local_secrets', fromlist=['protect']).protect(token),
             'created_at': now,
         })
 
@@ -294,11 +321,19 @@ class ProfileStore:
             if int(account.get('session_expires_at') or 0) <= int(time.time()):
                 self.sign_out()
                 return None
-            token = str(session.get('token') or '')
+            from .local_secrets import protect, reveal
+            try:
+                token = str(reveal(session.get('token') or ''))
+            except (RuntimeError, ValueError, UnicodeError):
+                return None
             actual = hashlib.sha256(token.encode('utf-8')).hexdigest()
             if not token or not hmac.compare_digest(actual, str(account.get('session_digest') or '')):
                 self.sign_out()
                 return None
+            protected = protect(token)
+            if protected != session.get('token'):
+                session['token'] = protected
+                _atomic_json(self.session_path, session)
             return self._profile(account)
 
     def sign_out(self) -> None:
@@ -327,7 +362,7 @@ def authenticate_desktop(*, legacy_data_dir: Path | None = None, background: boo
     result: dict[str, ActiveProfile | None] = {'profile': None}
     root = tk.Tk()
     root.title('JARVIS AI OMEGA // SIGN IN')
-    root.geometry('500x570')
+    root.geometry('540x650')
     root.resizable(False, False)
     root.configure(bg='#06111a')
     root.protocol('WM_DELETE_WINDOW', root.destroy)
@@ -353,6 +388,7 @@ def authenticate_desktop(*, legacy_data_dir: Path | None = None, background: boo
         username_var = tk.StringVar()
         password_var = tk.StringVar()
         confirm_var = tk.StringVar()
+        recovery_var = tk.StringVar()
         remember_var = tk.BooleanVar(value=True)
         status_var = tk.StringVar()
 
@@ -368,6 +404,8 @@ def authenticate_desktop(*, legacy_data_dir: Path | None = None, background: boo
         field('Password (minimum 8 characters)', password_var, secret=True)
         if creating:
             field('Confirm password', confirm_var, secret=True)
+        else:
+            field('Recovery code (optional; password above becomes the new password)', recovery_var, secret=True)
         tk.Checkbutton(
             body, text='Keep me signed in for background wake', variable=remember_var,
             bg='#06111a', fg='#dff9ff', selectcolor='#0b2a3a',
@@ -385,6 +423,9 @@ def authenticate_desktop(*, legacy_data_dir: Path | None = None, background: boo
                         legacy_data_dir=legacy_data_dir,
                         remember=remember_var.get(),
                     )
+                elif recovery_var.get().strip():
+                    store.recover(username_var.get(), recovery_var.get(), password_var.get())
+                    profile = store.authenticate(username_var.get(), password_var.get(), remember=remember_var.get())
                 else:
                     profile = store.authenticate(
                         username_var.get(), password_var.get(), remember=remember_var.get()

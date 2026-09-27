@@ -44,7 +44,7 @@ def _read_env_lines() -> list[str]:
     return path.read_text(encoding='utf-8-sig', errors='replace').splitlines()
 
 
-def update_env_values(values: dict[str, str]) -> None:
+def _update_env_values_locked(values: dict[str, str]) -> None:
     """Update only allowlisted non-secret UI settings without exposing API/OAuth secrets."""
     cleaned = {}
     for key, value in values.items():
@@ -88,6 +88,12 @@ def update_env_values(values: dict[str, str]) -> None:
     finally:
         if temp is not None:
             temp.unlink(missing_ok=True)
+
+
+def update_env_values(values: dict[str, str]) -> None:
+    from .file_mutex import locked_file
+    with locked_file(_env_path()):
+        _update_env_values_locked(values)
 
 
 def _open_folder(path: Path) -> None:

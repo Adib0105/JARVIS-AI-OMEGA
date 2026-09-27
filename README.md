@@ -1,11 +1,11 @@
-# JARVIS AI OMEGA V7.8 — Personal Wake, Weather & Accounts
+# JARVIS AI OMEGA V7.9 — Reliability and Recovery
 
 <p align="center">
   <strong>Multimodal • Evidence-Driven • Capability-Aware • Windows-First AI Agent</strong>
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/JARVIS-V7.8-00d9ff">
+  <img alt="Version" src="https://img.shields.io/badge/JARVIS-V7.9-00d9ff">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11--3.14-3776ab">
   <img alt="Branch" src="https://img.shields.io/badge/Branch-main-2ea44f">
   <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Adib0105/JARVIS-AI-OMEGA/ci.yml?branch=main&label=CI">
@@ -20,7 +20,7 @@
 
 ---
 
-JARVIS AI OMEGA V7.7 is a Windows-first multimodal desktop AI agent designed around a strict runtime loop:
+JARVIS AI OMEGA V7.9 is a Windows-first multimodal desktop AI agent designed around a strict runtime loop:
 
 ```text
 UNDERSTAND → PLAN → PERMISSION → EXECUTE → VERIFY → RECOVER / REPLAN
@@ -29,6 +29,10 @@ UNDERSTAND → PLAN → PERMISSION → EXECUTE → VERIFY → RECOVER / REPLAN
 It combines typed chat, voice, screen/image vision, local documents, memory/RAG, browser research, Windows computer use, coding/Git tools, productivity workflows, observability, evaluation and controlled self-development.
 
 > **Current branch strategy:** `main` contains the promoted V7 release line. Experimental work stays on reviewed feature branches until tests and release gates pass.
+
+## V7.9 audit repairs
+
+[Repair status and remaining release gates](docs/V7.9-AUDIT-REPAIRS.md) · [Operations and recovery](docs/V7.9-OPERATIONS.md). Public release remains on hold; CI installers are test builds.
 
 ## V7.8 update
 

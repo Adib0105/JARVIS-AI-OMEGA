@@ -126,7 +126,7 @@ class ToolRegistry:
                 _fn('click_screen', 'Click a visible screen coordinate. Requires approval.', {'x': {'type': 'integer'}, 'y': {'type': 'integer'}, 'button': s}, ['x', 'y', 'button']),
                 _fn(
                     'windows_control',
-                    'Run one of 20 allowlisted Windows media, window, desktop, lock, or Settings actions. High-risk actions remain permission-gated.',
+                    'Run an allowlisted Windows media, window, desktop, lock, or Settings actions. High-risk actions remain permission-gated.',
                     {'action': {'type': 'string', 'enum': list(WINDOWS_CONTROL_ACTIONS)}},
                     ['action'],
                 ),
@@ -194,6 +194,11 @@ class ToolRegistry:
     def _open_local_path(self, path: str) -> str:
         target = self.coding._safe(path)
         return open_local_path(str(target))
+
+    def _before_dispatch(self, name, args):
+        from .agent.budget import CURRENT
+        if CURRENT.get():
+            CURRENT.get().check()
 
     def call(self, name: str, args: dict) -> str:
         enabled = {item['name']: item for item in self.schemas(include_local=settings.enable_local_tools)}
@@ -269,7 +274,13 @@ class ToolRegistry:
             }
             if name not in handlers:
                 raise KeyError(name)
+            self._before_dispatch(name, args)
             result = handlers[name]()
+            if name == 'windows_control':
+                verified = result.get('verified') is True and result.get('observation') == 'Core Audio GetMute readback'
+                return json.dumps({'ok': True, 'result': result, 'verification': {
+                    'status': 'VERIFIED' if verified else 'ACKNOWLEDGED_NOT_OBSERVED',
+                    'verified': verified, 'evidence': result}}, ensure_ascii=False)
             if name == 'youtube_play_first':
                 verified = bool(result.get('playing')) and not result.get('ad_playing', False)
                 return json.dumps({'ok': bool(result.get('playing')), 'result': result,

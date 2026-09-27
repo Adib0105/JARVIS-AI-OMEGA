@@ -1,0 +1,22 @@
+[Unit]
+Description=JARVIS account and subscription API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=jarvis
+Group=jarvis
+WorkingDirectory=/opt/jarvis
+EnvironmentFile=/etc/jarvis/service.env
+ExecStart=/opt/jarvis/.venv/bin/uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1 --limit-concurrency 64 --timeout-graceful-shutdown 20
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/jarvis
+
+[Install]
+WantedBy=multi-user.target

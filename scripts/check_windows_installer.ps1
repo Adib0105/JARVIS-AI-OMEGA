@@ -41,3 +41,14 @@ $UpdatedProcesses = Get-CimInstance Win32_Process -Filter "Name = 'JARVIS-OMEGA-
 if (-not $UpdatedProcesses) { throw 'Updated desktop is no longer running.' }
 $UpdatedProcesses | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Write-Host 'Installer, desktop shortcut, in-place update, data preservation and installed desktop launch PASS.'
+
+# Reject a mismatched candidate version after installation, then prove rollback
+# restored the executable while keeping settings and user data unchanged.
+$BeforeHash = (Get-FileHash -LiteralPath $InstalledExe -Algorithm SHA256).Hash
+& $PowerShell -NoProfile -NonInteractive -File .\scripts\apply-update.ps1 -Installer $Installer -AppDir $InstallDir -ParentId 0 -Sha256 $Hash -NoRelaunch -ExpectedVersion '0.0.0'
+if ($LASTEXITCODE -eq 0) { throw 'Wrong candidate version was incorrectly accepted.' }
+if ((Get-FileHash -LiteralPath $InstalledExe -Algorithm SHA256).Hash -ne $BeforeHash) { throw 'Rollback did not restore previous executable.' }
+$Journal = Get-Content -LiteralPath ($InstallDir + '.rollback\checkpoint.json') -Raw | ConvertFrom-Json
+if ($Journal.state -ne 'rolled_back') { throw 'Rollback checkpoint state is incorrect.' }
+if ([IO.File]::ReadAllText($EnvFile) -ne $SavedEnv -or (Get-Content $DataFile -Raw).Trim() -ne 'keep my data') { throw 'Rollback touched user state.' }
+Write-Host 'Candidate mismatch / binary rollback / data preservation PASS.'

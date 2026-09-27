@@ -49,7 +49,7 @@ def check_latest_release(current_version: str, timeout: float = 8.0) -> dict:
         'url': url,
         'name': payload.get('name') or tag,
         'asset': next((a for a in (payload.get('assets') or []) if isinstance(a, dict) and a.get('name') == INSTALLER_NAME), None),
-        'message': f'New version {tag} available.' if newer else f'You are up to date ({current_version}).',
+        'message': f'New public release {tag} available.' if newer else f'No newer public release. Installed: {current_version}; public channel: {tag}. CI/beta builds are separate.',
     }
 
 
@@ -129,7 +129,7 @@ def start_installer_update(installer, asset):
     ready = installer.parent / 'helper-ready.txt'
     ready.unlink(missing_ok=True)
     process = subprocess.Popen([powershell_path(), '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', str(helper),
-        '-Installer', str(installer), '-AppDir', str(ROOT), '-ParentId', str(os.getpid()), '-Sha256', digest, '-ReadyFile', str(ready)],
+        '-Installer', str(installer), '-AppDir', str(ROOT), '-ParentId', str(os.getpid()), '-Sha256', digest, '-ReadyFile', str(ready), '-ExpectedVersion', asset['browser_download_url'].split('/download/', 1)[1].split('/', 1)[0].lstrip('v')],
         cwd=str(installer.parent), creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
 
     import time

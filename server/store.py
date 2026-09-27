@@ -23,6 +23,7 @@ class Store:
         self.path = str(path)
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with self.db() as db:
+            db.execute('PRAGMA journal_mode=WAL')
             db.executescript('''
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
@@ -39,9 +40,26 @@ class Store:
                     status TEXT NOT NULL, period_end INTEGER NOT NULL, price TEXT NOT NULL,
                     cancel_at_period_end INTEGER NOT NULL, checked INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS account_tokens (
+                    digest TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+                    kind TEXT NOT NULL, expires INTEGER NOT NULL, used INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS checkout_intents (
+                    user_id TEXT NOT NULL REFERENCES users(id), generation INTEGER NOT NULL,
+                    tier TEXT NOT NULL, price TEXT NOT NULL, created INTEGER NOT NULL,
+                    PRIMARY KEY(user_id,generation)
+                );
+                CREATE TABLE IF NOT EXISTS billing_leases (user_id TEXT PRIMARY KEY REFERENCES users(id), owner TEXT NOT NULL, expires REAL NOT NULL);
+                CREATE TABLE IF NOT EXISTS billing_inbox (
+                    id TEXT PRIMARY KEY, subscription TEXT NOT NULL, customer TEXT NOT NULL, received INTEGER NOT NULL,
+                    processed INTEGER NOT NULL DEFAULT 0, attempts INTEGER NOT NULL DEFAULT 0,
+                    retry_at INTEGER NOT NULL DEFAULT 0, last_error TEXT
+                );
                 CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, received INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS rates (key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
             ''')
+            if 'email_verified' not in {row['name'] for row in db.execute('PRAGMA table_info(users)')}:
+                db.execute('ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0')
         try:
             Path(path).chmod(0o600)
         except OSError:
@@ -85,9 +103,11 @@ class Store:
         token = secrets.token_urlsafe(32)
         error = None
         with self.db() as db:
+            original = db.execute('SELECT salt FROM users WHERE email=?', (email,)).fetchone()
+        actual = digest(password, original['salt'] if original else b'\0' * 16)
+        with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT * FROM users WHERE email=?', (email,)).fetchone()
-            actual = digest(password, row['salt'] if row else b'\0' * 16)
             if not row or row['locked_until'] > now or not hmac.compare_digest(actual, row['password']):
                 if row and row['locked_until'] <= now:
                     failures = row['failures'] + 1
@@ -119,19 +139,26 @@ class Store:
             db.execute('DELETE FROM sessions WHERE digest=?', (hashlib.sha256(token.encode()).hexdigest(),))
 
     def change_password(self, uid, old, new):
+        with self.db() as db:
+            original = db.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+        if original is None:
+            raise PermissionError('Account unavailable.')
+        old_hash = digest(old, original['salt'])
+        salt = secrets.token_bytes(16)
+        new_hash = digest(new, salt)
         error = None
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
             now = int(time.time())
-            if row['locked_until'] > now or not hmac.compare_digest(digest(old, row['salt']), row['password']):
+            if row['locked_until'] > now or not hmac.compare_digest(old_hash, row['password']):
                 failures = row['failures'] + 1
                 db.execute('UPDATE users SET failures=?,locked_until=? WHERE id=?', (failures, now + 60 if failures >= 5 else 0, uid))
                 error = PermissionError('Password change failed. Check credentials or wait.')
             else:
-                salt = secrets.token_bytes(16)
-                db.execute('UPDATE users SET salt=?,password=?,failures=0,locked_until=0 WHERE id=?', (salt, digest(new, salt), uid))
+                db.execute('UPDATE users SET salt=?,password=?,failures=0,locked_until=0 WHERE id=?', (salt, new_hash, uid))
                 db.execute('DELETE FROM sessions WHERE user_id=?', (uid,))
+                db.execute('DELETE FROM account_tokens WHERE user_id=?', (uid,))
         if error:
             raise error
 
@@ -143,4 +170,5 @@ class Store:
         latest = active or (rows[0] if rows else None)
         return {'plan': 'pro' if active else 'free', 'features': ['extended_forecast'] if active else [],
                 'status': latest['status'] if latest else 'none', 'expires_at': latest['period_end'] if latest else None,
-                'cancel_at_period_end': bool(latest['cancel_at_period_end']) if latest else False}
+                'cancel_at_period_end': bool(latest['cancel_at_period_end']) if latest else False,
+                'checked_at': latest['checked'] if latest else None}

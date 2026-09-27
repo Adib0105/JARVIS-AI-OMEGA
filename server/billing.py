@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import hashlib
+import contextlib
+import sqlite3
+import uuid
 import hmac
 import json
 import re
@@ -58,23 +61,65 @@ def verify_event(raw, signature, secret, now=None):
 
 
 class Billing:
+    """Short durable reservations; no provider I/O while holding a SQLite writer."""
     def __init__(self, store, gateway, prices, public_url):
         self.store, self.gateway, self.prices, self.public_url = store, gateway, prices, public_url
+
+    @contextlib.contextmanager
+    def _lease(self, uid):
+        owner = uuid.uuid4().hex
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('DELETE FROM billing_leases WHERE expires<=?', (time.time(),))
+            try:
+                db.execute('INSERT INTO billing_leases VALUES(?,?,?)', (uid, owner, time.time() + 60))
+            except sqlite3.IntegrityError:
+                raise RuntimeError('Billing update in progress. Refresh in a moment.') from None
+        try:
+            yield (uid, owner)
+        finally:
+            with self.store.db() as db:
+                db.execute('DELETE FROM billing_leases WHERE user_id=? AND owner=?', (uid, owner))
+
+    @contextlib.contextmanager
+    def _write(self, lease):
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if not db.execute('SELECT 1 FROM billing_leases WHERE user_id=? AND owner=? AND expires>?',
+                              (*lease, time.time())).fetchone():
+                raise RuntimeError('Billing reservation expired. Refresh status before retrying.')
+            yield db
+
+    def _user(self, uid):
+        with self.store.db() as db:
+            row = db.execute('SELECT * FROM users WHERE id=?', (uid,)).fetchone()
+        if row is None:
+            raise PermissionError('Account unavailable.')
+        return dict(row)
+
+    @staticmethod
+    def _no_subscription(db, uid):
+        if db.execute("SELECT 1 FROM subscriptions WHERE user_id=? AND status IN ('active','trialing','past_due','unpaid','incomplete','paused')", (uid,)).fetchone():
+            raise ValueError('An existing subscription needs attention in Manage billing.')
 
     def checkout(self, user, tier):
         price = self.prices.get(tier)
         if not price:
             raise ValueError('This plan is not configured.')
-        with self.store.db() as db:
-            # Serializes checkout retries and webhook reconciliation across workers.
-            db.execute('BEGIN IMMEDIATE')
-            row = db.execute('SELECT * FROM users WHERE id=?', (user['id'],)).fetchone()
-            if db.execute("SELECT 1 FROM subscriptions WHERE user_id=? AND status IN ('active','trialing','past_due','unpaid','incomplete','paused') ", (user['id'],)).fetchone():
-                raise ValueError('An existing subscription needs attention in Manage billing.')
+        uid = user['id']
+        if not self._user(uid)['email_verified']:
+            raise ValueError('Verify your email before starting paid checkout.')
+        with self._lease(uid) as lease:
+            with self._write(lease) as db:
+                self._no_subscription(db, uid)
+            row = self._user(uid)
             customer = row['customer']
             if not customer:
-                customer = self.gateway.call('POST', 'customers', {'email': user['email'], 'metadata[user_id]': user['id']}, 'customer-' + user['id'])['id']
-                db.execute('UPDATE users SET customer=? WHERE id=?', (customer, user['id']))
+                customer = self.gateway.call('POST', 'customers', {'email': row['email'], 'metadata[user_id]': uid}, 'customer-' + uid)['id']
+                if not re.fullmatch(r'cus_[A-Za-z0-9]+', str(customer)):
+                    raise RuntimeError('Invalid payment customer identifier.')
+                with self._write(lease) as db:
+                    db.execute('UPDATE users SET customer=? WHERE id=?', (customer, uid))
             if row['checkout_id']:
                 session = self.gateway.call('GET', 'checkout/sessions/' + row['checkout_id'])
                 if session.get('status') == 'complete':
@@ -83,76 +128,141 @@ class Billing:
                     if row['checkout_tier'] != tier:
                         raise ValueError('A checkout is already open. Complete it or wait for it to expire before changing plans.')
                     return hosted_url(session.get('url'), 'checkout.stripe.com')
-            generation = row['checkout_generation'] + 1
+                if session.get('status') != 'expired':
+                    raise RuntimeError('Checkout state is uncertain. Refresh status before retrying.')
+                row['checkout_tier'] = None
+            if row['checkout_tier'] and row['checkout_tier'] != tier:
+                raise ValueError('A checkout is pending for another plan. Retry that plan to recover it.')
+            generation = row['checkout_generation'] if row['checkout_tier'] else row['checkout_generation'] + 1
+            # Persist the intent BEFORE POST. A crash or uncertain response reuses
+            # this exact key/plan rather than creating a second payment session.
+            with self._write(lease) as db:
+                self._no_subscription(db, uid)
+                db.execute('INSERT OR IGNORE INTO checkout_intents VALUES(?,?,?,?,?)', (uid, generation, tier, price, int(time.time())))
+                intent = db.execute('SELECT * FROM checkout_intents WHERE user_id=? AND generation=?', (uid, generation)).fetchone()
+                if intent['price'] != price or intent['tier'] != tier or time.time() - intent['created'] > 23 * 3600:
+                    raise RuntimeError('Uncertain checkout needs provider reconciliation; no new charge session was created.')
+                db.execute('UPDATE users SET checkout_id=NULL,checkout_tier=?,checkout_generation=? WHERE id=?', (tier, generation, uid))
             session = self.gateway.call('POST', 'checkout/sessions', {
-                'mode': 'subscription', 'customer': customer, 'client_reference_id': user['id'],
+                'mode': 'subscription', 'customer': customer, 'client_reference_id': uid,
                 'line_items[0][price]': price, 'line_items[0][quantity]': '1',
-                'subscription_data[metadata][user_id]': user['id'],
+                'subscription_data[metadata][user_id]': uid,
                 'success_url': self.public_url + '/billing/success', 'cancel_url': self.public_url + '/billing/cancel',
-            }, 'checkout-' + user['id'] + '-' + str(generation))
+            }, 'checkout-' + uid + '-' + str(generation))
             url = hosted_url(session.get('url'), 'checkout.stripe.com')
-            db.execute('UPDATE users SET checkout_id=?,checkout_tier=?,checkout_generation=? WHERE id=?', (session['id'], tier, generation, user['id']))
+            with self._write(lease) as db:
+                db.execute('UPDATE users SET checkout_id=? WHERE id=?', (session['id'], uid))
             return url
 
     def portal(self, user):
-        if not user['customer']:
+        customer = self._user(user['id'])['customer']
+        if not customer:
             raise ValueError('No billing account yet. Choose a subscription first.')
-        result = self.gateway.call('POST', 'billing_portal/sessions', {'customer': user['customer'], 'return_url': self.public_url + '/billing/success'})
+        result = self.gateway.call('POST', 'billing_portal/sessions', {'customer': customer, 'return_url': self.public_url + '/billing/success'})
         return hosted_url(result.get('url'), 'billing.stripe.com')
 
     def _save_subscription(self, db, subscription, user_id):
         items = (subscription.get('items') or {}).get('data') or []
         chosen = next((i for i in items if (i.get('price') or {}).get('id') in self.prices.values()), None)
         price = chosen['price']['id'] if chosen else ''
-        # Basil and later expose the billing period on subscription items.
         end = (chosen or {}).get('current_period_end', subscription.get('current_period_end', 0))
         if type(end) is not int:
             end = 0
         status = str(subscription.get('status', 'unknown'))
+        previous = db.execute('SELECT user_id FROM subscriptions WHERE id=?', (subscription['id'],)).fetchone()
+        if previous and previous['user_id'] != user_id:
+            raise RuntimeError('Subscription identity mismatch.')
         db.execute('INSERT INTO subscriptions VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,period_end=excluded.period_end,price=excluded.price,cancel_at_period_end=excluded.cancel_at_period_end,checked=excluded.checked',
                    (subscription['id'], user_id, status, end, price, bool(subscription.get('cancel_at_period_end')), int(time.time())))
+
+    def _subscription(self, sid, customer):
+        if not isinstance(sid, str) or not re.fullmatch(r'sub_[A-Za-z0-9]+', sid):
+            raise ValueError('Missing subscription identifier.')
+        subscription = self.gateway.call('GET', 'subscriptions/' + sid)
+        if subscription.get('id') != sid or subscription.get('customer') != customer:
+            raise RuntimeError('Subscription identity mismatch.')
+        return subscription
 
     def webhook(self, event):
         kind = event.get('type', '')
         if not isinstance(kind, str) or not (kind.startswith('customer.subscription.') or kind == 'checkout.session.completed'):
             return
-        event_data = event.get('data')
-        obj = event_data.get('object') if isinstance(event_data, dict) else None
+        data = event.get('data')
+        obj = data.get('object') if isinstance(data, dict) else None
         if not isinstance(obj, dict):
             raise ValueError('Invalid webhook object.')
         sid = obj.get('subscription') if kind == 'checkout.session.completed' else obj.get('id')
         if not isinstance(sid, str) or not re.fullmatch(r'sub_[A-Za-z0-9]+', sid):
             raise ValueError('Missing subscription identifier.')
         with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
             if db.execute('SELECT 1 FROM events WHERE id=?', (event['id'],)).fetchone():
                 return
-            # Fetch current Stripe state instead of trusting delayed/out-of-order event bodies.
-            subscription = self.gateway.call('GET', 'subscriptions/' + sid)
-            user = db.execute('SELECT id FROM users WHERE customer=?', (subscription.get('customer'),)).fetchone()
-            if user:
-                self._save_subscription(db, subscription, user['id'])
-                db.execute('UPDATE users SET checkout_id=NULL,checkout_tier=NULL WHERE id=?', (user['id'],))
-            db.execute('INSERT INTO events VALUES(?,?)', (event['id'], int(time.time())))
-            db.execute('DELETE FROM events WHERE received<?', (int(time.time()) - 90 * 86400,))
+            # Minimal durable inbox; never store full provider/customer payloads.
+            db.execute('INSERT OR IGNORE INTO billing_inbox(id,subscription,customer,received) VALUES(?,?,?,?)',
+                       (event['id'], sid, str(obj.get('customer') or ''), int(time.time())))
+        self.process_event(event['id'])
+
+    def process_event(self, event_id):
+        with self.store.db() as db:
+            item = db.execute('SELECT * FROM billing_inbox WHERE id=? AND processed=0', (event_id,)).fetchone()
+        if not item:
+            return
+        try:
+            customer = item['customer']
+            if not customer:
+                customer = self.gateway.call('GET', 'subscriptions/' + item['subscription']).get('customer')
+            with self.store.db() as db:
+                user = db.execute('SELECT id FROM users WHERE customer=?', (customer,)).fetchone()
+            if not user:
+                raise RuntimeError('Billing customer is not linked yet; event retained for retry.')
+            with self._lease(user['id']) as lease:
+                # Fetch within per-user ownership, but outside the DB write lock.
+                # Delayed events cannot overwrite a later fetch in another worker.
+                subscription = self._subscription(item['subscription'], customer)
+                with self._write(lease) as db:
+                    self._save_subscription(db, subscription, user['id'])
+                    db.execute('UPDATE users SET checkout_id=NULL,checkout_tier=NULL WHERE id=?', (user['id'],))
+                    db.execute('INSERT OR IGNORE INTO events VALUES(?,?)', (event_id, int(time.time())))
+                    db.execute('UPDATE billing_inbox SET processed=1,last_error=NULL WHERE id=?', (event_id,))
+                    db.execute('DELETE FROM events WHERE received<?', (int(time.time()) - 90 * 86400,))
+                    db.execute('DELETE FROM billing_inbox WHERE processed=1 AND received<?', (int(time.time()) - 90 * 86400,))
+        except Exception as exc:
+            with self.store.db() as db:
+                db.execute('UPDATE billing_inbox SET attempts=attempts+1,last_error=?,retry_at=? WHERE id=?',
+                           (type(exc).__name__, int(time.time()) + 60, event_id))
+            raise
+
+    def retry_pending(self, limit=25):
+        with self.store.db() as db:
+            items = db.execute('SELECT id FROM billing_inbox WHERE processed=0 AND retry_at<=? AND attempts<20 ORDER BY received LIMIT ?',
+                               (int(time.time()), min(100, max(1, limit)))).fetchall()
+        for item in items:
+            try:
+                self.process_event(item['id'])
+            except (RuntimeError, ValueError, httpx.HTTPError):
+                continue  # durable error code/attempt count are already recorded
+        return len(items)
 
     def refresh(self, user):
-        with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
-            owner = db.execute('SELECT * FROM users WHERE id=?', (user['id'],)).fetchone()
+        uid = user['id']
+        with self._lease(uid) as lease:
+            owner = self._user(uid)
+            handled = set()
             if owner['checkout_id']:
                 session = self.gateway.call('GET', 'checkout/sessions/' + owner['checkout_id'])
                 sid = session.get('subscription')
-                if session.get('status') == 'complete' and isinstance(sid, str) and re.fullmatch(r'sub_[A-Za-z0-9]+', sid):
-                    subscription = self.gateway.call('GET', 'subscriptions/' + sid)
-                    if subscription.get('customer') != owner['customer']:
-                        raise RuntimeError('Subscription identity mismatch.')
-                    self._save_subscription(db, subscription, user['id'])
-                    db.execute('UPDATE users SET checkout_id=NULL,checkout_tier=NULL WHERE id=?', (user['id'],))
-            rows = db.execute('SELECT id FROM subscriptions WHERE user_id=?', (user['id'],)).fetchall()
+                if session.get('status') == 'complete' and sid:
+                    subscription = self._subscription(sid, owner['customer'])
+                    with self._write(lease) as db:
+                        self._save_subscription(db, subscription, uid)
+                        db.execute('UPDATE users SET checkout_id=NULL,checkout_tier=NULL WHERE id=?', (uid,))
+                    handled.add(sid)
+            with self.store.db() as db:
+                rows = db.execute('SELECT id FROM subscriptions WHERE user_id=?', (uid,)).fetchall()
             for row in rows:
-                subscription = self.gateway.call('GET', 'subscriptions/' + row['id'])
-                if subscription.get('customer') != user['customer']:
-                    raise RuntimeError('Subscription identity mismatch.')
-                self._save_subscription(db, subscription, user['id'])
-        return self.store.entitlement(user['id'], self.prices.values())
+                if row['id'] in handled:
+                    continue
+                subscription = self._subscription(row['id'], owner['customer'])
+                with self._write(lease) as db:
+                    self._save_subscription(db, subscription, uid)
+        return self.store.entitlement(uid, self.prices.values())

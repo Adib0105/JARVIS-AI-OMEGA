@@ -400,8 +400,8 @@ class CapabilityRegistry:
             self_dev_status = CapabilityStatus.DISABLED
             self_dev_detail = 'controlled self-development disabled by configuration'
         elif self_dev_exists:
-            self_dev_status = CapabilityStatus.EXPERIMENTAL
-            self_dev_detail = 'sandbox proposal/build/test/evaluate/diff/approval pipeline is integrated; production release remains locked by default'
+            self_dev_status = CapabilityStatus.DEGRADED
+            self_dev_detail = 'proposal/edit support available; generated-code tests BLOCKED: EXECUTION_ISOLATION_UNAVAILABLE; production release remains locked'
         else:
             self_dev_status = CapabilityStatus.MISSING
             self_dev_detail = 'self-development package is absent'

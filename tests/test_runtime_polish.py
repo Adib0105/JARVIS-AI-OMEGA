@@ -62,7 +62,7 @@ class SettingsRecoveryTests(unittest.TestCase):
                 with self.assertRaises(PermissionError):
                     update_env_values({'WAKE_WORD': 'changed'})
             self.assertEqual(path.read_text(), 'WAKE_WORD=original\n')
-            self.assertEqual(list(Path(folder).iterdir()), [path])
+            self.assertEqual(sorted(p.name for p in Path(folder).iterdir()), sorted([path.name, path.name + '.lock']))
 
 
 class BackgroundRecoveryTests(unittest.TestCase):

@@ -9,9 +9,9 @@ from jarvis.windows_controls import WINDOWS_CONTROL_ACTIONS, windows_control
 
 
 class WindowsPowerPackTests(unittest.TestCase):
-    def test_exactly_twenty_allowlisted_actions(self):
-        self.assertEqual(len(WINDOWS_CONTROL_ACTIONS), 20)
-        self.assertEqual(len(set(WINDOWS_CONTROL_ACTIONS)), 20)
+    def test_allowlisted_actions_include_explicit_state_commands(self):
+        self.assertEqual(len(WINDOWS_CONTROL_ACTIONS), 24)
+        self.assertEqual(len(set(WINDOWS_CONTROL_ACTIONS)), 24)
         self.assertTrue(profile_for('windows_control').side_effecting)
         self.assertEqual(profile_for('windows_control').risk.value, 'HIGH')
 
@@ -24,11 +24,13 @@ class WindowsPowerPackTests(unittest.TestCase):
             patch('jarvis.windows_controls._pyautogui', return_value=pg),
             patch('jarvis.windows_controls.os.startfile', create=True) as startfile,
             patch.object(ctypes, 'windll', fake_windll, create=True),
+            patch('jarvis.windows_audio.set_mute', side_effect=lambda desired: desired),
+            patch('jarvis.windows_audio.request_media_state'),
         ):
             for action in WINDOWS_CONTROL_ACTIONS:
                 result = windows_control(action)
                 self.assertEqual(result['action'], action)
-                self.assertEqual(result['status'], 'REQUESTED')
+                self.assertEqual(result['status'], 'VERIFIED' if action in {'volume_mute', 'volume_unmute'} else 'REQUESTED')
         self.assertEqual(pg.press.call_count, 6)
         self.assertEqual(pg.hotkey.call_count, 8)
         self.assertEqual(startfile.call_count, 5)

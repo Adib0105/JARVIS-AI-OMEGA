@@ -6,21 +6,17 @@ from pathlib import Path
 
 from .event_safety import safe_evidence
 from .mission import VerificationResult
+from ..security.capabilities import TOOL_SECURITY, profile_for
 
 
-SIDE_EFFECTING_TOOLS = {
-    'run_project_tests',
-    'remember_fact', 'add_note', 'add_todo', 'complete_todo', 'add_reminder',
-    'index_local_text_file', 'index_document',
-    'open_url', 'open_app', 'open_local_path', 'browser_search', 'youtube_play_first',
-    'type_text', 'press_key', 'hotkey', 'click_screen',
-    'browser_agent_open', 'semantic_click', 'semantic_type',
-    'write_local_text_file', 'gmail_send', 'calendar_create',
-}
+# Compatibility export; the canonical contract also classifies unknown tools as
+# effects. Runtime decisions must use profile_for, not membership in this set.
+SIDE_EFFECTING_TOOLS = {name for name, profile in TOOL_SECURITY.items() if profile.side_effecting}
 
 PARTIAL_VERIFICATION_TOOLS = {
     'open_url', 'open_app', 'open_local_path', 'browser_search', 'youtube_play_first',
     'type_text', 'press_key', 'hotkey', 'click_screen',
+    'windows_control', 'browser_agent_open', 'semantic_click', 'semantic_type',
 }
 
 _EXPLICIT_STATUSES = {
@@ -74,7 +70,7 @@ class VerificationEngine:
         name = str(event.get('name', ''))
         args = event.get('args') if isinstance(event.get('args'), dict) else {}
         raw = event.get('output', '')
-        side_effecting = name in SIDE_EFFECTING_TOOLS
+        side_effecting = profile_for(name).side_effecting
         try:
             payload = json.loads(raw) if isinstance(raw, str) else raw
         except Exception:
@@ -88,6 +84,11 @@ class VerificationEngine:
                 'evidence': safe_evidence(str(error)[:1000]),
             }
 
+        if name not in TOOL_SECURITY:
+            return _base(event, name, side_effecting=True) | {
+                'verified': False, 'status': 'UNKNOWN',
+                'evidence': 'Tool has no registered verification/security contract.',
+            }
         explicit = self._explicit_verification(event, name, payload, side_effecting=side_effecting)
         if explicit is not None:
             return explicit
@@ -207,4 +208,4 @@ class VerificationEngine:
 
     @staticmethod
     def has_unsafe_retry_risk(tool_events: list[dict]) -> bool:
-        return any(str(event.get('name', '')) in SIDE_EFFECTING_TOOLS for event in tool_events)
+        return any(profile_for(str(event.get('name', ''))).side_effecting for event in tool_events)

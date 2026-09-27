@@ -4,6 +4,8 @@ from contextlib import contextmanager
 import array
 import math
 import threading
+import queue
+import time
 from typing import Callable
 
 from .config import settings
@@ -41,6 +43,93 @@ def _exclusive_stream(sd, **kwargs):
     finally:
         _CAPTURE_LOCK.release()
 
+
+
+def _capture_blocks(sd, frames, sample_rate, *, stop_event=None, seconds=15):
+    """One stream-owning worker; the caller can cancel even a stalled native read.
+
+    A wedged driver retains the ownership lock until it really exits. Recovery
+    never opens a competing stream or pretends that a Python timeout killed it.
+    """
+    pending = queue.Queue(maxsize=8)
+    done = threading.Event()
+    stream_ready = threading.Event()
+    holder = []
+    errors = []
+    def produce():
+        try:
+            with _exclusive_stream(sd, samplerate=sample_rate, blocksize=frames,
+                                   dtype='int16', channels=1, device=input_device()) as stream:
+                holder.append(stream)
+                stream_ready.set()
+                while not done.is_set():
+                    value = stream.read(frames)
+                    while not done.is_set():
+                        try:
+                            pending.put(value, timeout=0.05)
+                            break
+                        except queue.Full:
+                            continue
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            stream_ready.set()
+    worker = threading.Thread(target=produce, daemon=True, name='jarvis-mic-owner')
+    worker.start()
+    deadline, last_audio = time.monotonic() + seconds + 2, time.monotonic()
+    try:
+        while True:
+            if stop_event is not None and stop_event.is_set():
+                return
+            now = time.monotonic()
+            if now >= deadline or now - last_audio > 2:
+                raise MicrophoneUnavailable('Microphone timed out; reconnect/select the input device.')
+            try:
+                chunk, overflow = pending.get(timeout=0.05)
+            except queue.Empty:
+                if errors:
+                    raise errors[0]
+                if not worker.is_alive():
+                    return
+                continue
+            last_audio = time.monotonic()
+            if overflow:
+                raise MicrophoneUnavailable('Microphone overflowed; command was not executed. Please retry.')
+            yield chunk
+    finally:
+        done.set()
+        def abort():
+            if holder:
+                try:
+                    holder[0].abort()
+                except Exception:
+                    pass  # caller has already cancelled; ownership is not released here
+        # Some faulty native drivers can block abort too. Do not block the UI or
+        # cancellation path on that call; the stream owner alone closes/releases.
+        threading.Thread(target=abort, daemon=True, name='jarvis-mic-abort').start()
+        worker.join(timeout=0.25)
+
+
+def _bounded_transcribe(recognize, data, rate, language, stop_event):
+    result = queue.Queue(maxsize=1)
+    def worker():
+        try:
+            result.put((True, recognize(data, rate, language)))
+        except Exception as exc:
+            result.put((False, exc))
+    threading.Thread(target=worker, daemon=True, name='jarvis-command-asr').start()
+    deadline = time.monotonic() + 20
+    while stop_event is None or not stop_event.is_set():
+        if time.monotonic() >= deadline:
+            raise MicrophoneUnavailable('Command transcription timed out. Please retry.')
+        try:
+            ok, value = result.get(timeout=0.05)
+        except queue.Empty:
+            continue
+        if not ok:
+            raise value
+        return value
+    return ''
 
 def input_device():
     value = settings.mic_device.strip()
@@ -83,13 +172,13 @@ def record_and_transcribe(
     """Compatibility push-to-talk recorder with a fixed maximum duration."""
     sd, _sr = _deps()
     duration = max(1.0, min(float(duration), 20.0))
-    frames = int(sample_rate * duration)
-    try:
-        with _exclusive_stream(sd, samplerate=sample_rate, blocksize=0, dtype='int16', channels=1, device=input_device()) as stream:
-            data, _overflowed = stream.read(frames)
-    except Exception as exc:
-        raise MicrophoneUnavailable(f'Microphone recording failed: {exc}') from exc
-    return _transcribe_pcm(bytes(data), sample_rate, language)
+    chunks = []
+    with __import__('contextlib').closing(_capture_blocks(sd, int(sample_rate * .03), sample_rate, seconds=duration)) as audio:
+        for chunk in audio:
+            chunks.append(bytes(chunk))
+            if sum(map(len, chunks)) >= int(sample_rate * duration) * 2:
+                break
+    return _bounded_transcribe(_transcribe_pcm, b''.join(chunks), sample_rate, language, None)
 
 
 def record_until_silence(
@@ -130,17 +219,12 @@ def record_until_silence(
     quiet_count = 0
 
     try:
-        with _exclusive_stream(sd,
-            samplerate=sample_rate,
-            blocksize=block_frames,
-            dtype='int16',
-            channels=1,
-            device=input_device(),
-        ) as stream:
-            for index in range(max_blocks):
-                if stop_event is not None and stop_event.is_set():
-                    return ''
-                chunk, _overflowed = stream.read(block_frames)
+        with __import__('contextlib').closing(_capture_blocks(
+            sd, block_frames, sample_rate, stop_event=stop_event, seconds=max_seconds,
+        )) as audio:
+            for index, chunk in enumerate(audio):
+                if index >= max_blocks or (stop_event is not None and stop_event.is_set()):
+                    break
                 raw = bytes(chunk)
                 level = _rms_int16(raw)
 
@@ -174,7 +258,7 @@ def record_until_silence(
     if not captured or (stop_event is not None and stop_event.is_set()):
         return ''
     recognize = transcriber or _transcribe_pcm
-    text = recognize(b''.join(captured), sample_rate, language)
+    text = _bounded_transcribe(recognize, b''.join(captured), sample_rate, language, stop_event)
     return '' if stop_event is not None and stop_event.is_set() else text
 
 

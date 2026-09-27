@@ -10,6 +10,10 @@ WINDOWS_CONTROL_ACTIONS = (
     'volume_up',
     'volume_down',
     'volume_mute',
+    'volume_unmute',
+    'volume_toggle',
+    'media_pause',
+    'media_play',
     'media_play_pause',
     'media_next',
     'media_previous',
@@ -33,7 +37,7 @@ WINDOWS_CONTROL_ACTIONS = (
 _KEYS = {
     'volume_up': 'volumeup',
     'volume_down': 'volumedown',
-    'volume_mute': 'volumemute',
+    'volume_toggle': 'volumemute',
     'media_play_pause': 'playpause',
     'media_next': 'nexttrack',
     'media_previous': 'prevtrack',
@@ -67,7 +71,15 @@ def windows_control(action: str) -> dict:
     if action not in WINDOWS_CONTROL_ACTIONS:
         raise ValueError('Unsupported Windows action. Allowed: ' + ', '.join(WINDOWS_CONTROL_ACTIONS))
 
-    if action in _KEYS:
+    if action in {'volume_mute', 'volume_unmute'}:
+        from .windows_audio import set_mute
+        observed = set_mute(action == 'volume_mute')
+        return {'action': action, 'status': 'VERIFIED', 'verified': True,
+                'muted': observed, 'observation': 'Core Audio GetMute readback'}
+    if action in {'media_pause', 'media_play'}:
+        from .windows_audio import request_media_state
+        request_media_state(action == 'media_play')
+    elif action in _KEYS:
         _pyautogui().press(_KEYS[action])
     elif action in _HOTKEYS:
         _pyautogui().hotkey(*_HOTKEYS[action])
@@ -85,7 +97,6 @@ def windows_control(action: str) -> dict:
     return {
         'action': action,
         'status': 'REQUESTED',
-        'verified': action == 'lock_pc',
+        'verified': False,
         'message': 'Windows accepted the requested control action.',
     }
-
