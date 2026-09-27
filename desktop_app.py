@@ -1,6 +1,15 @@
+# PyInstaller multiprocessing children must dispatch before GUI/profile startup.
+if __name__ == '__main__':
+    import multiprocessing
+    multiprocessing.freeze_support()
+
 import os
 import sys
 from pathlib import Path
+
+if __name__ == '__main__' and sys.argv[1:2] == ['--jarvis-update-health']:
+    from jarvis.update_health import main as update_health
+    raise SystemExit(update_health(sys.argv[2]))
 
 if __name__ == '__main__' and sys.argv[1:2] == ['--jarvis-speech-check']:
     from jarvis.speech_check import main as speech_check

@@ -131,7 +131,7 @@ def sanitize_tool_event(event: dict[str, Any]) -> dict[str, Any]:
         'output': sanitize_tool_output(event.get('output', '')),
     }
     for key in (
-        'risk_level', 'capabilities', 'approval_status', 'audit_id', 'started_at',
+        'intent_id', 'risk_level', 'capabilities', 'approval_status', 'audit_id', 'started_at',
         'completed_at', 'latency_ms', 'verification_hints',
     ):
         if key in event:

@@ -44,12 +44,23 @@ def load_preferences():
         return {}
 
 
-def save_preferences(data):
+def preference_revision():
+    import hashlib
+    try:
+        return hashlib.sha256(preference_path().read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return ''
+
+
+def save_preferences(data, expected_revision=None):
+    from .file_mutex import locked_file
+    from .user_profiles import _atomic_json
     path = preference_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp = path.with_suffix('.tmp')
-    temp.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
-    temp.replace(path)
+    with locked_file(path):
+        if expected_revision is not None and preference_revision() != expected_revision:
+            raise RuntimeError('Background settings changed elsewhere. Reopen settings before saving.')
+        _atomic_json(path, data)
+        return preference_revision()
 
 
 def _wait_until_voice_finishes(voice, stop_event, *, start_timeout=1.5, finish_timeout=20.0):
@@ -86,6 +97,7 @@ class BackgroundController:
         self.desktop = desktop
         self.events = queue.Queue()
         self.preferences = load_preferences()
+        self._saved_revision = preference_revision()
         self.enabled = False
         self.pending = False
         self.suppress_until = 0.0
@@ -94,6 +106,10 @@ class BackgroundController:
         self.retry_after_id = None
         self.followup_stop = threading.Event()
         self.followup_thread = None
+        self.followup_started_at = 0.0
+        self.startup_thread = None
+        self.starting = False
+        self.hide_when_ready = False
         self.tray = None
         self.weather_snapshot = None
         self.weather_refreshing = False
@@ -155,8 +171,10 @@ class BackgroundController:
             self.desktop._append('SYSTEM', 'Tray unavailable. JARVIS remains running in the taskbar.')
 
     def enable(self, show_error=True, persist_choice=True):
-        if self.enabled and self.listener.ready:
+        if self.enabled and (self.listener.ready or self.starting):
             return True
+        if self.startup_thread and self.startup_thread.is_alive():
+            return False
         d = self.desktop
         try:
             if not settings.enable_mic_input:
@@ -167,16 +185,22 @@ class BackgroundController:
                 raise RuntimeError('Turn off Wake Word and Live conversation first, then retry.')
             self.ensure_tray()
             self.generation += 1
-            self.enabled = True
+            generation = self.generation
+            self.enabled = self.starting = True
             self.followup_stop = threading.Event()
-            self.listener.start()
-            self.retry_failures = 0
             if persist_choice:
                 self.preferences['enabled'] = True
-                save_preferences(self.preferences)
-            d._append('SYSTEM', 'Background microphone READY (local Vosk). Closing the window keeps JARVIS in the tray. Say “Wake up Jarvis”; Friday will answer and listen for your command. Use Exit to stop completely.')
-            if '--background' in sys.argv:
-                d.root.withdraw()
+                self.persist()
+            self.listener.on_error = lambda error: self.events.put(('error', error, generation))
+            def start_worker():
+                try:
+                    self.listener.start()
+                    self.events.put(('ready', None, generation))
+                except Exception as exc:
+                    self.events.put(('startup_error', (str(exc), show_error), generation))
+            self.startup_thread = threading.Thread(target=start_worker, daemon=True, name='jarvis-wake-startup')
+            self.startup_thread.start()
+            d._append('SYSTEM', 'Starting background microphone… setup will remain visible until audio is ready.')
         except Exception as exc:
             self._stop_listener_only()
             d._append('SYSTEM', 'Background microphone unavailable: ' + str(exc))
@@ -198,6 +222,8 @@ class BackgroundController:
 
     def _stop_listener_only(self):
         self.enabled = False
+        self.starting = False
+        self.hide_when_ready = False
         self.pending = False
         self.followup_stop.set()
         self.listener.stop()
@@ -222,8 +248,13 @@ class BackgroundController:
 
     def persist(self):
         try:
-            save_preferences(self.preferences)
+            self._saved_revision = save_preferences(self.preferences, expected_revision=self._saved_revision)
             return True
+        except RuntimeError as exc:
+            self.preferences = load_preferences()
+            self._saved_revision = preference_revision()
+            self.desktop._append('SYSTEM', str(exc))
+            return False
         except OSError:
             self.desktop._append('SYSTEM', 'Settings could not be saved. Check folder permissions/free disk space. This change may not survive restart.')
             return False
@@ -258,9 +289,11 @@ class BackgroundController:
     def poll(self):
         try:
             self._poll_events()
-        except Exception:
+        except Exception as exc:
+            from .logging_utils import log_event
+            log_event('VOICE', 'background.poll_failed', error_type=type(exc).__name__, error=str(exc))
             self.pending = False
-            self.desktop._append('SYSTEM', 'Background update failed. Please retry the action.')
+            self.desktop._append('SYSTEM', 'Background update failed. A redacted diagnostic was recorded; please retry.')
         finally:
             if not getattr(self.desktop, '_closing', False):
                 self.desktop.root.after(100, self.poll)
@@ -269,6 +302,9 @@ class BackgroundController:
         d = self.desktop
         if getattr(d, '_closing', False):
             return
+        if (self.enabled and self.followup_thread and self.followup_thread.is_alive()
+                and self.followup_started_at and time.monotonic() - self.followup_started_at > 45):
+            self._listener_failed('Command capture exceeded its deadline; recovering microphone.')
         last_audio = getattr(self.listener, 'last_audio_at', 0.0)
         if (self.enabled and self.listener.ready and isinstance(last_audio, (int, float))
                 and last_audio > 0 and time.monotonic() - last_audio > 20
@@ -290,7 +326,20 @@ class BackgroundController:
                 d._exit_completely()
                 return
             elif generation == self.generation and self.enabled:
-                if kind == 'error':
+                if kind == 'ready':
+                    self.starting = False
+                    self.retry_failures = 0
+                    d._append('SYSTEM', 'Background microphone READY. Say Wake up Jarvis plus your command, or wait for the short greeting before speaking.')
+                    if self.hide_when_ready or '--background' in sys.argv:
+                        self.hide_to_tray()
+                    self.hide_when_ready = False
+                elif kind == 'startup_error':
+                    message, show_error = value
+                    self._listener_failed(message)
+                    if show_error:
+                        self.show()
+                        messagebox.showerror('Background voice', message, parent=d.root)
+                elif kind == 'error':
                     self._listener_failed(value)
                 elif kind == 'wake':
                     if d.busy:
@@ -320,6 +369,9 @@ class BackgroundController:
                         d.voice.speak('Command sun nahi paayi. Please Wake up Jarvis bolkar dobara try kijiye.')
                     else:
                         d._append('SYSTEM', 'Wake acknowledged; no follow-up command was heard.')
+                        if payload.get('briefing'):
+                            d._append('JARVIS', payload['briefing'])
+                            d.voice.speak(payload['briefing'])
                 elif kind == 'weather_spoken':
                     d._append('JARVIS', value)
                 elif kind == 'brief':
@@ -334,6 +386,7 @@ class BackgroundController:
         if self.followup_thread and self.followup_thread.is_alive():
             return
         self.followup_stop = threading.Event()
+        self.followup_started_at = time.monotonic()
         self._acknowledge()
         self.followup_thread = threading.Thread(
             target=self._followup_worker,
@@ -348,29 +401,16 @@ class BackgroundController:
         try:
             if not self.listener.stop(wait=True, timeout=4.0):
                 raise RuntimeError('Wake listener did not release the microphone.')
-            if not _wait_until_voice_finishes(self.desktop.voice, stop_event):
+            if not _wait_until_voice_finishes(self.desktop.voice, stop_event, finish_timeout=3.0):
                 if stop_event.is_set():
                     return
-                raise RuntimeError('Voice acknowledgement did not finish in time.')
+                self.desktop.voice.stop()
             if stop_event.is_set() or generation != self.generation or not self.enabled:
                 return
-            # Weather is prefetched while idle; the wake acknowledgement never
-            # waits for a weather API. A missing snapshot is stated honestly.
-            if self.preferences.get('wake_weather', True):
-                snapshot = self.weather_snapshot
-                location = self.preferences.get('location')
-                if snapshot and snapshot[0] == location and time.monotonic() - snapshot[1] < 300:
-                    report = snapshot[2]
-                else:
-                    report = 'Weather abhi ready nahi hai. Weather now bolkar pooch sakte hain.' if location else 'Mausam ke liye Background Settings mein shehar chuniye.'
-                self.events.put(('weather_spoken', report, generation))
-                self.desktop.voice.speak(report)
-                if not _wait_until_voice_finishes(self.desktop.voice, stop_event, finish_timeout=60.0):
-                    raise RuntimeError('Weather speech did not finish; please retry.')
-            if stop_event.is_set() or generation != self.generation or not self.enabled:
-                return
-
+            # Command capture has priority over the long weather report. The
+            # cached briefing is spoken only after a silent command window.
             if not self.preferences.get('listen_after_wake', True):
+                payload['briefing'] = self._cached_briefing()
                 return
             from .microphone import record_until_silence
             from .offline_speech import transcribe_vosk
@@ -387,6 +427,8 @@ class BackgroundController:
                 stop_event=stop_event,
                 transcriber=local_transcriber,
             )
+            if not payload['text'] and not stop_event.is_set():
+                payload['briefing'] = self._cached_briefing()
         except Exception as exc:
             payload['error'] = str(exc)
         finally:
@@ -398,9 +440,19 @@ class BackgroundController:
             if not stop_event.is_set():
                 self.events.put(('followup', payload, generation))
 
+    def _cached_briefing(self):
+        if not self.preferences.get('wake_weather', True):
+            return ''
+        snapshot, location = self.weather_snapshot, self.preferences.get('location')
+        if snapshot and snapshot[0] == location and time.monotonic() - snapshot[1] < 300:
+            return snapshot[2]
+        return ('Weather abhi ready nahi hai. Weather now bolkar pooch sakte hain.' if location
+                else 'Mausam ke liye Background Settings mein shehar chuniye.')
+
     def _acknowledge(self):
         from .daily_briefing import wake_greeting
-        greeting = wake_greeting(settings.user_name)
+        from .subscription_client import greeting_name
+        greeting = wake_greeting(greeting_name(settings.user_name))
         self.desktop._append('JARVIS', greeting)
         if self.preferences.get('fast_ack', True):
             self.desktop.voice.acknowledge(greeting)
@@ -460,11 +512,11 @@ class BackgroundController:
         frame.bind('<Configure>', lambda _e: canvas.configure(scrollregion=canvas.bbox('all')))
         canvas.bind('<Configure>', lambda e: canvas.itemconfigure(item, width=e.width))
         ttk.Label(frame, text='Local Vosk listens for Jarvis while the window is closed.\nPC must be awake. Exit stops listening. Select an extracted Vosk model below.').pack(anchor='w')
-        status = tk.StringVar(value='ON' if self.enabled else 'OFF')
+        status = tk.StringVar(value='READY' if self.enabled and self.listener.ready else 'STARTING' if self.starting else 'OFF')
         ttk.Label(frame, textvariable=status).pack(anchor='w', pady=8)
         def toggle():
             self.disable() if self.enabled else self.enable()
-            status.set('ON' if self.enabled else 'OFF')
+            status.set('READY' if self.enabled and self.listener.ready else 'STARTING' if self.starting else 'OFF')
         ttk.Button(frame, text='Enable / pause background microphone', command=toggle).pack(anchor='w')
         health = tk.StringVar(value='Check background health to see setup status.')
         ttk.Label(frame, textvariable=health, wraplength=520, justify='left').pack(anchor='w', pady=6)
@@ -480,7 +532,7 @@ class BackgroundController:
         def retry_now():
             if not self.enabled:
                 self.enable()
-            status.set('ON' if self.enabled else 'OFF')
+            status.set('READY' if self.enabled and self.listener.ready else 'STARTING' if self.starting else 'OFF')
             check_health()
         ttk.Button(frame, text='Retry microphone now', command=retry_now).pack(anchor='w', pady=4)
         def enable_always_on():
@@ -493,13 +545,15 @@ class BackgroundController:
                 check_health()
                 self.desktop._append('SYSTEM', 'Background wake is ON, but Windows sign-in startup still needs attention.')
                 return
-            status.set('ON')
-            self.hide_to_tray()
+            self.hide_when_ready = True
+            status.set('STARTING' if self.starting else 'READY')
+            if self.listener.ready:
+                self.hide_to_tray()
         ttk.Button(frame, text='Enable always-on mode (wake + tray + sign-in)', command=enable_always_on).pack(anchor='w', pady=4)
         ttk.Button(frame, text='Start JARVIS when I sign in', command=lambda: self.set_startup(True)).pack(anchor='w', pady=4)
         ttk.Button(frame, text='Disable sign-in startup', command=lambda: self.set_startup(False)).pack(anchor='w')
         for key, label in (
-            ('wake_weather', 'Read my city weather and pollution after the name greeting'),
+            ('wake_weather', 'Read weather and pollution when no command follows the greeting'),
             ('fast_ack', 'Fast wake greeting using the installed offline voice'),
         ):
             variable = tk.BooleanVar(value=self.preferences.get(key, True))
@@ -514,7 +568,7 @@ class BackgroundController:
             self.persist()
         ttk.Checkbutton(
             frame,
-            text='After the wake greeting and optional weather, listen for my command',
+            text='Listen after the short greeting; give commands before the weather report',
             variable=followup,
             command=save_followup,
         ).pack(anchor='w', pady=(10, 2))
@@ -672,7 +726,7 @@ def install_background_ui():
         if '--background' in sys.argv:
             # A sign-in shortcut is not proof that the microphone is listening.
             # Keep setup visible if the saved listener could not start.
-            root.after(1200, lambda: self.background.hide_to_tray() if self.background.enabled else None)
+            root.after(1200, lambda: self.background.hide_to_tray() if self.background.enabled and self.background.listener.ready else None)
     def close(self):
         self.background.hide_to_tray()
     def exit_completely(self):

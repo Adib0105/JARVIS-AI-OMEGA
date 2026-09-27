@@ -8,6 +8,8 @@ from typing import Callable
 
 from ..errors import ErrorCategory, Failure, classify_exception
 from ..logging_utils import log_event
+from .effects import EffectLedger
+from .budget import CURRENT, ExecutionBudget, BudgetExceeded
 from .mission import Mission, MissionStatus, MissionStep, StepStatus, VerificationResult, utc_now
 from .mission_store import MissionStore
 from .recovery import RetryManager
@@ -104,6 +106,7 @@ class MissionOrchestrator:
         self.store = store or MissionStore()
         self.verifier = VerificationEngine()
         self.retry = RetryManager()
+        self.effects = EffectLedger(self.store.db_path)
         self._controls: dict[str, MissionControl] = {}
         self._lock = threading.RLock()
         self.current_mission_id: str | None = None
@@ -460,14 +463,17 @@ class MissionOrchestrator:
             self._controls[mission.id] = control
             self.current_mission_id = mission.id
         try:
+            self.effects.claim_mission(mission.id)
             self.store.save_with_event(mission, 'mission.created', {'goal': goal[:2000]})
             log_event('MISSION', 'mission.created', mission_id=mission.id, goal=goal[:500])
         except Exception:
+            self.effects.release_mission()
             with self._lock:
                 self._controls.pop(mission.id, None)
                 self.current_mission_id = None
             raise
 
+        budget_token = CURRENT.set(ExecutionBudget(seconds=180, max_model_calls=20, cancel_event=control.cancel_event, owner_check=self.effects.check_owner))
         try:
             self._transition(
                 mission,
@@ -492,6 +498,7 @@ class MissionOrchestrator:
             cursor = 0
             replans = 0
             while cursor < len(mission.plan):
+                CURRENT.get().check()
                 if control.cancelled:
                     self._transition(mission, MissionStatus.CANCELLED, progress)
                     break
@@ -563,7 +570,17 @@ class MissionOrchestrator:
                 'recovery_count': mission.recovery_count,
             })
             return mission
+        except BudgetExceeded as exc:
+            mission.last_error = str(exc)
+            terminal = MissionStatus.CANCELLED if control.cancelled else MissionStatus.FAILED
+            self._transition(mission, terminal, progress, mission.last_error)
+            mission.final_verification = self._final_verification(mission)
+            mission.final_report = self._build_report(mission)
+            self.store.save(mission)
+            return mission
         finally:
+            CURRENT.reset(budget_token)
+            self.effects.release_mission()
             with self._lock:
                 self._controls.pop(mission.id, None)
                 if self.current_mission_id == mission.id:

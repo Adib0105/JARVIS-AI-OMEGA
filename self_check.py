@@ -16,7 +16,12 @@ def optional(label: str, ok: bool, detail: str = '') -> None:
     print(f'[{tag}] {label}' + (f' - {detail}' if detail else ''))
 
 
-def main() -> None:
+def main(argv=None) -> int:
+    import argparse
+    parser = argparse.ArgumentParser(description='Local installation diagnostics; not a live release certificate.')
+    parser.add_argument('--strict', action='store_true', help='Fail if AI provider credentials are unavailable.')
+    parser.add_argument('--release', action='store_true', help='Also require all release-readiness gates.')
+    args = parser.parse_args(argv)
     results = []
     results.append(check('Python >= 3.10', sys.version_info >= (3, 10), platform.python_version()))
 
@@ -139,7 +144,7 @@ def main() -> None:
 
         results.append(check(
             'JARVIS version',
-            __version__ == settings.app_version and __version__.startswith('7.8.'),
+            __version__ == settings.app_version and __version__.startswith('7.9.'),
             __version__,
         ))
         findings = validate_settings(settings)
@@ -155,7 +160,10 @@ def main() -> None:
         placeholders = {'put_your_openrouter_key_here', 'put_your_api_key_here', 'YAHAN_APNI_OPENROUTER_KEY'}
         key_ok = bool(settings.api_key and settings.api_key not in placeholders)
         key_name = {'openrouter': 'OPENROUTER_API_KEY', 'openai': 'OPENAI_API_KEY', 'local': 'LOCAL_AI_API_KEY (optional)'}.get(settings.provider, 'API_KEY')
-        results.append(check(f'{key_name} configured', key_ok, settings.model))
+        if args.strict or args.release:
+            results.append(check(f'{key_name} configured', key_ok or settings.provider == 'local', settings.model))
+        else:
+            optional(f'{key_name} configured', key_ok, 'AI chat unavailable until configured; local desktop remains usable.')
 
         if settings.provider == 'openrouter':
             optional('Free/test model route', settings.model == 'openrouter/free' or ':free' in settings.model, settings.model)
@@ -242,13 +250,18 @@ def main() -> None:
         optional(
             'Production self-modification',
             settings.production_self_modification,
-            'enabled deliberately' if settings.production_self_modification else 'OFF by default — sandbox development remains available',
+            'enabled deliberately' if settings.production_self_modification else 'OFF by default — generated-code execution is BLOCKED until reviewed isolation exists',
         )
     except Exception as exc:
         results.append(check('JARVIS config/memory/V7.5 diagnostics', False, str(exc)))
 
-    print('\nJARVIS OMEGA V7.8 ENGINEERING CORE:', 'READY' if all(results) else 'NEEDS ATTENTION')
+    if args.release:
+        from jarvis.readiness import ReleaseReadinessCertifier
+        report = ReleaseReadinessCertifier().certify()
+        results.append(check('Release gate', report.final_release_ready, 'External evidence/audit closure required; this command cannot invent it.'))
+    print('\nJARVIS LOCAL INSTALLATION:', 'CHECKS PASSED (live capabilities not certified)' if all(results) else 'NEEDS ATTENTION')
+    return 0 if all(results) else 1
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

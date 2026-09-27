@@ -30,6 +30,7 @@ class HealthStatus(str, Enum):
     PASS = 'PASS'
     WARNING = 'WARNING'
     FAIL = 'FAIL'
+    BLOCKED = 'BLOCKED'
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,7 @@ class HealthReport:
                 'PASS': sum(1 for item in self.checks if item.status == HealthStatus.PASS),
                 'WARNING': sum(1 for item in self.checks if item.status == HealthStatus.WARNING),
                 'FAIL': sum(1 for item in self.checks if item.status == HealthStatus.FAIL),
+                'BLOCKED': sum(1 for item in self.checks if item.status == HealthStatus.BLOCKED),
             },
         }
 
@@ -192,7 +194,7 @@ class JarvisHealthSystem:
         git_ok = bool(shutil.which('git'))
         repo = (ROOT / '.git').exists()
         if package and git_ok and repo:
-            return HealthCheck('Self Development', HealthStatus.PASS, 'sandbox package + Git + repository checkout available; production activation remains approval-gated.', False)
+            return HealthCheck('Self Development', HealthStatus.BLOCKED, 'Proposal/edit support available; generated-code testing is blocked: EXECUTION_ISOLATION_UNAVAILABLE. No reviewed OS execution backend is installed.', False)
         return HealthCheck('Self Development', HealthStatus.WARNING, f'package={package}; git={git_ok}; repo_checkout={repo}', False)
 
     def _sandbox(self) -> HealthCheck:
@@ -202,9 +204,15 @@ class JarvisHealthSystem:
             test = workspace / '.health-write-test'
             test.write_text('ok', encoding='utf-8')
             test.unlink(missing_ok=True)
-            return HealthCheck('Sandbox', HealthStatus.PASS, f'workspace writable: {workspace}', False)
+            return HealthCheck('Workspace storage', HealthStatus.PASS, f'workspace writable: {workspace}', False)
         except Exception as exc:
-            return HealthCheck('Sandbox', HealthStatus.WARNING, f'{type(exc).__name__}: {exc}', False)
+            return HealthCheck('Workspace storage', HealthStatus.WARNING, f'{type(exc).__name__}: {exc}', False)
+
+    def _effects(self):
+        from ..agent.effects import EffectLedger
+        pending = EffectLedger(self.db_path).unresolved()
+        return HealthCheck('Action recovery', HealthStatus.WARNING if pending else HealthStatus.PASS,
+                           f'{len(pending)} unresolved action intent(s); inspect real outcomes before retrying.' if pending else 'No unresolved action intents.', False)
 
     def _git(self) -> HealthCheck:
         git = shutil.which('git')
@@ -226,7 +234,9 @@ class JarvisHealthSystem:
             self._computer_use(),
             self._self_development(),
             self._sandbox(),
+            HealthCheck('Execution isolation', HealthStatus.BLOCKED, 'EXECUTION_ISOLATION_UNAVAILABLE: a writable workspace is not an execution sandbox. Generated code is not run on the host.', False),
             self._git(),
+            self._effects(),
         ]
 
         for item in self.registry.snapshot():
@@ -238,7 +248,7 @@ class JarvisHealthSystem:
 
         if any(item.status == HealthStatus.FAIL and item.required for item in checks):
             overall = HealthStatus.FAIL
-        elif any(item.status in {HealthStatus.FAIL, HealthStatus.WARNING} for item in checks):
+        elif any(item.status in {HealthStatus.FAIL, HealthStatus.WARNING, HealthStatus.BLOCKED} for item in checks):
             overall = HealthStatus.WARNING
         else:
             overall = HealthStatus.PASS

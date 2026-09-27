@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+from datetime import datetime, timezone
 import shutil
 import subprocess
 from dataclasses import asdict, dataclass
@@ -118,7 +120,7 @@ class ReleaseReadinessCertifier:
         try:
             health = JarvisHealthSystem(self.db_path).run().as_dict()
             checks.append(self._check(
-                'health_system', 'PASS' if health.get('status') != 'FAIL' else 'FAIL',
+                'health_system', health.get('status') if health.get('status') in {'PASS', 'WARNING', 'FAIL'} else 'NOT_VERIFIED',
                 health.get('status', 'unknown'),
             ))
         except Exception as exc:
@@ -200,15 +202,33 @@ class ReleaseReadinessCertifier:
             ))
         return checks
 
-    @staticmethod
-    def _evidence_status(live_evidence: dict[str, Any], key: str) -> tuple[str, str]:
+    def _evidence_status(self, live_evidence: dict[str, Any], key: str) -> tuple[str, str]:
         value = live_evidence.get(key)
-        if isinstance(value, dict) and isinstance(value.get('ok'), bool):
-            detail = str(value.get('detail') or 'explicit smoke-test evidence supplied')
-            return ('PASS' if value['ok'] else 'FAIL'), detail
-        if isinstance(value, bool):
-            return ('PASS' if value else 'FAIL'), 'explicit smoke-test result supplied'
-        return 'NOT_VERIFIED', 'No live workstation evidence supplied.'
+        if not isinstance(value, dict) or type(value.get('ok')) is not bool:
+            return 'NOT_VERIFIED', 'Structured evidence required; a boolean is not proof.'
+        required = ('commit', 'artifact_sha256', 'platform', 'test_id', 'checked_at', 'evidence_uri')
+        if not all(isinstance(value.get(k), str) and value[k].strip() for k in required):
+            return 'NOT_VERIFIED', 'Evidence lacks commit, artifact, platform, test identity, time or source.'
+        if not re.fullmatch(r'[0-9a-f]{40}', value['commit']) or not re.fullmatch(r'[0-9a-f]{64}', value['artifact_sha256']):
+            return 'NOT_VERIFIED', 'Invalid source/artifact digest.'
+        try:
+            stamp = datetime.fromisoformat(value['checked_at'].replace('Z', '+00:00'))
+            age = (datetime.now(timezone.utc) - stamp).total_seconds()
+            if not 0 <= age <= 7 * 86400:
+                return 'NOT_VERIFIED', 'Evidence is stale or future-dated.'
+            head = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=self.root,
+                                  capture_output=True, text=True, timeout=5, check=True).stdout.strip()
+            if head != value['commit']:
+                return 'NOT_VERIFIED', 'Evidence is for a different source commit.'
+        except (ValueError, TypeError, OSError, subprocess.SubprocessError):
+            return 'NOT_VERIFIED', 'Evidence source/time could not be tied to this checkout.'
+        return ('PASS' if value['ok'] else 'FAIL'), str(value.get('detail') or value['test_id'])
+
+    def _audit_gates(self, evidence):
+        # Every finding in FINAL-HARDENING-AUDIT remains mandatory. No UI flag or
+        # boolean can waive it; each needs fresh exact-source closure evidence.
+        return [self._check(f'audit:F{number:02}', *self._evidence_status(evidence, f'audit:F{number:02}'),
+                            category='release') for number in range(1, 23)]
 
     def _live_checks(self, live_evidence: dict[str, Any]) -> list[ReadinessCheck]:
         specs = [
@@ -230,13 +250,14 @@ class ReleaseReadinessCertifier:
         return rows
 
     def certify(self, live_evidence: dict[str, Any] | None = None) -> ReadinessReport:
-        checks = self._automated_checks() + self._live_checks(dict(live_evidence or {}))
+        evidence = dict(live_evidence or {})
+        checks = self._automated_checks() + self._live_checks(evidence) + self._audit_gates(evidence)
         software_ready = not any(
             item.status == 'FAIL' and item.category == 'software' and item.required
             for item in checks
         )
         final_release_ready = software_ready and not any(
-            item.required and item.status in {'FAIL', 'NOT_VERIFIED'}
+            item.required and item.status != 'PASS'
             for item in checks
         )
         return ReadinessReport(

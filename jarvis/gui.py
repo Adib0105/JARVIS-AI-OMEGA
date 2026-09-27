@@ -34,12 +34,43 @@ TEXT = '#dff9ff'
 MUTED = '#86a8b8'
 
 
+def desktop_work_area(root):
+    """Primary display bounds excluding the Windows taskbar/app bars."""
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+        bounds = wintypes.RECT()
+        user = ctypes.WinDLL('user32', use_last_error=True)
+        api = user.SystemParametersInfoW
+        api.argtypes = [wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.RECT), wintypes.UINT]
+        api.restype = wintypes.BOOL
+        if api(0x0030, 0, ctypes.byref(bounds), 0):  # SPI_GETWORKAREA
+            # SPI returns physical pixels even for a DPI-virtualized process.
+            # Use this window's coordinate space for Tk sizing and assertions.
+            convert = user.PhysicalToLogicalPointForPerMonitorDPI
+            convert.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+            convert.restype = wintypes.BOOL
+            start, end = wintypes.POINT(bounds.left, bounds.top), wintypes.POINT(bounds.right, bounds.bottom)
+            handle = root.winfo_id()
+            if convert(handle, ctypes.byref(start)) and convert(handle, ctypes.byref(end)):
+                return start.x, start.y, end.x, end.y
+            return bounds.left, bounds.top, bounds.right, bounds.bottom
+    return 0, 0, root.winfo_screenwidth(), root.winfo_screenheight()
+
+
 class JarvisDesktop:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title('JARVIS AI OMEGA V6 // ARC DESKTOP AGENT')
-        self.root.geometry('1440x900')
-        self.root.minsize(1120, 720)
+        # A tray restore may return to normal geometry rather than maximized.
+        # Keep that geometry inside the display so the composer stays reachable.
+        left, top, right, bottom = desktop_work_area(self.root)
+        available_width = max(640, right - left - 40)
+        available_height = max(480, bottom - top - 80)
+        # Explicit placement avoids Windows' cascading offset pushing a fitting
+        # client rectangle under the taskbar after a minimize/tray round trip.
+        self.root.geometry(f'{min(1440, available_width)}x{min(900, available_height)}+{left + 20}+{top + 20}')
+        self.root.minsize(min(1120, available_width), min(720, available_height))
         self.root.configure(bg=BG)
 
         self.hud: ArcReactorHUD | None = None
@@ -83,6 +114,7 @@ class JarvisDesktop:
         self._build_input_bar()
 
         main = tk.Frame(self.root, bg=BG)
+        self.main_panel = main
         main.pack(side='top', fill='both', expand=True, padx=10, pady=(6, 10))
 
         self.sidebar_canvases = []

@@ -261,6 +261,7 @@ class FiveLayerIntelligence:
             not self._specific(base.category)
             and semantic_prediction is not None
             and semantic_prediction.category == ml_prediction.category
+            and ml_prediction.confidence >= threshold
             and semantic_prediction.category != 'FAST'
             and semantic_prediction.confidence >= neural_threshold
         ):

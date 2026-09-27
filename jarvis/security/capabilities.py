@@ -100,6 +100,9 @@ TOOL_SECURITY: dict[str, ToolSecurityProfile] = {
     'open_local_path': profile('open_local_path', MEDIUM, {Capability.FILE_READ, Capability.APP_CONTROL}, 'Opens an approved local file or folder with the operating system.', True),
 
     # Browser / apps / desktop
+    'browser_agent_open': profile('browser_agent_open', MEDIUM, {Capability.BROWSER_CONTROL}, 'Navigates a browser; observed page evidence is required.', True),
+    'semantic_click': profile('semantic_click', HIGH, {Capability.MOUSE_CONTROL, Capability.SCREEN_CONTROL}, 'Clicks an observed semantic desktop target.', True),
+    'semantic_type': profile('semantic_type', HIGH, {Capability.KEYBOARD_CONTROL}, 'Types into an observed semantic desktop target.', True),
     'open_url': profile('open_url', MEDIUM, {Capability.BROWSER_CONTROL}, 'Opens an external HTTP/HTTPS URL in the default browser.', True),
     'youtube_play_first': profile('youtube_play_first', MEDIUM, {Capability.BROWSER_CONTROL}, 'Searches YouTube and starts the first ordinary video in a visible browser.', True),
     'browser_search': profile('browser_search', MEDIUM, {Capability.BROWSER_CONTROL}, 'Opens a browser search page.', True),

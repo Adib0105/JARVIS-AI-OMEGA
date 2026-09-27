@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from typing import Callable
 
+from ..agent.budget import CURRENT
 from ..errors import classify_exception
 from ..observability.manager import ObservabilityManager
 from .base import AIProvider, ProviderTurn, ToolResult
@@ -59,6 +60,8 @@ class ObservedProvider(AIProvider):
             raise
 
     def _record_success(self, event_type: str, model: str, started: float, turn: ProviderTurn) -> ProviderTurn:
+        if CURRENT.get():
+            CURRENT.get().usage(turn.usage)
         self.circuit_breaker.record_success()
         context = self._context()
         self.observability.record_model_turn(

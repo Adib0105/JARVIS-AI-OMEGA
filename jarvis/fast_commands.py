@@ -27,8 +27,12 @@ _FILLER = r'(?:please\s+|jarvis\s+|friday\s+|zara\s+|jara\s+|mere\s+liye\s+)*'
 _WINDOWS_COMMANDS = {
     'volume_up': (r'volume up', r'volume badhao', r'awaz badhao', r'awaaz badhao'),
     'volume_down': (r'volume down', r'volume kam karo', r'awaz kam karo', r'awaaz kam karo'),
-    'volume_mute': (r'mute', r'unmute', r'volume mute', r'awaz band karo', r'awaaz band karo'),
-    'media_play_pause': (r'play pause', r'pause music', r'resume music', r'music pause karo'),
+    'volume_mute': (r'mute', r'volume mute', r'awaz band karo', r'awaaz band karo'),
+    'volume_unmute': (r'unmute', r'volume unmute', r'awaz chalu karo'),
+    'volume_toggle': (r'toggle mute',),
+    'media_pause': (r'pause music', r'music pause karo'),
+    'media_play': (r'resume music', r'music resume karo'),
+    'media_play_pause': (r'play pause', r'toggle playback'),
     'media_next': (r'next track', r'next song', r'agla gana', r'agla gaana'),
     'media_previous': (r'previous track', r'previous song', r'pichla gana', r'pichla gaana'),
     'show_desktop': (r'show desktop', r'desktop dikhao'),
@@ -104,16 +108,22 @@ def execute_fast_command(jarvis, text: str) -> str | None:
         return result.get('message', 'YouTube playback verify nahi hua.') if isinstance(result, dict) else 'YouTube playback verify nahi hua.'
     if tool == 'browser_search':
         if isinstance(payload, dict) and payload.get('ok') is True:
-            return 'YouTube search aapke default browser mein khol di. Video apne aap play nahi kiya.'
+            return 'YouTube search kholne ki request browser ko bhej di; page abhi verify nahi hua.'
         return 'YouTube search complete nahi hui. Browser permission/result check kijiye.'
     if tool == 'windows_control':
         if not isinstance(payload, dict) or payload.get('ok') is not True:
             error = payload.get('error', 'Permission ya Windows action failed') if isinstance(payload, dict) else payload
             return f'Windows control complete nahi hua: {error}'
+        if args['action'] in {'volume_mute', 'volume_unmute'} and (payload.get('verification') or {}).get('verified') is not True:
+            return 'Volume request bhej di; mute state abhi verify nahi hui.'
         labels = {
             'volume_up': 'Volume-up command Windows ko bhej diya',
             'volume_down': 'Volume-down command Windows ko bhej diya',
-            'volume_mute': 'Mute-toggle command Windows ko bhej diya',
+            'volume_mute': 'System volume mute hai; Windows se verify kiya',
+            'volume_unmute': 'System volume unmute hai; Windows se verify kiya',
+            'volume_toggle': 'Mute toggle request bhej diya',
+            'media_pause': 'Media pause request bhej diya; playback state abhi verify nahi hai',
+            'media_play': 'Media play request bhej diya; playback state abhi verify nahi hai',
             'media_play_pause': 'Media play/pause command bhej diya',
             'media_next': 'Next track command bhej diya', 'media_previous': 'Previous track command bhej diya',
             'show_desktop': 'Desktop shortcut bhej diya', 'switch_window': 'Window switch command bhej diya',
@@ -123,7 +133,7 @@ def execute_fast_command(jarvis, text: str) -> str | None:
             'new_virtual_desktop': 'Naya virtual desktop command bhej diya',
             'next_virtual_desktop': 'Next virtual desktop command bhej diya',
             'previous_virtual_desktop': 'Previous virtual desktop command bhej diya',
-            'lock_pc': 'Computer lock request complete hua',
+            'lock_pc': 'Windows ko lock request bhej diya; lock screen abhi verify nahi hui',
             'open_wifi_settings': 'Wi-Fi settings open request bhej diya',
             'open_bluetooth_settings': 'Bluetooth settings open request bhej diya',
             'open_display_settings': 'Display settings open request bhej diya',
@@ -138,7 +148,7 @@ def execute_fast_command(jarvis, text: str) -> str | None:
         return f'App open nahi hua: {error}'
     app = args['app']
     names = {'vscode': 'VS Code', 'chrome': 'Chrome', 'edge': 'Edge', 'explorer': 'File Explorer'}
-    return f"Done. {names.get(app, app.title())} open kar diya."
+    return f"{names.get(app, app.title())} kholne ki request bhej di; app window abhi verify nahi hui."
 
 
 def parse_youtube_command(text: str) -> str | None:

@@ -90,7 +90,7 @@ class WakeLatencyTests(unittest.TestCase):
         now[0] = 0.46
         self.assertEqual(detector.feed('wake up jarvis'), '')
         self.assertIsNone(detector.feed('wake up jarvis'))
-        self.assertIsNone(detector.feed('wake up jarvis', final=True))
+        self.assertEqual(detector.feed('wake up jarvis', final=True), '')
 
     def test_inline_command_waits_for_final_and_is_preserved(self):
         detector = PartialWakeDetector('jarvis')
@@ -159,8 +159,8 @@ class WakeLatencyTests(unittest.TestCase):
         with patch('jarvis.microphone.record_until_silence', return_value='time batao'), patch('jarvis.daily_briefing.rich_weather_report') as network:
             controller._followup_worker(controller.generation, threading.Event())
         network.assert_not_called()
-        desktop.voice.speak.assert_called_with('Cloud cover 70 percent.')
-        results = [controller.events.get_nowait(), controller.events.get_nowait()]
+        desktop.voice.speak.assert_not_called()  # commands take priority over weather
+        results = [controller.events.get_nowait()]
         self.assertEqual(results[-1][1]['text'], 'time batao')
         controller.listener.start.assert_called_once()
 
@@ -175,7 +175,10 @@ class WakeLatencyTests(unittest.TestCase):
         controller.listener = MagicMock()
         controller.listener.start.side_effect = RuntimeError('device temporarily missing')
         with patch.object(controller, 'ensure_tray'), patch('jarvis.background_ui.settings', replace(settings, enable_mic_input=True)):
-            self.assertFalse(controller.enable(show_error=False, persist_choice=False))
+            self.assertTrue(controller.enable(show_error=False, persist_choice=False))
+            controller.startup_thread.join(timeout=1)
+            controller.poll()
+            self.assertFalse(controller.enabled)
         self.assertTrue(any(call.args[0] == 3000 for call in desktop.root.after.call_args_list))
         self.assertTrue(controller.preferences['enabled'])
 

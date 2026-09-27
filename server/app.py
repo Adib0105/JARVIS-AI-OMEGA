@@ -10,12 +10,13 @@ import re
 import sqlite3
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, Request
+from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 from starlette.concurrency import run_in_threadpool
 
 from .billing import Billing, StripeGateway, verify_event
 from .store import Store
+from .recovery import Recovery, Mailer, GENERIC
 
 
 def field(body, key, low=1, high=256):
@@ -48,7 +49,7 @@ async def body_json(request):
     return body
 
 
-def create_app(*, db_path=None, gateway=None, config=None):
+def create_app(*, db_path=None, gateway=None, config=None, mailer=None):
     config = dict(os.environ if config is None else config)
     public_url = config.get('JARVIS_PUBLIC_URL', 'http://127.0.0.1:8000').rstrip('/')
     parts = urlsplit(public_url)
@@ -59,7 +60,8 @@ def create_app(*, db_path=None, gateway=None, config=None):
     prices = {name: config.get('STRIPE_PRICE_' + name.upper(), '') for name in ('monthly', 'yearly')}
     prices = {k: v for k, v in prices.items() if v}
     billing = Billing(store, gateway or StripeGateway(config.get('STRIPE_SECRET_KEY', '')), prices, public_url)
-    app.state.store, app.state.billing = store, billing
+    recovery = Recovery(store, mailer or Mailer(config))
+    app.state.store, app.state.billing, app.state.recovery = store, billing, recovery
 
     @app.middleware('http')
     async def headers_and_limits(request, call_next):
@@ -107,7 +109,9 @@ def create_app(*, db_path=None, gateway=None, config=None):
     def health():
         with store.db() as db:
             db.execute('SELECT 1').fetchone()
-        return {'status': 'ok', 'billing_configured': bool(prices and config.get('STRIPE_SECRET_KEY') and config.get('STRIPE_WEBHOOK_SECRET'))}
+        with store.db() as db:
+            pending = db.execute('SELECT count(*) FROM billing_inbox WHERE processed=0').fetchone()[0]
+        return {'status': 'ok', 'email_configured': bool(recovery.mailer.configured), 'pending_billing_events': pending, 'billing_configured': bool(prices and config.get('STRIPE_SECRET_KEY') and config.get('STRIPE_WEBHOOK_SECRET'))}
 
     @app.post('/auth/register')
     async def register(request: Request):
@@ -121,6 +125,25 @@ def create_app(*, db_path=None, gateway=None, config=None):
     async def login(request: Request):
         body = await body_json(request)
         return await run_in_threadpool(store.login, email(body), field(body, 'password', 1, 256))
+
+    @app.post('/auth/request-code')
+    async def request_code(request: Request, background_tasks: BackgroundTasks):
+        body = await body_json(request)
+        kind = field(body, 'kind', 5, 6)
+        if kind not in ('verify', 'reset'):
+            raise ValueError('Invalid account operation.')
+        background_tasks.add_task(recovery.request, email(body), kind)
+        return GENERIC
+
+    @app.post('/auth/verify-email')
+    async def verify_email(request: Request):
+        body = await body_json(request)
+        return await run_in_threadpool(recovery.consume, field(body, 'code', 32, 128), 'verify')
+
+    @app.post('/auth/reset-password')
+    async def reset_password(request: Request):
+        body = await body_json(request)
+        return await run_in_threadpool(recovery.consume, field(body, 'code', 32, 128), 'reset', field(body, 'new_password', 12, 256))
 
     @app.post('/auth/logout')
     async def logout(request: Request):
@@ -138,7 +161,7 @@ def create_app(*, db_path=None, gateway=None, config=None):
     async def me(request: Request):
         who = await user(request)
         entitlement = await run_in_threadpool(store.entitlement, who['id'], prices.values())
-        return {'email': who['email'], 'name': who['name'], 'subscription': entitlement, 'plans': list(prices)}
+        return {'email': who['email'], 'name': who['name'], 'email_verified': bool(who['email_verified']), 'subscription': entitlement, 'plans': list(prices)}
 
     @app.post('/billing/checkout')
     async def checkout(request: Request):

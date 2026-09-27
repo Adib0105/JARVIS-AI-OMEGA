@@ -19,3 +19,6 @@ models/
 
 server-data/
 server/.env
+
+# Local advisory lock files contain no project source.
+.env.lock

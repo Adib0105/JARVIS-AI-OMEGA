@@ -25,7 +25,7 @@ def split_wake(text: str, wake_word: str = 'jarvis') -> str | None:
 
 
 class PartialWakeDetector:
-    """Stable bare wake phrases can acknowledge before the final ASR endpoint.
+    """Partial detections are cues only; dispatch requires the final ASR endpoint.
 
     Text with an inline command is reserved for the final result, preserving it.
     """
@@ -39,7 +39,7 @@ class PartialWakeDetector:
     def feed(self, text, final=False):
         command = split_wake(text, self.wake_word)
         if final:
-            result = None if self.emitted else command
+            result = command  # a partial cue must never consume the final command suffix
             self.reset()
             return result
         if self.emitted:
@@ -163,7 +163,7 @@ class BackgroundWakeListener:
                     decoded = json.loads(raw)
                     text = decoded.get('text' if final else 'partial', '')
                     command = detector.feed(text, final) if isinstance(text, str) else None
-                    if command is not None and not self._stop.is_set() and not self.suspended():
+                    if final and command is not None and not self._stop.is_set() and not self.suspended():
                         self.last_heard_at = time.time()
                         self.on_wake(command)
                         recognizer.Reset()

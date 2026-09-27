@@ -24,6 +24,9 @@ Load values from `server/.env.example` into the process environment through your
 4. Add `/billing/webhook` as the signed endpoint for `checkout.session.completed` and `customer.subscription.created/updated/deleted/paused/resumed`; store its signing secret. The integration pins Stripe API `2025-03-31.basil`, reads billing periods from items and accepts the earlier top-level period as a compatibility fallback.
 5. Set `OPEN_METEO_API_KEY` on the backend. Commercial desktop distributions set `JARVIS_COMMERCIAL_WEATHER=true` and `JARVIS_ACCOUNT_SERVER` to the origin; weather/geocoding requests then use the authenticated backend. Do not put a shared merchant weather key or Stripe secret in the installer.
 6. Exercise test-mode checkout, webhook delivery/retry, renewal, failed payment, cancellation and portal return before enabling real charges. Verify hosting/provider account eligibility separately.
+7. Configure TLS SMTP for verification/reset codes, then run `python -m server.worker` alongside the API so persisted billing retries survive restarts. The worker and API use the same database and credentials.
+
+Host templates, backup/restore commands and rollout checks are in [V7.9 operations](../docs/V7.9-OPERATIONS.md). These templates do not provision a host, domain, SMTP service or payment account.
 
 ## Behavior
 
@@ -32,8 +35,10 @@ Load values from `server/.env.example` into the process environment through your
 - The success page never grants access. Signed webhook events are replay-checked transactionally and reconcile against current Stripe subscription state, so a late event cannot restore a canceled subscription.
 - Only configured product prices in active/trialing state, with a future billing-period expiry and recent verification, grant Pro. Past-due/unpaid/incomplete/paused/canceled subscriptions fail closed.
 - `/pro/forecast` refreshes current provider state on each request and checks the authenticated account's entitlement. `/weather/report` and `/weather/cities` are authenticated free-plan endpoints for commercial deployments.
-- Desktop cloud tokens are memory-only. No passwords, card details, tokens or webhook bodies are written to application logs. Configure reverse-proxy logs to omit authorization headers and request bodies as well.
+- Desktop cloud tokens are memory-only by default; optional Windows remember-device storage uses current-user DPAPI and expires within seven days. Online-name greetings require a separate opt-in and do not merge local chat histories. Configure reverse-proxy logs to omit authorization headers and request bodies.
+- Email verification is required before starting paid checkout. Verification/reset codes expire after 15 minutes, are single-use and stored only as hashes. Password reset revokes existing sessions. Request responses do not disclose whether an email exists; delivery requires configured SMTP.
+- Provider calls and password hashing run outside SQLite write transactions. Per-account leases fence billing writes, durable checkout intents reuse idempotency keys after uncertain responses, and a persisted webhook inbox supports bounded retries. Uncertain checkout intents older than 23 hours require operator reconciliation; never delete one to bypass that guard.
 
 ## Before public sale
 
-This change does not implement email verification, forgotten-password recovery, fraud handling, tax policy, customer support operations or distributed service scaling. Complete those with the target merchant/hosting setup. The repository's existing production audit and real-PC Windows checklist remain required. Keep automatic public release publication disabled until those independent gates are resolved.
+Email verification and password recovery are implemented but require a live mail delivery test. Fraud handling, tax policy, customer support operations, distributed scaling and commercial provider setup remain deployment work. The repository's existing production audit and real-PC Windows checklist remain required. Keep automatic public release publication disabled until those independent gates are resolved.

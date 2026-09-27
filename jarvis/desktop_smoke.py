@@ -72,6 +72,15 @@ def schedule_smoke_check(root, app):
             assert 'Friday' in app.jarvis.chat('hello'), 'Hidden desktop stopped handling commands'
             app.background.show()
             root.update()
+            from .gui import desktop_work_area
+            left, top, right, bottom = desktop_work_area(root)
+            for label, control in [('composer', app.entry), ('send', app.send_button), ('microphone', app.mic_button)]:
+                assert control.winfo_viewable(), label + ' is not visible after tray restore'
+                x, y = control.winfo_rootx(), control.winfo_rooty()
+                width, height = control.winfo_width(), control.winfo_height()
+                assert width > 5 and height > 5, label + ' has no usable area'
+                assert left <= x and x + width <= right, label + ' is outside usable display width'
+                assert top <= y and y + height <= bottom, label + ' is outside usable display height or behind the taskbar'
             try:
                 from PIL import ImageGrab
                 ImageGrab.grab().save(path.with_suffix('.png'))

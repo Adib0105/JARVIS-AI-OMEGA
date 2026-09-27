@@ -42,7 +42,7 @@ class V75ReadinessTests(unittest.TestCase):
             self.assertIn('microphone_live', pending)
             self.assertIn('provider_live', pending)
 
-    def test_explicit_live_evidence_can_complete_release_gate(self):
+    def test_boolean_or_unbound_evidence_cannot_complete_release_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             certifier = self._certifier(Path(tmp), mic=False, google=False)
             evidence = {
@@ -59,8 +59,8 @@ class V75ReadinessTests(unittest.TestCase):
             ):
                 report = certifier.certify(evidence).as_dict()
             self.assertTrue(report['software_ready'])
-            self.assertTrue(report['final_release_ready'])
-            self.assertEqual(report['not_verified'], 0)
+            self.assertFalse(report['final_release_ready'])
+            self.assertGreaterEqual(report['not_verified'], 22)
 
     def test_failed_live_evidence_blocks_final_release_not_software_state(self):
         with tempfile.TemporaryDirectory() as tmp:

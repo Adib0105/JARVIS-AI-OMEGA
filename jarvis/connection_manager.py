@@ -30,10 +30,20 @@ class ConnectionInputError(ValueError):
 
 def read_connection_file(path=None):
     path = Path(path) if path is not None else ROOT / '.env'
-    return dict(dotenv_values(path, encoding='utf-8-sig', interpolate=False)) if path.exists() else {}
+    from .local_secrets import reveal
+    values = dict(dotenv_values(path, encoding='utf-8-sig', interpolate=False)) if path.exists() else {}
+    for key, value in values.items():
+        if key.endswith('_API_KEY'):
+            try:
+                values[key] = reveal(value)
+            except (RuntimeError, ValueError, UnicodeError):
+                # A copied install must still allow a replacement credential to
+                # be entered under the new Windows account.
+                values[key] = ''
+    return values
 
 
-def atomic_save(path, values):
+def _atomic_save_locked(path, values):
     path = Path(path)
     content = path.read_text(encoding='utf-8-sig') if path.exists() else ''
     descriptor, name = tempfile.mkstemp(prefix='.jarvis-connection-', dir=path.parent)
@@ -41,11 +51,20 @@ def atomic_save(path, values):
     try:
         with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
             handle.write(content)
+        from .local_secrets import protect
         for key, value in values.items():
+            if key.endswith('_API_KEY'):
+                value = protect(value)
             set_key(str(staged), key, value, encoding='utf-8')
         staged.replace(path)
     finally:
         staged.unlink(missing_ok=True)
+
+
+def atomic_save(path, values):
+    from .file_mutex import locked_file
+    with locked_file(path):
+        _atomic_save_locked(path, values)
 
 
 def close_client(provider):

@@ -12,6 +12,14 @@ ROOT = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) el
 # The package-local .env is the user's explicit JARVIS configuration.
 # It must win over a stale/blank Windows environment variable.
 load_dotenv(ROOT / '.env', override=True, encoding='utf-8-sig')
+from .local_secrets import reveal
+for _key in ('OPENROUTER_API_KEY', 'OPENAI_API_KEY', 'LOCAL_AI_API_KEY', 'EMBEDDING_API_KEY'):
+    try:
+        os.environ[_key] = reveal(os.getenv(_key, ''))
+    except (RuntimeError, ValueError, UnicodeError):
+        # A copied Windows install cannot unlock another OS account's secret.
+        # Local startup remains available so the operator can sign in again.
+        os.environ[_key] = ''
 
 # ``desktop_app`` authenticates a local profile before importing this module.
 # Profile-scoped state intentionally wins over legacy .env data paths so two

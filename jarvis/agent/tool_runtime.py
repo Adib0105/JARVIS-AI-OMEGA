@@ -15,6 +15,8 @@ from ..security.capabilities import profile_for
 from ..security.policy import CapabilityPermissionGate
 from ..security.secrets import ensure_safe_for_persistent_memory
 from ..tools import ToolRegistry
+from .budget import CURRENT
+from .effects import EffectLedger
 from .event_safety import sanitize_tool_event
 
 
@@ -57,6 +59,8 @@ class RecordingToolRegistry(ToolRegistry):
         self.permissions = gate
         self.audit = audit_store or AuditStore()
         self.context_provider = context_provider or (lambda: {})
+        self.effects = EffectLedger(memory.db_path)
+        self._call_state = threading.local()
         self._events: list[dict] = []
         self._events_lock = threading.RLock()
 
@@ -97,11 +101,24 @@ class RecordingToolRegistry(ToolRegistry):
             }
         return {}
 
+    def _before_dispatch(self, name, args):
+        super()._before_dispatch(name, args)
+        if profile_for(name).side_effecting:
+            context = dict(self.context_provider() or {})
+            self._call_state.intent = self.effects.begin(name, args, context.get('mission_id'))
+
     def call(self, name: str, args: dict) -> str:
+        if CURRENT.get():
+            CURRENT.get().tool()
         started_iso = _now()
         started = time.perf_counter()
         profile = profile_for(name)
         blocked_secret = False
+        self._call_state.intent = None
+        try:
+            context = dict(self.context_provider() or {})
+        except Exception:
+            context = {}
 
         try:
             self._memory_secret_check(name, args)
@@ -114,7 +131,13 @@ class RecordingToolRegistry(ToolRegistry):
 
         elapsed_ms = round((time.perf_counter() - started) * 1000, 3)
         outcome = self.permissions.consume_last_outcome()
+        intent = self._call_state.intent
         execution_status, error_type = self._execution_result(output)
+        if intent:
+            # FAILED is uncertain once dispatch entered the handler. Permission
+            # denial is known not to have executed and can be reconsidered later.
+            state = 'ACKNOWLEDGED' if execution_status == 'SUCCESS' else 'DENIED' if outcome is not None and not outcome.allowed else 'UNCERTAIN'
+            self.effects.finish(intent, state)
 
         if blocked_secret:
             approval_status = 'BLOCKED_SECRET'
@@ -147,6 +170,7 @@ class RecordingToolRegistry(ToolRegistry):
 
         raw_event = {
             'name': name,
+            'intent_id': intent,
             'args': dict(args),
             'output': output,
             'risk_level': profile.risk.value,

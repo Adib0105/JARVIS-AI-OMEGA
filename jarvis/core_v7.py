@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from .agent.budget import CURRENT, BudgetExceeded, bounded_request, checked_timeout
 from .attachments import image_data_url, normalize_image_paths
 from .config import settings
 from .config_validation import require_valid_settings
@@ -46,6 +47,7 @@ class JarvisOmega:
         self.last_provider_used = settings.provider
         self.last_route = 'default'
         self.last_tool_mode = 'full'
+        self.last_turn_completed = False
         self.last_request_kind = 'chat'
         self.last_plan: list[str] = []
         self._active_model = settings.model
@@ -133,7 +135,7 @@ class JarvisOmega:
                 system=self._system_instructions(),
                 messages=self._history(),
                 model=settings.local_ai_model,
-                timeout=settings.ai_timeout_seconds,
+                timeout=checked_timeout(settings.ai_timeout_seconds),
             )
             self.last_provider_used = 'local-fallback'
             self.last_model_used = turn.model or settings.local_ai_model
@@ -143,6 +145,7 @@ class JarvisOmega:
             friendly = self._friendly_error(primary_error)
             raise RuntimeError(f'{friendly}\nLocal fallback also failed: {local_exc}') from local_exc
 
+    @bounded_request
     def chat(self, text: str) -> str:
         text = text.strip()
         if not text:
@@ -156,6 +159,8 @@ class JarvisOmega:
         try:
             try:
                 answer = self._chat_provider()
+            except BudgetExceeded:
+                raise
             except Exception as exc:
                 answer = self._chat_local_fallback(exc)
             self.memory.add_message(self.session_id, 'assistant', answer)
@@ -167,6 +172,7 @@ class JarvisOmega:
     def analyze_image(self, image_path: str | Path, prompt: str) -> str:
         return self.analyze_images([image_path], prompt)
 
+    @bounded_request
     def analyze_images(self, image_paths: list[str | Path], prompt: str) -> str:
         paths = normalize_image_paths(image_paths)
         user_prompt = prompt.strip() or (
@@ -186,7 +192,7 @@ class JarvisOmega:
                 prompt=user_prompt,
                 image_urls=[image_data_url(path) for path in paths],
                 model=self._active_model,
-                timeout=settings.vision_timeout_seconds,
+                timeout=checked_timeout(settings.vision_timeout_seconds),
             )
             self.last_model_used = turn.model or self._active_model
             self.last_provider_used = turn.provider or settings.provider
@@ -199,6 +205,7 @@ class JarvisOmega:
         finally:
             self.last_latency = time.perf_counter() - started
 
+    @bounded_request
     def _one_shot_text(self, instruction: str, prompt: str, kind: str = 'smart') -> str:
         model = self._select_model(prompt, kind if kind != 'smart' else 'mission')
         try:
@@ -206,11 +213,13 @@ class JarvisOmega:
                 system=instruction,
                 prompt=prompt,
                 model=model,
-                timeout=settings.ai_timeout_seconds,
+                timeout=checked_timeout(settings.ai_timeout_seconds),
             )
             self.last_provider_used = self.provider.name
             self.last_model_used = model
             return text.strip()
+        except BudgetExceeded:
+            raise
         except Exception as exc:
             if self._can_local_fallback():
                 assert self.local_provider is not None
@@ -219,7 +228,7 @@ class JarvisOmega:
                         system=instruction,
                         prompt=prompt,
                         model=settings.local_ai_model,
-                        timeout=settings.ai_timeout_seconds,
+                        timeout=checked_timeout(settings.ai_timeout_seconds),
                     )
                     self.last_provider_used = 'local-fallback'
                     self.last_model_used = settings.local_ai_model
@@ -350,12 +359,12 @@ class JarvisOmega:
                 messages=messages,
                 model=self._active_model,
                 tools=tools,
-                timeout=settings.ai_timeout_seconds,
+                timeout=checked_timeout(settings.ai_timeout_seconds),
             ) if tools else self.provider.chat(
                 system=self._system_instructions(),
                 messages=messages,
                 model=self._active_model,
-                timeout=settings.ai_timeout_seconds,
+                timeout=checked_timeout(settings.ai_timeout_seconds),
             )
         except Exception as exc:
             if tools and self._tool_compat_problem(exc):
@@ -365,19 +374,24 @@ class JarvisOmega:
                     system=self._system_instructions(),
                     messages=messages,
                     model=self._active_model,
-                    timeout=settings.ai_timeout_seconds,
+                    timeout=checked_timeout(settings.ai_timeout_seconds),
                 )
             else:
                 raise
 
         for _ in range(settings.max_tool_rounds):
+            if CURRENT.get():
+                CURRENT.get().check()
             self.last_model_used = turn.model or self._active_model
             self.last_provider_used = turn.provider or self.provider.name
             if not turn.tool_calls:
+                self.last_turn_completed = bool(turn.text.strip())
                 return turn.text.strip() or 'I completed the turn but received no text output.'
 
             results: list[ToolResult] = []
             for call in turn.tool_calls:
+                if CURRENT.get():
+                    CURRENT.get().check()
                 try:
                     args = json.loads(call.arguments or '{}')
                     if not isinstance(args, dict):
@@ -393,7 +407,7 @@ class JarvisOmega:
                 system=self._system_instructions(),
                 model=self._active_model,
                 tools=tools,
-                timeout=settings.ai_timeout_seconds,
+                timeout=checked_timeout(settings.ai_timeout_seconds),
             )
 
         return 'I hit the configured tool-round limit and stopped safely.'

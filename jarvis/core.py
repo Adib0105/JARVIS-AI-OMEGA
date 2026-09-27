@@ -103,10 +103,10 @@ class JarvisOmega(_ProviderCore):
         self.last_route = decision.category.lower()
         return decision.model or settings.model
 
-    def _record_intelligence_outcome(self, text: str, *, success: bool, decision) -> None:
+    def _record_intelligence_outcome(self, text: str, *, success: bool, decision, verified: bool = False) -> None:
         if decision is None:
             return
-        learned = self.intelligence.observe(text, decision.category, success=success)
+        learned = self.intelligence.observe(text, decision.category, success=success and verified)
         try:
             self.observability.record(
                 category='INTELLIGENCE',
@@ -118,7 +118,9 @@ class JarvisOmega(_ProviderCore):
                 model=decision.model,
                 metadata={
                     'route': decision.category,
-                    'confidence': decision.confidence,
+                    'routing_score': decision.confidence,
+                    'transport_success': success,
+                    'verified_task_outcome': verified,
                     'generation_mode': decision.generation_mode,
                     'tool_strategy': decision.tool_strategy,
                     'adaptive_observation_added': bool(learned),
@@ -135,6 +137,7 @@ class JarvisOmega(_ProviderCore):
         if not clean:
             return ''
         self._intelligence_context.chat_decision = None
+        before_events = len(self.tools.snapshot_events())
         try:
             answer = super().chat(clean)
         except Exception:
@@ -144,9 +147,13 @@ class JarvisOmega(_ProviderCore):
                 decision=getattr(self._intelligence_context, 'chat_decision', None),
             )
             raise
+        from .agent.verification import VerificationEngine
+        events = self.tools.snapshot_events()[before_events:]
+        verified = bool(getattr(self, 'last_turn_completed', False)) and bool(events) and VerificationEngine().verify_step(answer, events).verified
         self._record_intelligence_outcome(
             clean,
             success=True,
+            verified=verified,
             decision=getattr(self._intelligence_context, 'chat_decision', None),
         )
         return answer

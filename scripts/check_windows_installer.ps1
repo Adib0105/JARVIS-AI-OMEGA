@@ -29,6 +29,11 @@ $p = Start-Process $InstalledExe -WorkingDirectory $env:TEMP -ArgumentList @('--
 if (-not $p.WaitForExit(60000)) { $p.Kill(); throw 'Installed desktop hung.' }
 if ($p.ExitCode -ne 0 -or -not (Test-Path $Report)) { throw 'Installed desktop failed.' }
 if (-not (Get-Content $Report -Raw | ConvertFrom-Json).ok) { throw 'Installed desktop smoke failed.' }
+# The desktop smoke intentionally saves a synthetic connection through the UI.
+# Preserve that current user state across both following updater operations,
+# rather than comparing it with the pre-smoke blank-connection fixture.
+$CurrentEnv = [IO.File]::ReadAllText($EnvFile)
+$CurrentData = [IO.File]::ReadAllText($DataFile)
 # Exercise the normal helper relaunch, not only the -NoRelaunch upgrade path.
 $env:ENABLE_MIC_INPUT = 'false'
 $env:ENABLE_VOICE_OUTPUT = 'false'
@@ -40,4 +45,21 @@ if (-not (Get-Content -LiteralPath $Ready -Raw).Trim()) { throw 'Updater relaunc
 $UpdatedProcesses = Get-CimInstance Win32_Process -Filter "Name = 'JARVIS-OMEGA-V7.exe'" | Where-Object { $_.ExecutablePath -eq $InstalledExe }
 if (-not $UpdatedProcesses) { throw 'Updated desktop is no longer running.' }
 $UpdatedProcesses | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+if ([IO.File]::ReadAllText($EnvFile) -ne $CurrentEnv -or [IO.File]::ReadAllText($DataFile) -ne $CurrentData) { throw 'Relaunch update changed current user state.' }
 Write-Host 'Installer, desktop shortcut, in-place update, data preservation and installed desktop launch PASS.'
+
+# Reject a mismatched candidate version after installation, then prove rollback
+# restored the executable while keeping settings and user data unchanged.
+$BeforeHash = (Get-FileHash -LiteralPath $InstalledExe -Algorithm SHA256).Hash
+& $PowerShell -NoProfile -NonInteractive -File .\scripts\apply-update.ps1 -Installer $Installer -AppDir $InstallDir -ParentId 0 -Sha256 $Hash -NoRelaunch -ExpectedVersion '0.0.0'
+$RollbackCode = $LASTEXITCODE
+Get-Content (Join-Path (Split-Path -Parent $Installer) 'update-result.txt')
+if ($RollbackCode -eq 0) { throw 'Wrong candidate version was incorrectly accepted.' }
+if ((Get-FileHash -LiteralPath $InstalledExe -Algorithm SHA256).Hash -ne $BeforeHash) { throw 'Rollback did not restore previous executable.' }
+$Journal = Get-Content -LiteralPath ($InstallDir + '.rollback\checkpoint.json') -Raw | ConvertFrom-Json
+if ($Journal.state -ne 'rolled_back') { throw 'Rollback checkpoint state is incorrect.' }
+if ([IO.File]::ReadAllText($EnvFile) -ne $CurrentEnv -or [IO.File]::ReadAllText($DataFile) -ne $CurrentData) { throw 'Rollback touched current user state.' }
+Write-Host 'Candidate mismatch / binary rollback / data preservation PASS.'
+# The last native helper intentionally exited 1 for the rejected candidate.
+# Every assertion above must pass before the test harness itself exits success.
+exit 0

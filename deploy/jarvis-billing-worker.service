@@ -1,0 +1,22 @@
+[Unit]
+Description=JARVIS durable billing reconciliation worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=jarvis
+Group=jarvis
+WorkingDirectory=/opt/jarvis
+EnvironmentFile=/etc/jarvis/service.env
+ExecStart=/opt/jarvis/.venv/bin/python -m server.worker
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/jarvis
+
+[Install]
+WantedBy=multi-user.target

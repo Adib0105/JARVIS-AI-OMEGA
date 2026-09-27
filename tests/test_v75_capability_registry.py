@@ -35,7 +35,8 @@ class V75CapabilityRegistryTests(unittest.TestCase):
         self.assertIsNotNone(item)
         package_exists = importlib.util.find_spec('jarvis.self_development') is not None
         if package_exists:
-            self.assertIn(item.status, {CapabilityStatus.EXPERIMENTAL, CapabilityStatus.AVAILABLE})
+            self.assertEqual(item.status, CapabilityStatus.DEGRADED)
+            self.assertIn("EXECUTION_ISOLATION_UNAVAILABLE", item.detail)
         else:
             self.assertEqual(item.status, CapabilityStatus.MISSING)
 

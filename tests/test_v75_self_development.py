@@ -50,6 +50,8 @@ class V75SelfDevelopmentTests(unittest.TestCase):
             allowed, _ = policy.path_allowed(path)
             self.assertFalse(allowed, path)
         allowed, _ = policy.path_allowed('jarvis/documents.py')
+        self.assertFalse(allowed)
+        allowed, _ = policy.path_allowed('experiments/document_prototype.py')
         self.assertTrue(allowed)
 
     def test_builder_cannot_escape_sandbox(self):
