@@ -60,3 +60,6 @@ $Journal = Get-Content -LiteralPath ($InstallDir + '.rollback\checkpoint.json') 
 if ($Journal.state -ne 'rolled_back') { throw 'Rollback checkpoint state is incorrect.' }
 if ([IO.File]::ReadAllText($EnvFile) -ne $CurrentEnv -or [IO.File]::ReadAllText($DataFile) -ne $CurrentData) { throw 'Rollback touched current user state.' }
 Write-Host 'Candidate mismatch / binary rollback / data preservation PASS.'
+# The last native helper intentionally exited 1 for the rejected candidate.
+# Every assertion above must pass before the test harness itself exits success.
+exit 0
