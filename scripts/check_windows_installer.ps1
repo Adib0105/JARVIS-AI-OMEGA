@@ -46,7 +46,9 @@ Write-Host 'Installer, desktop shortcut, in-place update, data preservation and 
 # restored the executable while keeping settings and user data unchanged.
 $BeforeHash = (Get-FileHash -LiteralPath $InstalledExe -Algorithm SHA256).Hash
 & $PowerShell -NoProfile -NonInteractive -File .\scripts\apply-update.ps1 -Installer $Installer -AppDir $InstallDir -ParentId 0 -Sha256 $Hash -NoRelaunch -ExpectedVersion '0.0.0'
-if ($LASTEXITCODE -eq 0) { throw 'Wrong candidate version was incorrectly accepted.' }
+$RollbackCode = $LASTEXITCODE
+Get-Content (Join-Path (Split-Path -Parent $Installer) 'update-result.txt')
+if ($RollbackCode -eq 0) { throw 'Wrong candidate version was incorrectly accepted.' }
 if ((Get-FileHash -LiteralPath $InstalledExe -Algorithm SHA256).Hash -ne $BeforeHash) { throw 'Rollback did not restore previous executable.' }
 $Journal = Get-Content -LiteralPath ($InstallDir + '.rollback\checkpoint.json') -Raw | ConvertFrom-Json
 if ($Journal.state -ne 'rolled_back') { throw 'Rollback checkpoint state is incorrect.' }

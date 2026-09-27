@@ -47,7 +47,12 @@ function Get-OwnedManifest([string]$Root) {
 }
 function Assert-Manifest([string]$Root, $Expected) {
     $Actual = @(Get-OwnedManifest $Root)
-    if (($Actual | ConvertTo-Json -Compress) -ne ($Expected | ConvertTo-Json -Compress)) { throw 'Application checkpoint file/hash inventory differs.' }
+    $ExpectedRows = @($Expected | ForEach-Object { foreach ($Row in $_) { $Row } } | Sort-Object path)
+    if ($Actual.Count -ne $ExpectedRows.Count) { throw 'Application checkpoint file count differs.' }
+    for ($Index = 0; $Index -lt $Actual.Count; $Index++) {
+        $A, $E = $Actual[$Index], $ExpectedRows[$Index]
+        if ($A.path -cne $E.path -or $A.sha256 -ne $E.sha256 -or $A.size -ne $E.size) { throw ('Application checkpoint file/hash differs: ' + $A.path) }
+    }
 }
 try {
     if (-not (Test-Path -LiteralPath $Installer -PathType Leaf)) { throw 'Installer file is missing.' }
@@ -119,7 +124,9 @@ try {
     }
     if ($Touched -and $InstallFinished) {
         try {
-            $Manifest = @(Get-Content -LiteralPath (Join-Path $Backup 'files.json') -Raw | ConvertFrom-Json)
+            # Windows PowerShell 5.1 emits a JSON array as one pipeline object.
+            # Do not wrap it in @(), which adds an extra array level there.
+            $Manifest = Get-Content -LiteralPath (Join-Path $Backup 'files.json') -Raw | ConvertFrom-Json
             Assert-Manifest $Backup $Manifest
             foreach ($Name in $Owned) {
                 $Target = Join-Path $AppDir $Name
@@ -132,7 +139,7 @@ try {
             Save-State 'rolled_back'
             $Reason += ' Previous application binaries restored. Start JARVIS manually; no automatic retry will run.'
         } catch {
-            $Reason += ' Automatic restore failed; preserve checkpoint at ' + $Backup + ' for manual recovery.'
+            $Reason += ' Automatic restore failed (' + $_.Exception.Message + '); preserve checkpoint at ' + $Backup + ' for manual recovery.'
         }
     }
     $Reason | Set-Content -LiteralPath $Log
