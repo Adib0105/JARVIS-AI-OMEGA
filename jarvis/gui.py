@@ -34,15 +34,32 @@ TEXT = '#dff9ff'
 MUTED = '#86a8b8'
 
 
+def desktop_work_area(root):
+    """Primary display bounds excluding the Windows taskbar/app bars."""
+    if os.name == 'nt':
+        import ctypes
+        from ctypes import wintypes
+        bounds = wintypes.RECT()
+        api = ctypes.WinDLL('user32', use_last_error=True).SystemParametersInfoW
+        api.argtypes = [wintypes.UINT, wintypes.UINT, ctypes.POINTER(wintypes.RECT), wintypes.UINT]
+        api.restype = wintypes.BOOL
+        if api(0x0030, 0, ctypes.byref(bounds), 0):  # SPI_GETWORKAREA
+            return bounds.left, bounds.top, bounds.right, bounds.bottom
+    return 0, 0, root.winfo_screenwidth(), root.winfo_screenheight()
+
+
 class JarvisDesktop:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title('JARVIS AI OMEGA V6 // ARC DESKTOP AGENT')
         # A tray restore may return to normal geometry rather than maximized.
         # Keep that geometry inside the display so the composer stays reachable.
-        available_width = max(640, self.root.winfo_screenwidth() - 40)
-        available_height = max(480, self.root.winfo_screenheight() - 100)
-        self.root.geometry(f'{min(1440, available_width)}x{min(900, available_height)}')
+        left, top, right, bottom = desktop_work_area(self.root)
+        available_width = max(640, right - left - 40)
+        available_height = max(480, bottom - top - 80)
+        # Explicit placement avoids Windows' cascading offset pushing a fitting
+        # client rectangle under the taskbar after a minimize/tray round trip.
+        self.root.geometry(f'{min(1440, available_width)}x{min(900, available_height)}+{left + 20}+{top + 20}')
         self.root.minsize(min(1120, available_width), min(720, available_height))
         self.root.configure(bg=BG)
 
