@@ -1,0 +1,19 @@
+# Architecture Audit — V8 Frontier Baseline
+
+Baseline: `main@83b7f34b67c0aca444c1139cd7db700364bc554c` (V7.9). Date: 2026-09-28.
+
+## Summary
+The repository already contains a real V7 reliability architecture: persisted missions, an orchestrator, tool runtime, verification, recovery, capability registry, provider abstraction, security policy, evaluation, observability, computer-use backends, memory/RAG foundations, self-development controls, Windows packaging and an account/billing service. V8 should extend these seams instead of replacing them.
+
+## Findings
+| ID | Severity | Location | Problem | Root cause | Impact | Recommended fix | Status | Test required | Verification |
+|---|---|---|---|---|---|---|---|---|---|
+| ARCH-01 | P1 | `jarvis/wake_service.py`, desktop lifecycle | Wake listening is a daemon thread, not a persistent OS/background agent runtime with durable mission ownership. | Background features evolved inside the desktop process. | Closing/crashing the UI can terminate active capability. | Add a least-privilege background host + authenticated IPC; keep UI as a client. | OPEN | restart/crash/idle soak | process survives UI close and resumes checkpoint safely |
+| ARCH-02 | P1 | requested V8 background components | `JarvisBackgroundService`, `BackgroundAgentRuntime`, `MissionDaemon`, `BackgroundTaskQueue`, `EventMonitor`, `NotificationManager`, `WorkspaceManager` are not present by those responsibilities. | Current architecture has partial wake/mission/automation pieces but no unified background runtime. | Long-running multi-mission workflows remain fragmented. | Introduce interfaces first, then migrate existing wake/mission logic incrementally. | OPEN | unit + restart E2E | durable task resumes without duplicate side effects |
+| ARCH-03 | P1 | `jarvis/computer_use/*`, `docs/V7.9-AUDIT-REPAIRS.md` | Semantic UIA/OCR components exist, but end-to-end live agent wiring remains a release blocker. | Standalone capability was intentionally not promoted without postcondition evidence. | Computer-use cannot be advertised as verified autonomy. | Wire through tool runtime, secret-field policy, selector freshness, observation and verification. | OPEN | real Windows contract tests | fresh observation proves requested UI state changed |
+| ARCH-04 | P2 | `jarvis/core.py`, `jarvis/core_v7.py`, `jarvis/memory.py`, `jarvis/memory_v7.py` | Legacy/new generations coexist. | Incremental migration preserved compatibility. | Higher cognitive load and duplicate behavior risk. | Define deprecation map and route all new code through one canonical interface before deleting legacy paths. | PARTIAL | compatibility suite | call graph shows single canonical runtime path |
+| ARCH-05 | P2 | `jarvis/automation.py`, `jarvis/windows_controls.py`, `jarvis/computer_use/action_engine.py` | Low-level PyAutoGUI actions and semantic UIA/OCR are separate execution surfaces. | Features arrived in stages. | Inconsistent verification and permission behavior can emerge. | Route all desktop actions through one policy-aware ComputerActionEngine; retain coordinates only as explicit fallback. | PARTIAL | permission/verification regression | every desktop side effect emits one canonical audit event |
+| ARCH-06 | P2 | browser layer | BrowserAgent can open/read/search/extract, but full stateful click/type/select/upload/download/tab/frame workflow is not one coherent session abstraction. | Default-browser launch and public-reader paths are separate. | Complex forms/navigation are fragile or unavailable. | Add session-backed browser driver behind existing trust/prompt-injection policy. | OPEN | adversarial browser E2E | page state + postcondition are independently observed |
+
+## Architectural direction
+Preserve the existing loop: UNDERSTAND → PLAN → PERMISSION → EXECUTE → VERIFY → RECOVER/REPLAN. Add background/event/session services around it rather than creating a second agent stack.
