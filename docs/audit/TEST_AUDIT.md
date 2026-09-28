@@ -1,0 +1,13 @@
+# Test Audit — V8 Frontier Baseline
+
+## What is already strong
+Current CI covers Linux Python 3.11–3.14, account service, Windows regression, frozen package/installer, Defender evidence, dependency audit and rollback/data-preservation checks. V7.9 reports 453 desktop tests plus 30 service tests before merge, with hosted Windows packaging evidence.
+
+## Findings
+| ID | Severity | Location | Problem | Root cause | Impact | Recommended fix | Status | Test required | Verification |
+|---|---|---|---|---|---|---|---|---|---|
+| TEST-01 | P1 | physical Windows | Hosted CI cannot prove real microphone capture, audible output, Bluetooth, sleep/resume, DPI/multi-monitor, or long idle behavior. | No physical lab runner/device matrix. | Core user experience remains unverified. | Create target-PC acceptance harness and evidence bundle tied to commit/artifact hash. | OPEN | 100 wake trials + 8h soak + reconnect matrix | recorded device metrics meet predeclared thresholds |
+| TEST-02 | P1 | `tests/evaluation/*` | Benchmark framework exists, but repository does not yet contain the requested 100+ realistic scenario corpus. | Evaluation engine was built before full benchmark population. | No trustworthy broad success-rate claim. | Add versioned scenario manifests across assistant/research/browser/computer/coding/files/docs/data/memory/voice/automation/security/recovery/planning/multimodal. | OPEN | 100+ scenario run | report stores expected behavior, actual behavior, verification, latency, calls, failure/recovery |
+| TEST-03 | P1 | live providers | Real auth/rate-limit/timeout/recovery is not proven for production providers. | CI avoids secrets and charges. | Provider failure modes may appear only after deployment. | Dedicated test tenants + bounded live smoke workflow. | OPEN | invalid/expired/rate-limit/network tests | recovery is observable and secrets are redacted |
+| TEST-04 | P2 | browser/UIA | Semantic computer/browser components need real contract tests with changing UI/page state. | Mock/unit coverage cannot prove target freshness. | False clicks/types remain possible. | Local fixture app/site + real UIA/browser driver tests + adversarial ambiguity. | OPEN | desktop/browser E2E | action only succeeds with observed postcondition |
+| TEST-05 | P2 | chaos | Some injected failures exist, but a formal chaos suite matching network/model/tool/mic/browser/db/process/file/provider faults is incomplete. | Fault tests are distributed. | Recovery regressions may be missed. | Create `tests/chaos/` with deterministic fault adapters. | OPEN | chaos suite | safe bounded recovery with no blind replay |

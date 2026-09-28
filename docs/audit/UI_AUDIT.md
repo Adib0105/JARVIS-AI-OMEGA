@@ -1,0 +1,9 @@
+# UI Audit — V8 Frontier Baseline
+
+## Findings
+| ID | Severity | Location | Problem | Root cause | Impact | Recommended fix | Status | Test required | Verification |
+|---|---|---|---|---|---|---|---|---|---|
+| UI-01 | P2 | `jarvis/ui_command_center.py` | Command center exposes missions/health/intelligence/capabilities/observability/security/self-development, but it is a secondary Tk window rather than the requested unified 3-column command center. | UI accumulated around existing desktop shell. | System state is split across surfaces. | Incrementally consolidate around current command-center data APIs; do not rewrite runtime. | PARTIAL | screenshot/layout tests | main workflow shows mission, conversation and telemetry together |
+| UI-02 | P2 | command-center refresh | Multiple broad exception-swallowing refresh paths can hide stale data. | Best-effort panel refresh. | User may see old health/security state without explanation. | Show DEGRADED + logged redacted error for each failed panel. | OPEN | injected exception tests | failed panel is visibly degraded |
+| UI-03 | P2 | state vocabulary | Requested LISTENING/THINKING/PLANNING/EXECUTING/VERIFYING/RECOVERING/SPEAKING states are not proven as one consistent global visual state machine. | Different subsystems own status. | Confusing feedback during long missions. | Publish one UI state model sourced from mission + voice + tool runtime. | OPEN | state transition UI tests | every transition has one authoritative state |
+| UI-04 | P3 | visual language | Existing theme uses dark/cyan ARC styling; requested graphite + restrained red/orange Stark lab direction differs. | Brand evolved before current brief. | Cosmetic inconsistency only. | Restyle after reliability/architecture P1s; preserve accessibility and performance. | DEFERRED | contrast/perf checks | WCAG contrast and no measurable UI latency regression |
