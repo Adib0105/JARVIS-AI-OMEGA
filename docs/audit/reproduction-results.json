@@ -1,0 +1,67 @@
+{
+  "runtime_commit": "83b7f34b67c0aca444c1139cd7db700364bc554c",
+  "date": "2026-10-04",
+  "fixtures_only": true,
+  "results": {
+    "V8-001": {
+      "case": "complete nonexistent todo",
+      "tool_result": {
+        "ok": true,
+        "result": {
+          "id": 999999,
+          "completed": false
+        }
+      },
+      "verified": true,
+      "status": "VERIFIED"
+    },
+    "V8-002": {
+      "case": "truthy false verification flag",
+      "result": {
+        "name": "semantic_type",
+        "audit_id": null,
+        "side_effecting": true,
+        "verified": true,
+        "status": "VERIFIED",
+        "evidence": null
+      }
+    },
+    "V8-003": {
+      "case": "verification failure after effect",
+      "handler_calls": 2,
+      "todo_count": 2,
+      "retries": 1,
+      "mission_status": "COMPLETED"
+    },
+    "V8-004": {
+      "case": "failed benchmark dict",
+      "success_reported": true
+    },
+    "V8-005": {
+      "case": "extra benchmark scenario only",
+      "comparison": {
+        "deltas": {
+          "average_latency_ms": 0.0,
+          "scenario_count": 1.0,
+          "task_success_rate": 0.0
+        },
+        "improvements": [
+          "scenario_count"
+        ],
+        "regressions": [],
+        "successful_improvement": true
+      }
+    },
+    "V8-006": {
+      "case": "no-op typing with preexisting substring",
+      "verification": {
+        "status": "VERIFIED",
+        "verified": true,
+        "evidence": {
+          "focused": true,
+          "value_contains_text": true
+        }
+      }
+    }
+  }
+}
