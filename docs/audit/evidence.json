@@ -1,0 +1,49 @@
+{
+  "date": "2026-10-04",
+  "runtime_commit": "83b7f34b67c0aca444c1139cd7db700364bc554c",
+  "python": "3.12.14",
+  "platform": "Linux",
+  "desktop": {
+    "run": 453,
+    "passed": 452,
+    "skipped": 1,
+    "skip_reason": "Real Windows DPAPI; exercised by historical Windows CI",
+    "seconds": 5.806
+  },
+  "account_service": {
+    "run": 30,
+    "passed": 30,
+    "skipped": 0,
+    "seconds": 5.794
+  },
+  "compileall": "PASS",
+  "desktop_pip_check": "PASS",
+  "service_pip_check": "PASS",
+  "fault_experiments": {
+    "run": 6,
+    "defects_reproduced": 6
+  },
+  "historical_main_ci": {
+    "run_id": 36313850691,
+    "result": "success",
+    "release_publication": "intentionally skipped"
+  },
+  "github_governance": {
+    "main_protected": false,
+    "required_status_checks_enforcement": "off",
+    "rulesets_returned": 0
+  },
+  "unverified": [
+    "physical Windows microphone/speaker/desktop",
+    "live provider authentication/recovery",
+    "merchant/SMTP deployment",
+    "signed production artifacts",
+    "gauntlet runs",
+    "target-PC performance and eight-hour soak"
+  ],
+  "fresh_desktop_dependency_audit": {
+    "packages": 44,
+    "vulnerable_packages": [],
+    "note": "Initial environment bootstrap pip 25.0.1 advisories were resolved by upgrading the disposable audit venv pip, matching the CI bootstrap step. No repository dependency pins changed. Service/Windows dependency audit was not rerun locally."
+  }
+}

@@ -1,14 +1,82 @@
-# Architecture Audit — V8
+# V8 finding register
 
 Date: **2026-10-04**. Runtime baseline: [`main@83b7f34`](https://github.com/Adib0105/JARVIS-AI-OMEGA/commit/83b7f34b67c0aca444c1139cd7db700364bc554c). Documentation branch: `v8/frontier-audit-2026-09-28` / PR #24.
 
 This is the audit-first deliverable requested by section 59 of the supplied brief. No runtime code, security policy, production data, dependency pins or release settings are changed. The 2026-09-28 audit is retained in Git history; this refresh adds direct source checks and six executable reproductions.
 
-The production path is desktop_app → Tk/extensions → core.JarvisOmega (compatibility subclass of core_v7) → provider/router + RecordingToolRegistry + MemoryAwareMissionOrchestrator. SQLite stores missions, memory, intents, audit, telemetry and evaluation. An optional FastAPI account/billing server is separate. Preserve these seams instead of creating another agent stack.
+P0 = catastrophic/security/data-loss; P1 = major functionality/reliability; P2 = important engineering issue; P3 = polish. No P0 was confirmed in this scoped audit; that is not proof that none exists. The scope combines source review, existing regressions and isolated fault experiments; it is not an exhaustive penetration test.
 
-Existing foundations: provider abstraction/circuit breaker, mission state/version checks, permissions, conservative retry, audit integrity, local profiles, bounded document parsing, memory lifecycle and Windows packaging. core.py/core_v7.py and memory.py/memory_v7.py are deliberate compatibility inheritance; do not delete them merely because names overlap.
+### V8-001
 
-See [reproduction evidence](REPRODUCTIONS.md), [the full register](FINDINGS.md) and [execution sequence](V8_FRONTIER_EXECUTION_PLAN.md).
+- **Severity:** P1
+- **Location:** jarvis/memory.py:253-260; jarvis/tools.py:283-295; jarvis/agent/verification.py:128-132; jarvis/agent/event_safety.py
+- **Problem:** Completing a nonexistent todo returns completed=false, but the production registry/verifier reports VERIFIED.
+- **Root Cause:** The dispatcher treats a returned payload as success; the default verification path accepts ok=true. Sanitized nested output also omits completed.
+- **Impact:** A failed local state change can become a completed mission and positive learning/evaluation evidence.
+- **Recommended Fix:** Use typed local-write outcomes, preserve a privacy-safe outcome field, read back the requested row/state, and fail closed for side effects without a postcondition adapter.
+- **Implementation Status:** OPEN — REPRODUCED
+- **Test Required:** Missing, already-completed and newly-completed todo through RecordingToolRegistry and VerificationEngine; local-write contract inventory.
+- **Verification Method:** A missing ID never becomes VERIFIED; successful completion is bound to the requested ID and observed done state.
+
+### V8-002
+
+- **Severity:** P1
+- **Location:** jarvis/agent/verification.py:53-67
+- **Problem:** The literal string "false" in an explicit verified field is accepted as verified=true; evidence can be null.
+- **Root Cause:** bool(value) coerces arbitrary truthy data instead of validating a boolean evidence contract.
+- **Impact:** Malformed adapter output can promote an unobserved action to verified. This is a contract defect; no external attacker-to-handler exploit was demonstrated.
+- **Recommended Fix:** Require strict booleans, compatible status and typed per-tool evidence; reject malformed/unsupported verification rather than falling back to success.
+- **Implementation Status:** OPEN — REPRODUCED
+- **Test Required:** False/string/numeric/null/missing flags, empty evidence, model-output status on side effects and valid readback adapters.
+- **Verification Method:** Only a registered adapter with exact postcondition evidence may report VERIFIED.
+
+### V8-003
+
+- **Severity:** P1
+- **Location:** jarvis/agent/orchestrator.py:254-309; jarvis/agent/effects.py:98-111
+- **Problem:** A verification timeout after a successful side effect causes the same mission step to execute again. One requested todo became two.
+- **Root Cause:** The exception handler drains events a second time and replaces already-collected step.tool_events with an empty list. Retry safety then sees no effect. ACKNOWLEDGED intents do not block this replay.
+- **Impact:** Duplicate side effects are possible following verification/persistence/progress failures after dispatch.
+- **Recommended Fix:** Preserve attempt evidence through every exception; block replay and automatic replan of uncertain effects until reconciliation. Bind durable operation identity to a logical mission step.
+- **Implementation Status:** OPEN — REPRODUCED
+- **Test Required:** Inject verifier, persistence and progress failure after a real local write; repeat after process restart; retain safe read-only retries.
+- **Verification Method:** Exactly one row/action is created, evidence survives, and the mission remains failed/unverified until reconciled.
+
+### V8-004
+
+- **Severity:** P1
+- **Location:** jarvis/evaluation/benchmark.py:83-99
+- **Problem:** run_case marks a returned {success: false} object as a successful benchmark result.
+- **Root Cause:** The runner applies bool(value) to arbitrary results instead of a strict scenario outcome schema.
+- **Impact:** Failed or ambiguous scenarios can inflate benchmark and self-improvement evidence.
+- **Recommended Fix:** Accept explicit boolean or a validated typed result only; distinguish blocked/unverified/failed and reject unsupported return types.
+- **Implementation Status:** OPEN — REPRODUCED
+- **Test Required:** False dictionaries, nonempty failure strings, malformed tuples, exceptions, valid booleans and typed verified outcomes.
+- **Verification Method:** No truthy container/string can count as pass; reports retain expected/actual/evidence and reason.
+
+### V8-005
+
+- **Severity:** P2
+- **Location:** jarvis/evaluation/benchmark.py:137-162; jarvis/self_development/benchmark.py:59-72
+- **Problem:** Adding a benchmark scenario with identical accuracy/latency is reported as successful_improvement=true.
+- **Root Cause:** scenario_count is treated as a higher-is-better quality metric, and before/after cohorts are not checked for matching cases.
+- **Impact:** A changed/easier test set can appear to prove improved capability and feed improvement decisions.
+- **Recommended Fix:** Compare identical versioned scenario cohorts; keep coverage separate from quality; require applicable matched quality metrics and no regression.
+- **Implementation Status:** OPEN — REPRODUCED
+- **Test Required:** Added/removed/renamed scenarios, category drift, duplicate IDs, same-cohort regressions and genuine same-cohort improvement.
+- **Verification Method:** Coverage-only changes never certify improvement; incomparable cohorts produce an explicit inconclusive result.
+
+### V8-006
+
+- **Severity:** P1
+- **Location:** jarvis/computer_use/action_engine.py:141-211
+- **Problem:** semantic_type reports VERIFIED when typing does nothing and the requested substring already existed in the control.
+- **Root Cause:** There is no pre-action value comparison or declared set/append postcondition; containment in the final value suffices.
+- **Impact:** The standalone semantic adapter can misreport an action. It is not currently wired as a normal agent tool, limiting present exposure.
+- **Recommended Fix:** Specify typing semantics, capture fresh pre/post state, bind control/window identity, and require exact expected state; deny secret/unknown targets.
+- **Implementation Status:** OPEN — REPRODUCED in a fake UI backend; no real desktop action
+- **Test Required:** No-op driver with old matching text, wrong focus, unchanged/partial value, Unicode, replacement, stale control and password fields.
+- **Verification Method:** No-op fixture is not verified; actual exact value transition is observed on a real Windows fixture before promotion.
 
 ### V8-007
 
@@ -69,6 +137,30 @@ See [reproduction evidence](REPRODUCTIONS.md), [the full register](FINDINGS.md) 
 - **Implementation Status:** PARTIAL — bounded threads/recovery exist
 - **Test Required:** Hung read/abort, unplug/replug, Bluetooth switch, permission denial, sleep/resume, wake while speaking and frozen child startup.
 - **Verification Method:** Capture child can be terminated/restarted without killing the UI or leaking ownership; physical audio trials pass declared thresholds.
+
+### V8-012
+
+- **Severity:** P1
+- **Location:** jarvis/agent/budget.py; jarvis/agent/tool_runtime.py; jarvis/agent/orchestrator.py; jarvis/background_ui.py:154-157
+- **Problem:** Cancellation is cooperative between operations; not all synchronous tools/providers can be interrupted, and there is no unified global emergency stop.
+- **Root Cause:** Cancellation tokens are not implemented by every adapter; tray menu only exposes open, microphone pause and full exit.
+- **Impact:** Stop can arrive after dispatch or while work blocks; the UI cannot truthfully promise immediate cancellation or undo.
+- **Recommended Fix:** Add cancellable bounded read adapters and central stop propagation; journal dispatched effects and report observed state instead of pretending rollback.
+- **Implementation Status:** PARTIAL
+- **Test Required:** Cancel during permission wait, network read, parse, browser action and after acknowledged external success; tray/hotkey stop.
+- **Verification Method:** No new effect starts after acknowledged stop; already-dispatched work is reconciled and cancellation latency is measured.
+
+### V8-013
+
+- **Severity:** P1
+- **Location:** jarvis/coding_tools.py:46-59
+- **Problem:** Approved file writes replace the destination directly and name backups with only second precision.
+- **Root Cause:** Path.write_text truncates before completion; successive writes in one second can select the same backup filename.
+- **Impact:** Interrupted writes can damage a file and repeated edits can overwrite the earliest rollback copy.
+- **Recommended Fix:** Use exclusive unique backups, write/fsync a temporary file on the same filesystem, atomically replace and verify hashes; preserve path/symlink policy.
+- **Implementation Status:** OPEN — source-confirmed; fault injection pending
+- **Test Required:** Same-second repeated writes, disk-full/permission errors, process kill before replace, symlink swap and backup restore.
+- **Verification Method:** Original or complete new bytes always survive a failed write; every backup is unique and restores the corresponding prior version.
 
 ### V8-014
 
@@ -165,6 +257,30 @@ See [reproduction evidence](REPRODUCTIONS.md), [the full register](FINDINGS.md) 
 - **Implementation Status:** PARTIAL — source review only; no fresh visual desktop assessment
 - **Test Required:** Injected refresh failure, close/reopen, tray restore, keyboard access, resize/DPI and responsiveness screenshots.
 - **Verification Method:** Each failed panel shows stale/degraded state; actual Windows layout and keyboard operation are verified after integration.
+
+### V8-022
+
+- **Severity:** P1
+- **Location:** .github/workflows/ci.yml; .github/branch-protection.main.json; scripts/sign_windows_release.ps1; scripts/apply-update.ps1
+- **Problem:** Live main branch protection is disabled; no rulesets were returned. Signing is an operational script, not evidence of signed production artifacts.
+- **Root Cause:** A protection template does not apply server policy, and source presence cannot certify certificate/provenance or real-device rollback.
+- **Impact:** Green CI alone cannot enforce review or establish a production-safe release chain.
+- **Recommended Fix:** Apply reviewed required checks/reviews, verify signing/provenance on exact artifacts and perform clean-machine upgrade/rollback drills; keep publication disabled.
+- **Implementation Status:** OPEN — main protected=false and rulesets=[] observed on 2026-10-04; release intentionally BLOCKED
+- **Test Required:** Live protection readback, signed artifact verification, corrupt download, interrupted/disk-full update and user-data restore.
+- **Verification Method:** Server policy is enforced and exact signed artifact hashes have complete install/rollback/acceptance evidence.
+
+### V8-023
+
+- **Severity:** P1
+- **Location:** tests/evaluation/; tests/test_background_wake.py; tests/test_voice_reliability.py; .github/workflows/ci.yml; server/README.md
+- **Problem:** The requested 100+ realistic corpus, 720-scenario OMEGA Gauntlet and 450-scenario Background Gauntlet have not been executed; real hardware/provider/merchant acceptance is absent.
+- **Root Cause:** Existing 453 desktop and 30 service tests primarily validate deterministic software behavior and fixtures; they are not 483 real-world missions.
+- **Impact:** No justified broad autonomy success rate, voice reliability claim or production-ready label exists.
+- **Recommended Fix:** Version scenario manifests and adapters, collect blocked/unverified outcomes honestly, bind physical/provider results to commit/artifact/device and define thresholds before running.
+- **Implementation Status:** BLOCKED for production acceptance; automated baseline PASS
+- **Test Required:** 100 wake trials per declared condition, eight-hour soak, real mic/speaker/Bluetooth/DPI/browser, live test provider auth/recovery and Stripe/SMTP test deployment.
+- **Verification Method:** Reports record expected/actual/verification/calls/cost/failure/recovery; false-success rate is measured from independent ground truth.
 
 ### V8-024
 
