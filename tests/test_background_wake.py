@@ -48,7 +48,7 @@ class WakeTests(unittest.TestCase):
             vosk = MagicMock()
             with patch.dict('sys.modules', {'vosk': vosk, 'sounddevice': MagicMock()}), patch(
                 'jarvis.microphone._exclusive_stream', return_value=context
-            ):
+            ), patch('jarvis.native_audio.NativeWakeRecognizer'):
                 self.assertTrue(listener.start(timeout=2))
                 self.assertTrue(listener.ready)
                 self.assertTrue(listener.stop(wait=True))
@@ -60,7 +60,7 @@ class WakeTests(unittest.TestCase):
             context.__enter__.side_effect = RuntimeError('microphone permission denied')
             with patch.dict('sys.modules', {'vosk': MagicMock(), 'sounddevice': MagicMock()}), patch(
                 'jarvis.microphone._exclusive_stream', return_value=context
-            ):
+            ), patch('jarvis.native_audio.NativeWakeRecognizer'):
                 with self.assertRaisesRegex(RuntimeError, 'permission denied'):
                     listener.start(timeout=2)
             self.assertFalse(listener.ready)
@@ -68,8 +68,8 @@ class WakeTests(unittest.TestCase):
     def test_stream_cancellation_and_suppression(self):
         listener = BackgroundWakeListener('model', MagicMock(), MagicMock())
         recog = MagicMock()
-        recog.AcceptWaveform.return_value = True
-        recog.Result.return_value = json.dumps({'text': 'Jarvis play music'})
+        recog.feed.return_value = (True, 'Jarvis play music')
+        recog.__enter__.return_value = recog
         stream = MagicMock()
         reads = [0]
         def read(_):
@@ -82,13 +82,12 @@ class WakeTests(unittest.TestCase):
         context = MagicMock()
         context.__enter__.return_value = stream
         vosk = MagicMock()
-        vosk.KaldiRecognizer.return_value = recog
-        with patch.dict('sys.modules', {'vosk': vosk, 'sounddevice': MagicMock()}), patch('jarvis.microphone._exclusive_stream', return_value=context):
+        with patch.dict('sys.modules', {'vosk': vosk, 'sounddevice': MagicMock()}), patch('jarvis.microphone._exclusive_stream', return_value=context), patch('jarvis.native_audio.NativeWakeRecognizer', return_value=recog):
             listener._loop()
         listener.on_wake.assert_called_once_with('play music')
         listener.on_error.assert_not_called()
         self.assertTrue(listener._stop.is_set())
-        self.assertGreaterEqual(recog.Reset.call_count, 2)
+        self.assertGreaterEqual(recog.reset.call_count, 2)
 
 
 class BriefingTests(unittest.TestCase):

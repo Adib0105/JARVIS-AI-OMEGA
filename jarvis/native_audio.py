@@ -6,6 +6,7 @@ byte messages, and close/reap before releasing microphone/ASR ownership.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import multiprocessing
 import os
 import sys
@@ -71,8 +72,9 @@ def _transcribe_worker(pipe, recognize, data, rate, language):
 
 
 class NativeWorker:
-    def __init__(self, target, args=()):
+    def __init__(self, target, args=(), *, duplex=False):
         self.target, self.args = target, args
+        self.duplex = duplex
         self.process = self.reader = None
         self.cancel = threading.Event()
 
@@ -91,7 +93,7 @@ class NativeWorker:
         if self.cancel.is_set():
             raise AudioCancelled('Audio capture cancelled.')
         context = multiprocessing.get_context('spawn')
-        self.reader, writer = context.Pipe(duplex=False)
+        self.reader, writer = context.Pipe(duplex=self.duplex)
         self.process = context.Process(target=self.target, args=(writer, *self.args), daemon=True,
                                        name='jarvis-native-audio')
         try:
@@ -196,6 +198,83 @@ class LocalVoskTranscriber:
         return transcribe_vosk(data, sample_rate, self.model_path)
 
 
+def _wake_worker(pipe, model_path):
+    """Keep the wake model warm, but contain native model/inference stalls."""
+    _parent_watchdog()
+    try:
+        import vosk
+        from .offline_speech import get_vosk_model
+        recognizer = vosk.KaldiRecognizer(get_vosk_model(model_path), 16000)
+        pipe.send_bytes(b'R')
+        while True:
+            message = pipe.recv_bytes(maxlength=3201)
+            if message == b'R':
+                recognizer.Reset()
+                pipe.send_bytes(b'R')
+            elif len(message) == 3201 and message[:1] == b'D':
+                final = bool(recognizer.AcceptWaveform(message[1:]))
+                decoded = json.loads(recognizer.Result() if final else recognizer.PartialResult())
+                text = decoded.get('text' if final else 'partial', '')
+                if not isinstance(text, str) or len(text.encode('utf-8')) > 16000:
+                    raise RuntimeError('Invalid or oversized wake transcript.')
+                pipe.send_bytes((b'F' if final else b'P') + text.encode('utf-8'))
+            else:
+                raise RuntimeError('Invalid wake recognition request.')
+    except BaseException as exc:
+        try:
+            pipe.send_bytes(b'E' + redact_text(f'{type(exc).__name__}: {exc}').encode('utf-8')[:2048])
+        except (OSError, EOFError):
+            pass
+    finally:
+        pipe.close()
+
+
+class NativeWakeRecognizer:
+    """One small request in flight; cancellation reaps before the next listener.
+
+    Requests are at most 3201 bytes and only follow a readiness/response message.
+    There is no queued audio backlog or concurrent pipe writer. This keeps the
+    synchronous send below the pipe buffer size on supported Windows/POSIX hosts;
+    receive, including native model loading/reset/inference, is deadline bounded.
+    """
+    def __init__(self, model_path, stop_event, *, startup_timeout=8, timeout=2):
+        self.stop_event, self.startup_timeout, self.timeout = stop_event, startup_timeout, timeout
+        self.worker = NativeWorker(_wake_worker, (model_path,), duplex=True)
+
+    def __enter__(self):
+        try:
+            if self.stop_event.is_set():
+                raise AudioCancelled('Wake recognition cancelled.')
+            self.worker.start()
+            if self.worker.receive(self.startup_timeout, cancel=self.stop_event, limit=16001) != b'R':
+                raise RuntimeError('Wake recognizer readiness was not confirmed.')
+        except BaseException:
+            self.worker.close()
+            raise
+        return self
+
+    def _request(self, message):
+        if self.stop_event.is_set() or self.worker.cancel.is_set():
+            raise AudioCancelled('Wake recognition cancelled.')
+        self.worker.reader.send_bytes(message)
+        return self.worker.receive(self.timeout, cancel=self.stop_event, limit=16001)
+
+    def feed(self, data):
+        if type(data) is not bytes or len(data) != 3200:
+            raise ValueError('Wake recognition requires one 100 ms mono PCM frame.')
+        message = self._request(b'D' + data)
+        if message[:1] not in (b'F', b'P'):
+            raise RuntimeError('Invalid wake recognition response.')
+        return message[:1] == b'F', message[1:].decode('utf-8')
+
+    def reset(self):
+        if self._request(b'R') != b'R':
+            raise RuntimeError('Wake recognizer reset was not confirmed.')
+
+    def __exit__(self, *_):
+        self.worker.close()
+
+
 def transcribe_in_process(recognize, data, rate, language, stop_event, *, timeout=18):
     if len(data) > 3_000_000 or len(data) % 2 or not 8000 <= rate <= 48000:
         raise ValueError('Recognition input exceeds the bounded mono PCM contract.')
@@ -217,14 +296,20 @@ def transcribe_in_process(recognize, data, rate, language, stop_event, *, timeou
 def _smoke_worker(pipe):
     """Trusted non-recording probe for the frozen multiprocessing entry point."""
     pipe.send_bytes(b'R')
+    if pipe.recv_bytes(maxlength=4) != b'PING':
+        return
+    pipe.send_bytes(b'PONG')
     time.sleep(30)
 
 
 def worker_selfcheck():
-    worker = NativeWorker(_smoke_worker)
+    worker = NativeWorker(_smoke_worker, duplex=True)
     try:
         worker.start()
         if worker.receive(10) != b'R':
+            return 1
+        worker.reader.send_bytes(b'PING')
+        if worker.receive(2) != b'PONG':
             return 1
     finally:
         worker.close()

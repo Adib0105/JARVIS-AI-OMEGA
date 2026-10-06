@@ -3,14 +3,16 @@
 No physical microphone, Bluetooth, Windows resume or audible output is claimed.
 """
 import multiprocessing
+import json
 import os
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 from jarvis.native_audio import (AudioCancelled, NativeAudioCapture, NativeWorker,
-                                 LocalVoskTranscriber, transcribe_in_process)
+                                 NativeWakeRecognizer, LocalVoskTranscriber, transcribe_in_process)
 
 
 def stalled(pipe):
@@ -55,6 +57,40 @@ def recognize_stalled(*_):
 
 def recognize_exit(*_):
     raise SystemExit('recognizer stopped')
+
+
+def wake_fixture(pipe, model_path):
+    # The production byte protocol and process boundary run unchanged; only the
+    # unavailable native model is synthetic. No real voice accuracy is claimed.
+    from jarvis.native_audio import _wake_worker
+    class Recognizer:
+        def __init__(self, *_):
+            if model_path == 'stall-model':
+                time.sleep(60)
+            self.frames = 0
+        def AcceptWaveform(self, data):
+            if data[0] == 4:
+                time.sleep(60)
+            self.frames += 1
+            self.large = data[0] == 3
+            return data[0] != 1
+        def Result(self):
+            return json.dumps({'text': 'x'*20000 if self.large else f'Jarvis Write {{ENTER}} café {self.frames}'})
+        def PartialResult(self):
+            return json.dumps({'partial': 'Jarvis'})
+        def Reset(self):
+            if model_path == 'stall-reset':
+                time.sleep(60)
+            self.frames = 0
+    with patch.dict('sys.modules', {'vosk': SimpleNamespace(KaldiRecognizer=Recognizer)}), patch('jarvis.offline_speech.get_vosk_model', return_value=object()):
+        _wake_worker(pipe, model_path)
+
+
+def malformed_wake(pipe, _model):
+    pipe.send_bytes(b'R')
+    pipe.recv_bytes(maxlength=3201)
+    pipe.send_bytes(b'Xuntrusted result')
+    time.sleep(60)
 
 
 class NativeAudioProcessTests(unittest.TestCase):
@@ -164,3 +200,74 @@ class NativeAudioProcessTests(unittest.TestCase):
                 worker.start()
         self.assertIsNone(worker.process)
         self.assertIsNone(worker.reader)
+
+    def wake_recognizer(self, model='fixture', **kwargs):
+        with patch('jarvis.native_audio._wake_worker', wake_fixture):
+            return NativeWakeRecognizer(model, threading.Event(), startup_timeout=10, **kwargs)
+
+    def test_wake_process_preserves_final_unicode_and_acknowledges_reset(self):
+        with self.wake_recognizer() as recognizer:
+            pid = recognizer.worker.process.pid
+            self.assertEqual(recognizer.feed(b'\1'*3200), (False, 'Jarvis'))
+            self.assertEqual(recognizer.feed(b'\2'*3200), (True, 'Jarvis Write {ENTER} café 2'))
+            recognizer.reset()
+            self.assertEqual(recognizer.feed(b'\2'*3200), (True, 'Jarvis Write {ENTER} café 1'))
+        self.assert_reaped(pid)
+
+    def test_wake_native_model_loading_is_cancellable_and_reaped(self):
+        recognizer = self.wake_recognizer('stall-model')
+        timer = threading.Timer(.2, recognizer.stop_event.set)
+        timer.start()
+        self.addCleanup(timer.join)
+        started = time.monotonic()
+        with self.assertRaises(AudioCancelled), recognizer:
+            self.fail('A stalled model must never report ready')
+        self.assertLess(time.monotonic()-started, 3)
+        self.assertIsNone(recognizer.worker.process)
+
+    def test_wake_inference_and_reset_stalls_are_reaped_and_restart_recovers(self):
+        for model, operation in [('fixture', lambda r: r.feed(b'\4'*3200)),
+                                 ('stall-reset', lambda r: r.reset())]:
+            with self.subTest(model=model):
+                recognizer = self.wake_recognizer(model, timeout=.1)
+                with self.assertRaises(TimeoutError), recognizer:
+                    pid = recognizer.worker.process.pid
+                    operation(recognizer)
+                self.assert_reaped(pid)
+        with self.wake_recognizer() as recognizer:
+            self.assertTrue(recognizer.feed(b'\2'*3200)[0])
+
+    def test_wake_invalid_or_oversized_frames_cannot_become_commands(self):
+        with self.wake_recognizer() as recognizer:
+            for bad in (b'short', b'\0'*3202, 'text'):
+                with self.assertRaises(ValueError):
+                    recognizer.feed(bad)
+            with self.assertRaisesRegex(RuntimeError, 'oversized'):
+                recognizer.feed(b'\3'*3200)
+        with patch('jarvis.native_audio._wake_worker', malformed_wake):
+            recognizer = NativeWakeRecognizer('fixture', threading.Event(), startup_timeout=10)
+        with recognizer, self.assertRaisesRegex(RuntimeError, 'Invalid wake'):
+            recognizer.feed(b'\0'*3200)
+
+    def test_background_stop_cancels_native_inference_without_late_dispatch(self):
+        from jarvis.wake_service import BackgroundWakeListener
+        listener = BackgroundWakeListener('fixture', MagicMock(), MagicMock())
+        stream = MagicMock()
+        stream.read.return_value = (b'\4'*3200, False)
+        stream.__enter__.return_value = stream
+        entered = threading.Event()
+        original_feed = NativeWakeRecognizer.feed
+        def feed(recognizer, data):
+            entered.set()
+            return original_feed(recognizer, data)
+        with patch.dict('sys.modules', {'sounddevice': MagicMock()}), patch('jarvis.microphone._exclusive_stream', return_value=stream), patch('jarvis.native_audio._wake_worker', wake_fixture), patch.object(NativeWakeRecognizer, 'feed', feed):
+            listener._thread = threading.Thread(target=listener._loop)
+            listener._thread.start()
+            try:
+                self.assertTrue(entered.wait(10))
+                self.assertTrue(listener.stop(wait=True, timeout=3))
+                listener.on_wake.assert_not_called()
+                listener.on_error.assert_not_called()
+            finally:
+                listener.stop(wait=True)
+        self.assertFalse([p for p in multiprocessing.active_children() if p.name == 'jarvis-native-audio'])

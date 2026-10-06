@@ -1,7 +1,6 @@
 """Opt-in, local-only wake detection. Never uploads ambient microphone audio."""
 from __future__ import annotations
 
-import json
 import re
 import threading
 import time
@@ -153,14 +152,11 @@ class BackgroundWakeListener:
 
     def _loop(self):
         try:
-            import vosk
             import sounddevice as sd
             from .microphone import _exclusive_stream, input_device
-            from .offline_speech import get_vosk_model
-            model = get_vosk_model(self.model_path)
+            from .native_audio import NativeWakeRecognizer
             detector = PartialWakeDetector(self.wake_word)
-            recognizer = vosk.KaldiRecognizer(model, 16000)
-            with _exclusive_stream(sd, samplerate=16000, blocksize=1600, dtype='int16', channels=1, device=input_device()) as stream:
+            with NativeWakeRecognizer(self.model_path, self._stop) as recognizer, _exclusive_stream(sd, samplerate=16000, blocksize=1600, dtype='int16', channels=1, device=input_device()) as stream:
                 with self._stream_lock:
                     self._stream = stream
                 self.ready_at = time.time()
@@ -172,18 +168,15 @@ class BackgroundWakeListener:
                     if self._stop.is_set():
                         break
                     if self.suspended() or overflowed:
-                        recognizer.Reset()
+                        recognizer.reset()
                         detector.reset()
                         continue
-                    final = bool(recognizer.AcceptWaveform(bytes(data)))
-                    raw = recognizer.Result() if final else recognizer.PartialResult()
-                    decoded = json.loads(raw)
-                    text = decoded.get('text' if final else 'partial', '')
-                    command = detector.feed(text, final) if isinstance(text, str) else None
+                    final, text = recognizer.feed(bytes(data))
+                    command = detector.feed(text, final)
                     if final and command is not None and not self._stop.is_set() and not self.suspended():
                         self.last_heard_at = time.time()
                         self.on_wake(command)
-                        recognizer.Reset()
+                        recognizer.reset()
         except Exception as exc:
             self._startup_error = str(exc)
             self._ready.set()
