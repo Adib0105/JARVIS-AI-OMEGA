@@ -205,8 +205,10 @@ class CapabilityRegistry:
                 from .computer_use.windows_ui import WindowsUIBackend
                 backend = WindowsUIBackend().status()
                 if backend.available:
-                    computer_status = CapabilityStatus.AVAILABLE
-                    computer_detail = f'UIA ready; OCR fallback={visual_available}'
+                    computer_status = CapabilityStatus.EXPERIMENTAL
+                    computer_detail = (f'UIA dependency ready; OCR fallback={visual_available}; '
+                                       'semantic actions are not integrated into normal tool dispatch; '
+                                       'target identity/sensitive-field guards and physical Windows validation pending')
                 elif _module('pyautogui') and visual_available:
                     computer_status = CapabilityStatus.DEGRADED
                     computer_detail = f'UIA unavailable ({backend.detail}); confidence-gated local OCR fallback ready'

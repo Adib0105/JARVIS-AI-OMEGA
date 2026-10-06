@@ -34,6 +34,17 @@ It combines typed chat, voice, screen/image vision, local documents, memory/RAG,
 
 [Repair status and remaining release gates](docs/V7.9-AUDIT-REPAIRS.md) · [Operations and recovery](docs/V7.9-OPERATIONS.md). Public release remains on hold; CI installers are test builds.
 
+## V8 development — release on hold
+
+[Current architecture, feature audit and SaaS plan](docs/V8-SAAS-AUDIT.md) ·
+[P0 repairs, test evidence and remaining gates](docs/V8-P0-VALIDATION.md).
+Development is isolated on `v8-saas-smart-jarvis`. The first increment repairs
+UI worker error delivery, wake-stop blocking, ASR worker ownership and false
+verification/replay behavior. It does not implement the complete V8 SaaS product.
+Project tests still require a reviewed OS execution sandbox; semantic desktop
+integration, physical Windows acceptance and production backend validation remain
+open. The existing online subscription gates weather, not owner-funded AI.
+
 ## V7.8 update
 
 Personalized low-latency wake greetings, weather/cloud/rain/AQI briefings, account settings and an optional subscription backend are integrated. [All 20 changes and setup](docs/V7.8-WEATHER-ACCOUNTS.md) · [Account server setup](server/README.md).
@@ -260,7 +271,7 @@ Detailed architecture: [docs/V7-ARCHITECTURE.md](docs/V7-ARCHITECTURE.md)
 | Capability Registry | ✅ Implemented / CI verified |
 | Self Evaluation / Gap Detection | ✅ Implemented / CI verified |
 | Evaluation benchmarks | ✅ Implemented / CI verified |
-| Computer Use V2 UIA | ✅ Implemented / CI verified |
+| Computer Use V2 UIA | 🧪 Engine/fixture tests; normal semantic tool integration and Windows acceptance pending |
 | OCR fallback | ✅ Implemented / CI verified |
 | Browser V2 security | ✅ Implemented / CI verified |
 | Document provenance / dedupe | ✅ Implemented / CI verified |

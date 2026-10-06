@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import sys
 import threading
 import tkinter as tk
@@ -19,6 +20,8 @@ from .settings_ui import show_settings_dialog, show_update_dialog
 from .system_tools import system_metrics
 from .vision import capture_screen
 from .voice import VoiceOutput
+from .ui_tasks import TkTaskRunner
+from .logging_utils import redact_text
 
 
 BG = '#0c1020'
@@ -77,6 +80,8 @@ class JarvisDesktop:
         self.voice = VoiceOutput(on_state_change=self._voice_state_changed)
         self.jarvis = JarvisOmega(confirmer=self._confirm_tool)
         self.busy = False
+        self._tool_tasks = TkTaskRunner(self.root)
+        self.root.bind('<Destroy>', self._close_tool_tasks, add='+')
         self.attached_images: list[Path] = []
         self._preview_ref = None
         self.wake_listener = WakeWordListener(
@@ -278,7 +283,10 @@ class JarvisDesktop:
             ('IMAGE HELP', self._image_help, MAGENTA),
             ('SYSTEM STATUS', self._show_status, CYAN),
         ]:
-            self._button(modules, text, command, color).pack(fill='x', pady=1)
+            button = self._button(modules, text, command, color)
+            button.pack(fill='x', pady=1)
+            if text == 'RUN CODE TESTS':
+                self.code_tests_button = button
 
         self.status = tk.Label(
             parent,
@@ -371,6 +379,8 @@ class JarvisDesktop:
             self.status.configure(text=f'● {label}', fg=color)
         if hasattr(self, 'send_button'):
             self.send_button.configure(state='disabled' if busy else 'normal')
+        if hasattr(self, 'code_tests_button'):
+            self.code_tests_button.configure(state='disabled' if busy else 'normal')
         if hud_state:
             self._set_hud(hud_state)
         elif not busy:
@@ -760,17 +770,32 @@ class JarvisDesktop:
             self._run_tool_async('open_app', {'app': app}, 'APP')
 
     def _run_tool_async(self, name: str, args: dict, label: str) -> None:
+        if self.busy or getattr(self, '_closing', False):
+            return
+        if not hasattr(self, '_tool_tasks'):
+            self._tool_tasks = TkTaskRunner(self.root)
+        if self._tool_tasks.running:
+            return
         self._set_busy(True, label, GOLD, 'thinking')
 
-        def worker() -> None:
-            result = self.jarvis.tools.call(name, args)
-            self.root.after(0, lambda: self._tool_done(name, result))
+        def finish(result):
+            if not getattr(self, '_closing', False):
+                self._tool_done(name, result)
+        self._tool_tasks.start(
+            lambda: self.jarvis.tools.call(name, args), finish,
+            lambda error: finish(json.dumps({'ok': False, 'error': redact_text(error)})),
+        )
 
-        threading.Thread(target=worker, daemon=True).start()
+    def _close_tool_tasks(self, event):
+        if event.widget is self.root:
+            self._tool_tasks.close()
 
     def _tool_done(self, name: str, result: str) -> None:
         self._set_busy(False)
-        self._append('SYSTEM', f'{name}:\n{result}')
+        text = redact_text(str(result))
+        if len(text) > 65536:
+            text = text[:65536] + '\n[Display truncated at 65,536 characters.]'
+        self._append('SYSTEM', f'{name}:\n{text}')
         self._refresh_tasks()
 
     def _toggle_voice(self) -> None:

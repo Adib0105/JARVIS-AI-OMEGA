@@ -52,14 +52,18 @@ class VerificationEngine:
     @staticmethod
     def _explicit_verification(event: dict, name: str, payload: dict, *, side_effecting: bool) -> dict | None:
         """Honor structured verification produced by trusted local tool handlers."""
-        explicit = payload.get('verification')
-        if not isinstance(explicit, dict):
+        if 'verification' not in payload:
             return None
+        explicit = payload['verification']
+        if not isinstance(explicit, dict):
+            explicit = {}
         status = str(explicit.get('status', '')).strip().upper()
         if status not in _EXPLICIT_STATUSES:
-            return None
-        declared_verified = bool(explicit.get('verified', False))
+            status = 'UNKNOWN'
+        declared_verified = explicit.get('verified') is True
         verified = declared_verified and status in {'VERIFIED', 'VERIFIED_MODEL_OUTPUT'}
+        if status in {'VERIFIED', 'VERIFIED_MODEL_OUTPUT'} and not verified:
+            status = 'UNKNOWN'
         return _base(event, name, side_effecting=side_effecting) | {
             'verified': verified,
             'status': status,
@@ -95,6 +99,12 @@ class VerificationEngine:
 
         result = payload.get('result')
 
+        if name == 'complete_todo':
+            verified = isinstance(result, dict) and result.get('completed') is True
+            return _base(event, name, side_effecting=True) | {
+                'verified': verified, 'status': 'VERIFIED' if verified else 'FAILED',
+                'evidence': {'todo_updated': verified},
+            }
         if name == 'write_local_text_file':
             return self._verify_file_write(event, name, args, result)
         if name == 'run_project_tests':

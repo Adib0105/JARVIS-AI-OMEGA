@@ -64,8 +64,8 @@ class SelfImprovementBenchmark:
             raise KeyError(proposal_id)
         comparison = proposal.evaluation_summary.get('benchmark_comparison') or {}
         regression = proposal.evaluation_summary.get('regression') or proposal.test_summary.get('regression') or {}
-        regression_ok = bool(regression.get('ok'))
-        benchmark_ok = bool(comparison.get('successful_improvement'))
+        regression_ok = regression.get('ok') is True
+        benchmark_ok = comparison.get('successful_improvement') is True
         # A directly corrected deterministic regression is valid evidence even when a
         # broader benchmark has no applicable metrics. Subjective model claims are not.
         return regression_ok or benchmark_ok

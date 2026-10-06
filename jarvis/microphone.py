@@ -31,6 +31,7 @@ def _deps():
 
 
 _CAPTURE_LOCK = threading.Lock()
+_ASR_LOCK = threading.Lock()
 
 
 @contextmanager
@@ -111,13 +112,26 @@ def _capture_blocks(sd, frames, sample_rate, *, stop_event=None, seconds=15):
 
 
 def _bounded_transcribe(recognize, data, rate, language, stop_event):
+    if stop_event is not None and stop_event.is_set():
+        return ''
+    if not _ASR_LOCK.acquire(blocking=False):
+        raise MicrophoneUnavailable('Previous speech recognition is still stopping; retry after it exits.')
     result = queue.Queue(maxsize=1)
     def worker():
         try:
             result.put((True, recognize(data, rate, language)))
-        except Exception as exc:
-            result.put((False, exc))
-    threading.Thread(target=worker, daemon=True, name='jarvis-command-asr').start()
+        except BaseException as exc:
+            error = exc if isinstance(exc, Exception) else MicrophoneUnavailable(f'Speech worker exited: {type(exc).__name__}')
+            result.put((False, error))
+        finally:
+            # A caller timing out/cancelling cannot kill a Python/native worker.
+            # Retain ownership until actual exit, rather than spawning duplicates.
+            _ASR_LOCK.release()
+    try:
+        threading.Thread(target=worker, daemon=True, name='jarvis-command-asr').start()
+    except BaseException:
+        _ASR_LOCK.release()
+        raise
     deadline = time.monotonic() + 20
     while stop_event is None or not stop_event.is_set():
         if time.monotonic() >= deadline:
@@ -128,7 +142,7 @@ def _bounded_transcribe(recognize, data, rate, language, stop_event):
             continue
         if not ok:
             raise value
-        return value
+        return '' if stop_event is not None and stop_event.is_set() else value
     return ''
 
 def input_device():

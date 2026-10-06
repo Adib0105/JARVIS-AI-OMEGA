@@ -8,10 +8,12 @@ Security is part of the architecture: permission checks, secret protection, audi
 
 | Branch | Status |
 |---|---|
-| `main` | Stable V6 baseline |
-| `v7-development` | Active V7/V7.5 engineering |
+| `main` | V7.9 reliability baseline; public release on hold |
+| `v8-saas-smart-jarvis` | V8 audit and staged development; not production-ready |
+| `v7-development` | Earlier V7/V7.5 engineering history |
 
-Security fixes for active V7/V7.5 work should normally target `v7-development` first unless a maintainer decides the stable line also needs a patch.
+Current V8 fixes target `v8-saas-smart-jarvis` for review. Preserve mainline and
+existing security boundaries until the applicable validation/release gates pass.
 
 ## Reporting a vulnerability
 

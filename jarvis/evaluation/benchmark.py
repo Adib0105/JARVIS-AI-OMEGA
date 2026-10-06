@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -85,9 +86,11 @@ class AgentEvaluationBenchmark:
         try:
             value = fn()
             if isinstance(value, tuple) and len(value) == 2:
-                success, detail = bool(value[0]), str(value[1])
+                success, detail = value[0] is True, str(value[1])
+            elif isinstance(value, dict):
+                success, detail = value.get('success') is True, str(value.get('detail', ''))
             else:
-                success, detail = bool(value), ''
+                success, detail = value is True, ''
         except Exception as exc:
             success, detail = False, f'{type(exc).__name__}: {exc}'
         return ScenarioResult(
@@ -103,7 +106,7 @@ class AgentEvaluationBenchmark:
         metrics: dict[str, float | None] = {}
         for category, metric_name in cls.CATEGORY_METRICS.items():
             items = [item for item in results if item.category == category]
-            metrics[metric_name] = (sum(1 for item in items if item.success) / len(items)) if items else None
+            metrics[metric_name] = (sum(1 for item in items if item.success is True) / len(items)) if items else None
         latencies = [item.latency_ms for item in results]
         metrics['average_latency_ms'] = sum(latencies) / len(latencies) if latencies else None
         metrics['scenario_count'] = float(len(results))
@@ -140,9 +143,12 @@ class AgentEvaluationBenchmark:
         deltas = {}
         regressions = []
         improvements = []
+        quality_metrics = set(AgentEvaluationBenchmark.CATEGORY_METRICS.values()) | {'average_latency_ms'}
         for key in sorted(set(before_metrics) & set(after_metrics)):
+            if key not in quality_metrics:
+                continue  # Sample counts and unknown telemetry are not quality.
             old = before_metrics.get(key); new = after_metrics.get(key)
-            if not isinstance(old, (int, float)) or not isinstance(new, (int, float)):
+            if type(old) not in (int, float) or type(new) not in (int, float) or not math.isfinite(old) or not math.isfinite(new):
                 continue
             delta = float(new) - float(old)
             # latency is lower-is-better; success/accuracy metrics are higher-is-better.
@@ -152,11 +158,23 @@ class AgentEvaluationBenchmark:
                 regressions.append(key)
             elif normalized > 1e-9:
                 improvements.append(key)
+        def scenarios(snapshot):
+            rows = snapshot.get('results')
+            if not isinstance(rows, list) or not rows:
+                return None
+            if any(not isinstance(row, dict) or not isinstance(row.get('name'), str)
+                   or not isinstance(row.get('category'), str) for row in rows):
+                return None
+            keys = [(row['name'], row['category']) for row in rows]
+            return sorted(keys) if len(keys) == len(set(keys)) else None
+        old_scenarios, new_scenarios = scenarios(before), scenarios(after)
+        comparable = old_scenarios is not None and old_scenarios == new_scenarios
         return {
             'before_id': before.get('id'),
             'after_id': after.get('id'),
             'deltas': deltas,
             'improvements': improvements,
             'regressions': regressions,
-            'successful_improvement': bool(improvements and not regressions),
+            'comparable_scenarios': comparable,
+            'successful_improvement': bool(comparable and improvements and not regressions),
         }

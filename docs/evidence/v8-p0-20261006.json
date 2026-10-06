@@ -1,0 +1,89 @@
+{
+  "date": "2026-10-06",
+  "baseline_commit": "83b7f34b67c0aca444c1139cd7db700364bc554c",
+  "branch": "v8-saas-smart-jarvis",
+  "release_ready": false,
+  "complete_v8_implemented": false,
+  "environment": {
+    "os": "Linux",
+    "python": "3.12.14",
+    "tcl": "9.0.4",
+    "dependencies": "Existing isolated desktop/service site-packages loaded with PYTHONPATH; all direct requirements pins matched. No repository pins changed."
+  },
+  "baseline_desktop": {
+    "log_sha256": "5ec2fa0903f7bb1c4cab2445309fd10a180fa1048787d90c66d1d9f6638ac0f3",
+    "tests_run": 453,
+    "duration_seconds": 5.639,
+    "skipped": 1,
+    "failed_assertions_or_subtests": 0,
+    "result": "passed"
+  },
+  "baseline_server": {
+    "log_sha256": "687e2e8db9acf14faf96e7c30dfa0086954f9a0c4d6cacf121605aa1a47e13de",
+    "tests_run": 30,
+    "duration_seconds": 5.887,
+    "skipped": 0,
+    "failed_assertions_or_subtests": 0,
+    "result": "passed"
+  },
+  "initial_11_regressions_on_baseline": {
+    "log_sha256": "0ee969988d0c07accef33c4934169916bbadb19188420c2693d92b52a55171f3",
+    "tests_run": 11,
+    "duration_seconds": 3.593,
+    "skipped": 0,
+    "failed_assertions_or_subtests": 14,
+    "result": "expected_failure"
+  },
+  "final_desktop": {
+    "log_sha256": "d75137a1b581e7341f0c96897c30d45287da53651414151dedea8a26968fb8b6",
+    "tests_run": 471,
+    "duration_seconds": 5.255,
+    "skipped": 1,
+    "failed_assertions_or_subtests": 0,
+    "result": "passed"
+  },
+  "final_server": {
+    "log_sha256": "3d6b81f3578b127a6c7cb265990863ca4a600aada25f18f09d121e1670359dfa",
+    "tests_run": 30,
+    "duration_seconds": 6.017,
+    "skipped": 0,
+    "failed_assertions_or_subtests": 0,
+    "result": "passed"
+  },
+  "new_regression_tests": [
+    "test_command_center_error_is_delivered_on_main_thread (test_v8_p0_regressions.DesktopJobRegressions.test_command_center_error_is_delivered_on_main_thread) ... ok",
+    "test_delayed_code_test_keeps_event_loop_alive_and_finishes_on_ui_thread (test_v8_p0_regressions.DesktopJobRegressions.test_delayed_code_test_keeps_event_loop_alive_and_finishes_on_ui_thread) ... ok",
+    "test_dispatch_exception_restores_busy_and_next_job_works (test_v8_p0_regressions.DesktopJobRegressions.test_dispatch_exception_restores_busy_and_next_job_works) ... ok",
+    "test_duplicate_job_is_rejected_and_closed_ui_ignores_late_result (test_v8_p0_regressions.DesktopJobRegressions.test_duplicate_job_is_rejected_and_closed_ui_ignores_late_result) ... ok",
+    "test_output_flood_is_bounded_for_the_tk_widget (test_v8_p0_regressions.DesktopJobRegressions.test_output_flood_is_bounded_for_the_tk_widget) ... ok",
+    "test_worker_exit_and_thread_start_failure_restore_ui (test_v8_p0_regressions.DesktopJobRegressions.test_worker_exit_and_thread_start_failure_restore_ui) ... ok",
+    "test_failed_result_object_does_not_pass_benchmark (test_v8_p0_regressions.VerificationRegressions.test_failed_result_object_does_not_pass_benchmark) ... ok",
+    "test_more_scenarios_alone_cannot_certify_improvement (test_v8_p0_regressions.VerificationRegressions.test_more_scenarios_alone_cannot_certify_improvement) ... ok",
+    "test_non_boolean_verified_flag_and_malformed_contract_cannot_certify (test_v8_p0_regressions.VerificationRegressions.test_non_boolean_verified_flag_and_malformed_contract_cannot_certify) ... ok",
+    "test_nonexistent_todo_is_not_verified (test_v8_p0_regressions.VerificationRegressions.test_nonexistent_todo_is_not_verified) ... ok",
+    "test_noop_typing_existing_substring_is_not_verified (test_v8_p0_regressions.VerificationRegressions.test_noop_typing_existing_substring_is_not_verified) ... ok",
+    "test_replacing_the_scenarios_cannot_certify_improvement (test_v8_p0_regressions.VerificationRegressions.test_replacing_the_scenarios_cannot_certify_improvement) ... ok",
+    "test_truthy_strings_do_not_certify_self_improvement (test_v8_p0_regressions.VerificationRegressions.test_truthy_strings_do_not_certify_self_improvement) ... ok",
+    "test_typing_requires_confirmed_focus_and_a_new_observed_value (test_v8_p0_regressions.VerificationRegressions.test_typing_requires_confirmed_focus_and_a_new_observed_value) ... ok",
+    "test_verification_timeout_preserves_events_and_never_replays_side_effect (test_v8_p0_regressions.VerificationRegressions.test_verification_timeout_preserves_events_and_never_replays_side_effect) ... ok",
+    "test_asr_worker_exit_reports_error_and_releases_ownership (test_v8_p0_regressions.VoiceOwnershipRegressions.test_asr_worker_exit_reports_error_and_releases_ownership) ... ok",
+    "test_cancelled_asr_keeps_ownership_until_worker_really_exits (test_v8_p0_regressions.VoiceOwnershipRegressions.test_cancelled_asr_keeps_ownership_until_worker_really_exits) ... ok",
+    "test_stalled_abort_never_blocks_stop_and_retries_share_one_abort (test_v8_p0_regressions.VoiceOwnershipRegressions.test_stalled_abort_never_blocks_stop_and_retries_share_one_abort) ... ok"
+  ],
+  "checks": {
+    "compileall": true,
+    "git_diff_check": true,
+    "physical_windows": false,
+    "live_ai_provider": false,
+    "live_stripe_or_smtp": false,
+    "production_backend_deployed": false,
+    "reviewed_project_execution_sandbox": false
+  },
+  "source_tree_sha256": "002c8124bd497d3c9059e8953f384ec8c0620407b886429746dee36491b19afb",
+  "notes": [
+    "Initial 11-case regression version: 11 tests, 14 failures including verification subtests, on an isolated baseline worktree. Final suite contains 18 new cases.",
+    "UI evidence uses a real headless Tcl event loop plus worker threads, not a physical rendered Windows desktop.",
+    "Native audio/UIA/provider boundaries are simulated.",
+    "Project-code execution remains denied; no process-streaming/cancellation claim is made."
+  ]
+}

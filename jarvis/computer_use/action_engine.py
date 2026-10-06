@@ -150,13 +150,18 @@ class ComputerActionEngine:
             }
         assert match.target is not None
         visual = self._is_visual(match)
+        before = {} if visual else self.backend.observe(match.target)
+        if before.get('exists') is False:
+            return {'ok': False, 'error': 'Target no longer exists; no text was entered.'}
         try:
             import pyautogui
             if visual:
                 x, y = match.target.center
                 pyautogui.click(x=x, y=y, button='left')
             else:
-                self.backend.focus(match.target)
+                focus = self.backend.focus(match.target)
+                if focus.get('focused') is not True or focus.get('exists') is not True:
+                    return {'ok': False, 'error': 'Target focus could not be confirmed; no text was entered.'}
             pyautogui.write(str(text), interval=max(0.0, min(float(interval), 0.2)))
         except Exception as exc:
             return {
@@ -188,12 +193,19 @@ class ComputerActionEngine:
         time.sleep(0.08)
         observed = self.backend.observe(match.target)
         value = observed.get('value')
-        if isinstance(value, str):
-            verified = value.endswith(str(text)) or str(text) in value
+        previous = before.get('value')
+        requested = str(text)
+        if isinstance(value, str) and isinstance(previous, str):
+            # Existing text is not proof that write() did anything. We can only
+            # attest an observed value change, not a submitted form/workflow.
+            verified = (bool(requested) and observed.get('focused') is True
+                        and observed.get('exists') is True
+                        and value != previous and value.count(requested) > previous.count(requested))
             verification = {
                 'status': 'VERIFIED' if verified else 'FAILED',
                 'verified': verified,
-                'evidence': {'focused': observed.get('focused'), 'value_contains_text': verified},
+                'evidence': {'focused': observed.get('focused'), 'value_changed': value != previous,
+                             'additional_text_observed': verified, 'scope': 'field_value_change'},
             }
         else:
             verification = {

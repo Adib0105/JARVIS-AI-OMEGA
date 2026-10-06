@@ -67,6 +67,8 @@ class BackgroundWakeListener:
         self._stream_lock = threading.RLock()
         self._stream = None
         self._thread = None
+        self._abort_thread = None
+        self._abort_stream = None
         self._startup_error = ''
         self.ready_at = 0.0
         self.last_heard_at = 0.0
@@ -85,6 +87,8 @@ class BackgroundWakeListener:
         return self._startup_error
 
     def start(self, timeout=12.0):
+        if self._abort_thread and self._abort_thread.is_alive():
+            raise RuntimeError('Microphone driver is still stopping. Restart JARVIS if it does not recover.')
         if self._thread and self._thread.is_alive():
             if self._stop.is_set():
                 self._thread.join(timeout=2.0)
@@ -95,6 +99,8 @@ class BackgroundWakeListener:
         # Fail before hiding the window if optional dependencies are absent.
         import vosk  # noqa: F401
         import sounddevice  # noqa: F401
+        self._abort_thread = None
+        self._abort_stream = None
         self._stop.clear()
         self._ready.clear()
         self._startup_error = ''
@@ -124,15 +130,26 @@ class BackgroundWakeListener:
         # restart instead of being stuck behind a live listener thread.
         with self._stream_lock:
             stream = self._stream
-        if stream is not None:
-            try:
-                stream.abort()
-            except Exception:
-                pass
+            if stream is not None and stream is not self._abort_stream:
+                # Native abort can itself wedge. One worker owns that operation;
+                # retries must neither block Tk nor multiply native callers.
+                if not self._abort_thread or not self._abort_thread.is_alive():
+                    def abort():
+                        try:
+                            stream.abort()
+                        except Exception:
+                            pass
+                    self._abort_stream = stream
+                    self._abort_thread = threading.Thread(target=abort, daemon=True, name='jarvis-wake-abort')
+                    self._abort_thread.start()
         thread = self._thread
-        if wait and thread and thread.is_alive() and threading.current_thread() is not thread:
-            thread.join(timeout=max(0.1, min(float(timeout), 10.0)))
-        return not bool(thread and thread.is_alive())
+        if wait:
+            deadline = time.monotonic() + max(0.1, min(float(timeout), 10.0))
+            for owner in (thread, self._abort_thread):
+                if owner and owner.is_alive() and threading.current_thread() is not owner:
+                    owner.join(timeout=max(0.0, deadline - time.monotonic()))
+        return not bool((thread and thread.is_alive()) or
+                        (self._abort_thread and self._abort_thread.is_alive()))
 
     def _loop(self):
         try:
