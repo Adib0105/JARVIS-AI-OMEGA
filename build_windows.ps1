@@ -41,6 +41,7 @@ $Args = @(
     '--collect-all', 'pyttsx3',
     '--collect-all', 'comtypes',
     '--collect-submodules', 'speech_recognition',
+    '--collect-submodules', 'pywinauto',
     '--hidden-import', 'pystray._win32',
     '--collect-all', 'playwright',
     'desktop_app.py'

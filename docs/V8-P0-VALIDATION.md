@@ -5,6 +5,12 @@ Baseline: `83b7f34b67c0aca444c1139cd7db700364bc554c`.
 **Full V8: incomplete. Release: HOLD.** This increment is reviewable development,
 not a production upgrade or an installer release.
 
+This is the historical first increment. Subsequent implementation/evidence:
+[isolated execution](V8-EXECUTION-VALIDATION.md),
+[native audio recovery](V8-NATIVE-AUDIO-VALIDATION.md), and
+[semantic dispatch](V8-SEMANTIC-VALIDATION.md). Its original open-item table below
+is retained as the baseline, not the latest branch feature status.
+
 ## Phase 0 — repository audit
 
 Changed `V8-SAAS-AUDIT.md` with the requested architecture, existing auth/billing/

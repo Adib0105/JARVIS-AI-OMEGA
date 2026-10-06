@@ -161,6 +161,10 @@ jobs:
           $code = $LASTEXITCODE
           Get-Content windows-test-output.txt
           if ($code -ne 0) { exit $code }
+      - name: Install pinned UI Automation adapter
+        run: pip install -r requirements-computer-use.txt -c constraints/windows-py314.txt
+      - name: Real Windows UI Automation integration
+        run: python -m unittest discover -s tests_windows -v
       - name: Upload Windows test output
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

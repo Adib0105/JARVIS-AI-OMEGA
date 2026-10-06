@@ -1,5 +1,6 @@
 ## V8 development — P0 foundation, unreleased
 
+- Integrate opt-in semantic desktop tools through observed application/window/element identity, single-use expiry, sensitive-field protection, UIA Invoke/Value patterns and scoped post-action verification. Add real Windows UIA fixture CI; physical acceptance remains open.
 - Isolate native microphone capture and built-in transcription in killable spawned workers; bound IPC, cancel/timeout/reap, retain ownership and add a non-recording frozen-worker CI check. Physical voice acceptance remains open.
 - Add an opt-in, offline, resource-limited Linux Docker runner shared by coding and self-development tests, with immutable image IDs and no host mount/execution fallback.
 - Stream separate bounded/redacted test output through the Tk event queue; add Cancel Tests, process deadlines, namespace cleanup verification and an owner-thread permission dialog queue.

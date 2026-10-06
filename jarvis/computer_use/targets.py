@@ -25,6 +25,22 @@ class UITarget:
     enabled: bool = True
     visible: bool = True
     backend_ref: object | None = None
+    process_id: int = 0
+    process_started: float = 0.0
+    application: str = ''
+    window_handle: int = 0
+    runtime_id: tuple = ()
+    protected: bool | None = None
+
+    @property
+    def identity(self):
+        return (self.process_id, self.process_started, self.application.casefold(),
+                self.window_handle, self.runtime_id)
+
+    @property
+    def has_identity(self):
+        return bool(self.process_id > 0 and self.process_started > 0 and self.application
+                    and self.window_handle > 0 and self.runtime_id)
 
     @property
     def center(self) -> tuple[int, int]:
@@ -39,6 +55,10 @@ class UITarget:
             'bounds': [self.left, self.top, self.right, self.bottom],
             'enabled': self.enabled,
             'visible': self.visible,
+            'application': self.application,
+            'process_id': self.process_id,
+            'window_handle': self.window_handle,
+            'protected': self.protected,
         }
 
 

@@ -53,6 +53,13 @@ class ToolRegistry:
         # V6 callers retain the legacy gate by default. V7 injects the capability
         # gate explicitly so there is one permission authority for the runtime.
         self.permissions: PermissionChecker = permission_checker or PermissionGate(confirmer)
+        self.computer = None
+
+    def _computer_engine(self):
+        if self.computer is None:
+            from .computer_use.action_engine import ComputerActionEngine
+            self.computer = ComputerActionEngine()
+        return self.computer
 
     def schemas(self, include_local: bool = True) -> list[dict]:
         s = {'type': 'string'}
@@ -131,6 +138,17 @@ class ToolRegistry:
                     ['action'],
                 ),
             ]
+
+            if settings.enable_semantic_computer_use:
+                identity = {'observation_id': s, 'app': s, 'window_title': s, 'target': s}
+                tools += [
+                    _fn('inspect_computer_target', 'Observe one unambiguous UIA target in a named window before acting. OCR-only matches require manual action.',
+                        {'target': s, 'window_hint': s}, ['target', 'window_hint']),
+                    _fn('semantic_click', 'Invoke the exact previously observed UIA element after approval. Copy identity fields from inspection; expires after 30 seconds. Invocation alone does not verify a workflow.',
+                        identity, list(identity)),
+                    _fn('semantic_type', 'Replace a non-sensitive edit field with literal Unicode text after approval and fresh identity checks. Passwords/credentials are blocked. Copy identity fields from inspection.',
+                        identity | {'text': s}, [*identity, 'text']),
+                ]
 
         if settings.enable_coding_tools:
             tools += [
@@ -268,6 +286,9 @@ class ToolRegistry:
                 'hotkey': lambda: hotkey(args['keys']),
                 'click_screen': lambda: click_screen(args['x'], args['y'], args['button']),
                 'windows_control': lambda: windows_control(args['action']),
+                'inspect_computer_target': lambda: self._computer_engine().inspect_target(args['target'], window_hint=args['window_hint']),
+                'semantic_click': lambda: self._computer_engine().act_observed('click', **args),
+                'semantic_type': lambda: self._computer_engine().act_observed('type', **args),
                 'list_code_tree': lambda: self.coding.tree(args['folder'], args['max_items']),
                 'write_local_text_file': lambda: self.coding.write_text(args['file_path'], args['content']),
                 'run_project_tests': lambda: self.coding.run_unit_tests(args['project_dir'], args['timeout']),
@@ -290,6 +311,11 @@ class ToolRegistry:
                     'error': None if result.get('playing') else result.get('message'),
                     'verification': {'status': 'VERIFIED' if verified else 'PARTIAL' if result.get('playing') else 'FAILED',
                                      'verified': verified, 'evidence': result}}, ensure_ascii=False)
+            if name in {'inspect_computer_target', 'semantic_click', 'semantic_type'}:
+                return json.dumps({'ok': result.get('ok') is True, 'result': result,
+                                   'error': result.get('error'), 'verification': result.get('verification', {
+                                       'verified': False, 'status': 'UNKNOWN', 'evidence': 'Target observation only.'})},
+                                  ensure_ascii=False, default=str)
             if name == 'run_project_tests':
                 return json.dumps({'ok': result.get('ok') is True, 'result': result,
                                    'error': result.get('error') or (None if result.get('ok') is True else result.get('status'))},

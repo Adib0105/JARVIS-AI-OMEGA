@@ -207,8 +207,9 @@ class CapabilityRegistry:
                 if backend.available:
                     computer_status = CapabilityStatus.EXPERIMENTAL
                     computer_detail = (f'UIA dependency ready; OCR fallback={visual_available}; '
-                                       'semantic actions are not integrated into normal tool dispatch; '
-                                       'target identity/sensitive-field guards and physical Windows validation pending')
+                                       'observed-identity semantic dispatch is opt-in via ENABLE_SEMANTIC_COMPUTER_USE; '
+                                       '30-second single-use targets and sensitive-field guards are enforced; '
+                                       'physical Windows workflow validation pending')
                 elif _module('pyautogui') and visual_available:
                     computer_status = CapabilityStatus.DEGRADED
                     computer_detail = f'UIA unavailable ({backend.detail}); confidence-gated local OCR fallback ready'
