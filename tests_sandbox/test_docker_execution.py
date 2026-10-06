@@ -50,7 +50,7 @@ class RealSandboxTests(unittest.TestCase):
         self.assertEqual([x.name for x in report.checks], ['compileall', 'unittest'])
 
     def test_normal_tool_permission_audit_and_verification_path(self):
-        self.source("import unittest\nprint('PRIVATE-FIXTURE-OUTPUT')\n")
+        self.source("import unittest\nprint('PRIVATE-FIXTURE-OUTPUT')\nclass Test(unittest.TestCase):\n def test_ready(self): self.assertEqual(3*3,9)\n")
         store = Path(self.tmp.name) / 'state.db'
         registry = RecordingToolRegistry(MemoryStore(store), confirmer=lambda *_: 'deny', audit_store=AuditStore(store))
         registry.coding.files.roots = (self.root,)
@@ -117,9 +117,15 @@ class RealSandboxTests(unittest.TestCase):
         result = self.runner.run(self.root, control=control, timeout=20)
         self.assertEqual(result['status'], 'CANCELLED', result)
         self.assertTrue(result['cleanup_verified'])
-        self.source('import unittest\n')
-        self.assertTrue(self.run_code()['ok'])
+        self.source('import unittest\nclass Test(unittest.TestCase):\n def test_ready(self): self.assertEqual(3*3,9)\n')
+        result = self.run_code()
+        self.assertTrue(result['ok'], result)
         self.assert_no_containers()
+
+    def test_empty_suite_does_not_count_as_passed(self):
+        self.source('import unittest\n')
+        result = self.run_code()
+        self.assertFalse(result['ok'], result)
 
     def test_output_flood_is_killed_and_bounded(self):
         self.source("import sys\nwhile True: sys.stdout.write('x'*4096)\n")

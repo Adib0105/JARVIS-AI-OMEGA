@@ -329,6 +329,9 @@ class DockerCodeRunner:
                         if state.get('Running') is not False or type(code) is not int or state.get('Status') != 'exited':
                             raise RuntimeError('Container exit could not be independently confirmed.')
                         result.update(returncode=code, status='TIMEOUT' if code == 124 else 'PASSED' if code == 0 else 'FAILED')
+                        # Older Python unittest versions exit 0 for empty discovery.
+                        if kind == 'unittest' and re.search(r'\bRan 0 tests?\b', result['stderr']):
+                            result.update(returncode=5, status='NO_TESTS')
                         if state.get('OOMKilled') is True:
                             result['status'] = 'MEMORY_LIMIT'
                 except InterruptedError as exc:

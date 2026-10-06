@@ -38,6 +38,16 @@ denial. The guard and fixtures were corrected; no test was deleted or disabled.
 No local Docker engine is available. Bubblewrap also failed its namespace probe.
 Real Docker and remaining platform/service check results will be recorded after CI.
 
+First real-daemon run (`37426460229`) passed seven of nine cases, including file/
+environment/network isolation, cgroup/seccomp/capability inspection, memory limits,
+nonzero exits, timeout/descendant cleanup and flood termination. Two success-path
+fixtures contained no test methods; Python correctly returned `NO TESTS RAN` and
+exit 5. Those fixtures now contain real assertions. A separate empty-suite case
+was added, plus a regression for older Python versions that exit 0 on empty
+discovery. No failed real-boundary assertion was removed or weakened. All eight
+ordinary regression/service/security CI jobs passed on that initial head; Windows
+package work was still in progress at the time of this report update.
+
 ## Security impact and regression risk
 
 Execution is opt-in and fails closed before spawning if the immutable image/runtime

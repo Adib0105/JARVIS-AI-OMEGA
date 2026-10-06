@@ -146,6 +146,15 @@ class SandboxPolicyTests(unittest.TestCase):
                 self.assertTrue(result['cleanup_verified'])
                 self.assertFalse(result['ok'])
 
+    def test_old_python_empty_discovery_exit_zero_is_not_success(self):
+        def cli(argv, **kw):
+            if argv[5] == 'start':
+                return ProcessResult(0, b'', b'Ran 0 tests in 0.00s\nOK\n')
+            return self.fake_cli(argv, **kw)
+        result = self.run_fake(cli)
+        self.assertEqual(result['status'], 'NO_TESTS')
+        self.assertFalse(result['ok'])
+
     def test_cleanup_failure_blocks_until_removal_confirmed(self):
         def broken(argv, **kw):
             if argv[5] in ('rm', 'container'):
