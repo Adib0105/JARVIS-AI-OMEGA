@@ -102,6 +102,7 @@ TOOL_SECURITY: dict[str, ToolSecurityProfile] = {
     # Browser / apps / desktop
     'browser_agent_open': profile('browser_agent_open', MEDIUM, {Capability.BROWSER_CONTROL}, 'Navigates a browser; observed page evidence is required.', True),
     'semantic_click': profile('semantic_click', HIGH, {Capability.MOUSE_CONTROL, Capability.SCREEN_CONTROL}, 'Clicks an observed semantic desktop target.', True),
+    'inspect_computer_target': profile('inspect_computer_target', MEDIUM, {Capability.SCREEN_READ}, 'Observes one desktop target and records its application/window identity.'),
     'semantic_type': profile('semantic_type', HIGH, {Capability.KEYBOARD_CONTROL}, 'Types into an observed semantic desktop target.', True),
     'open_url': profile('open_url', MEDIUM, {Capability.BROWSER_CONTROL}, 'Opens an external HTTP/HTTPS URL in the default browser.', True),
     'youtube_play_first': profile('youtube_play_first', MEDIUM, {Capability.BROWSER_CONTROL}, 'Searches YouTube and starts the first ordinary video in a visible browser.', True),

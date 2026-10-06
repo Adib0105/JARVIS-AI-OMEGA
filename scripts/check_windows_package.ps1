@@ -32,6 +32,12 @@ if (-not $backgroundCheck.WaitForExit(30000)) {
   throw 'Frozen background dependency check did not exit within 30 seconds.'
 }
 if ($backgroundCheck.ExitCode -ne 0) { throw 'Frozen background dependency check failed.' }
+$audioWorkerCheck = Start-Process -FilePath $exe -ArgumentList @('--jarvis-audio-worker-check') -PassThru
+if (-not $audioWorkerCheck.WaitForExit(30000)) {
+  $audioWorkerCheck.Kill()
+  throw 'Frozen native audio process spawn/termination timed out.'
+}
+if ($audioWorkerCheck.ExitCode -ne 0) { throw 'Frozen native audio process lifecycle failed.' }
 Write-Host "Package smoke PASS: $exe"
 # Launch a complete fresh desktop from a directory containing spaces, without any key.
 if ($env:RUNNER_TEMP) { $SmokeRoot = Join-Path $env:RUNNER_TEMP 'JARVIS fresh install' }

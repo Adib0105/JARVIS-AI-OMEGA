@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import time
+import threading
+import uuid
+from contextlib import nullcontext
+from dataclasses import replace
 
 from .targets import TargetMatch, choose_target
 from .visual_fallback import VisualTargetBackend
@@ -20,6 +24,100 @@ class ComputerActionEngine:
         self.visual_backend = visual_backend or VisualTargetBackend()
         self.confidence_threshold = max(0.5, min(0.99, float(confidence_threshold)))
         self.visual_threshold = max(self.confidence_threshold, min(0.99, float(visual_threshold)))
+        self._observations = {}
+        self._action_lock = threading.Lock()
+        self._clock = time.monotonic
+        self.observation_ttl = 30.0
+
+    def _session(self):
+        return self.backend.automation_session() if hasattr(self.backend, 'automation_session') else nullcontext()
+
+    def inspect_target(self, target: str, *, window_hint: str):
+        """Produce a bounded, single-use identity snapshot before approval."""
+        if not target.strip() or not window_hint.strip():
+            return {'ok': False, 'error': 'An explicit target and application window hint are required.'}
+        if not self._action_lock.acquire(blocking=False):
+            return {'ok': False, 'error': 'A desktop operation is already active.'}
+        try:
+            with self._session():
+                match = self.resolve(target, window_hint=window_hint)
+                if not match.resolved:
+                    return {'ok': False, 'error': match.reason, 'alternatives': list(match.alternatives)}
+                item = match.target
+                if self._is_visual(match):
+                    return {'ok': True, 'actionable': False, 'target': item.safe_dict(),
+                            'reason': 'OCR location has no verified application/field identity. Manual action is required.'}
+                if not item.has_identity or item.protected is not False or not item.enabled or not item.visible:
+                    return {'ok': False, 'error': 'Target identity or non-sensitive accessibility state could not be confirmed.'}
+                now = self._clock()
+                self._observations = {k: v for k, v in self._observations.items() if v[1] > now}
+                if len(self._observations) >= 32:
+                    self._observations.pop(next(iter(self._observations)))
+                observation = uuid.uuid4().hex
+                self._observations[observation] = (replace(item, backend_ref=None), now + self.observation_ttl)
+                return {'ok': True, 'actionable': True, 'observation_id': observation,
+                        'expires_in_seconds': self.observation_ttl, 'target': item.safe_dict(),
+                        'confidence': match.confidence, 'resolution_backend': 'windows-uia'}
+        finally:
+            self._action_lock.release()
+
+    def act_observed(self, action, observation_id, *, app, window_title, target, text=''):
+        """Act once on a re-observed element; never retarget or retry an effect."""
+        if not self._action_lock.acquire(blocking=False):
+            return {'ok': False, 'error': 'A desktop operation is already active.'}
+        try:
+            stored = self._observations.pop(observation_id, None)
+            if stored is None or stored[1] <= self._clock():
+                return {'ok': False, 'error': 'Observation expired, was consumed or belongs to another session. Inspect again.'}
+            expected, _expires = stored
+            if (app.casefold(), window_title, target) != (expected.application.casefold(), expected.window_title, expected.name):
+                return {'ok': False, 'error': 'Approved application/window/target does not match the observation.'}
+            if action not in ('click', 'type') or len(text) > 2000:
+                return {'ok': False, 'error': 'Unsupported action or input exceeds 2,000 characters.'}
+            if action == 'type':
+                from ..security.secrets import ensure_safe_for_persistent_memory
+                ensure_safe_for_persistent_memory(text)
+            with self._session():
+                targets = self.backend.enumerate_targets(window_hint=window_title)
+                matches = [item for item in targets if item.identity == expected.identity]
+                if len(matches) != 1:
+                    return {'ok': False, 'error': 'Stale or ambiguous application/window/element identity. No action was attempted.'}
+                item = matches[0]
+                if (item.name != expected.name or item.window_title != expected.window_title
+                        or item.automation_id != expected.automation_id or item.control_type != expected.control_type
+                        or (item.left, item.top, item.right, item.bottom) != (expected.left, expected.top, expected.right, expected.bottom)
+                        or not item.visible or not item.enabled or item.protected is not False):
+                    return {'ok': False, 'error': 'Target changed, moved, became inaccessible or is protected. Inspect again.'}
+                before = self.backend.observe(item)
+                if before.get('exists') is not True:
+                    return {'ok': False, 'error': 'Target existence could not be confirmed.'}
+                if self._clock() >= _expires:
+                    return {'ok': False, 'error': 'Observation expired during revalidation. Inspect again.'}
+                if action == 'type':
+                    if item.control_type != 'Edit' or not isinstance(before.get('value'), str):
+                        return {'ok': False, 'error': 'Only non-sensitive edit fields with value readback are supported.'}
+                    if before['value'] == text:
+                        return {'ok': False, 'error': 'Field already contains that value; no new input was performed.'}
+                    self.backend.replace_text(item, text)
+                else:
+                    self.backend.invoke(item)
+                observed = self.backend.observe(item)
+                current = self.backend.refresh(item)
+                same = current.identity == item.identity and current.protected is False
+                verified = (action == 'type' and same and observed.get('exists') is True
+                            and observed.get('value') == text and observed.get('value') != before.get('value'))
+                return {'ok': same and (action == 'click' or verified), 'action': action,
+                        'resolution_backend': 'windows-uia', 'target': expected.safe_dict(),
+                        'verification': {'verified': verified, 'status': 'VERIFIED' if verified else 'UNKNOWN',
+                                         'evidence': {'identity_preserved': same, 'value_changed': verified,
+                                                      'scope': 'field_value_replacement' if verified else 'invocation_only'}}}
+        except Exception as exc:
+            from ..security.redaction import redact_text
+            return {'ok': False, 'error': redact_text(f'{type(exc).__name__}: {exc}'),
+                    'verification': {'verified': False, 'status': 'UNKNOWN',
+                                     'evidence': 'Action outcome is uncertain; do not retry automatically.'}}
+        finally:
+            self._action_lock.release()
 
     def status(self) -> dict:
         status = self.backend.status()
@@ -150,13 +248,18 @@ class ComputerActionEngine:
             }
         assert match.target is not None
         visual = self._is_visual(match)
+        before = {} if visual else self.backend.observe(match.target)
+        if before.get('exists') is False:
+            return {'ok': False, 'error': 'Target no longer exists; no text was entered.'}
         try:
             import pyautogui
             if visual:
                 x, y = match.target.center
                 pyautogui.click(x=x, y=y, button='left')
             else:
-                self.backend.focus(match.target)
+                focus = self.backend.focus(match.target)
+                if focus.get('focused') is not True or focus.get('exists') is not True:
+                    return {'ok': False, 'error': 'Target focus could not be confirmed; no text was entered.'}
             pyautogui.write(str(text), interval=max(0.0, min(float(interval), 0.2)))
         except Exception as exc:
             return {
@@ -188,12 +291,19 @@ class ComputerActionEngine:
         time.sleep(0.08)
         observed = self.backend.observe(match.target)
         value = observed.get('value')
-        if isinstance(value, str):
-            verified = value.endswith(str(text)) or str(text) in value
+        previous = before.get('value')
+        requested = str(text)
+        if isinstance(value, str) and isinstance(previous, str):
+            # Existing text is not proof that write() did anything. We can only
+            # attest an observed value change, not a submitted form/workflow.
+            verified = (bool(requested) and observed.get('focused') is True
+                        and observed.get('exists') is True
+                        and value != previous and value.count(requested) > previous.count(requested))
             verification = {
                 'status': 'VERIFIED' if verified else 'FAILED',
                 'verified': verified,
-                'evidence': {'focused': observed.get('focused'), 'value_contains_text': verified},
+                'evidence': {'focused': observed.get('focused'), 'value_changed': value != previous,
+                             'additional_text_observed': verified, 'scope': 'field_value_change'},
             }
         else:
             verification = {

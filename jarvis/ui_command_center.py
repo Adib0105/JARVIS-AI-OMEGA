@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
-import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from .config import settings
 from .storage import BackupManager
+from .ui_tasks import TkTaskRunner
+from .logging_utils import redact_text
 
 
 BG = '#06131d'
@@ -32,6 +33,7 @@ class AgentCommandCenter(tk.Toplevel):
     def __init__(self, parent, jarvis) -> None:
         super().__init__(parent)
         self.jarvis = jarvis
+        self._task_runner = TkTaskRunner(self)
         self.title(f'JARVIS {settings.app_version} // AGENT COMMAND CENTER')
         self.configure(bg=BG)
         self.geometry('1180x720')
@@ -106,23 +108,22 @@ class AgentCommandCenter(tk.Toplevel):
         )
 
     def _background(self, fn, done=None):
-        def worker():
-            try:
-                result = fn()
-                error = None
-            except Exception as exc:
-                result = None
-                error = exc
-            def finish():
-                if error is not None:
-                    messagebox.showerror(f'JARVIS {settings.app_version}', f'{type(error).__name__}: {error}', parent=self)
-                elif done:
-                    done(result)
-            try:
-                self.after(0, finish)
-            except tk.TclError:
-                pass
-        threading.Thread(target=worker, daemon=True).start()
+        if self._task_runner.running:
+            self.overall.configure(text='● OPERATION ALREADY RUNNING', fg=GOLD)
+            return
+        self.overall.configure(text='● WORKING', fg=GOLD)
+        def finish(result):
+            self.overall.configure(text='● READY', fg=GREEN)
+            if done:
+                done(result)
+        def failed(error):
+            self.overall.configure(text='● OPERATION FAILED', fg=RED)
+            messagebox.showerror(f'JARVIS {settings.app_version}', redact_text(error), parent=self)
+        self._task_runner.start(fn, finish, failed)
+
+    def destroy(self):
+        self._task_runner.close()
+        super().destroy()
 
     # ---- Mission Dashboard ----
     def _build_missions(self):

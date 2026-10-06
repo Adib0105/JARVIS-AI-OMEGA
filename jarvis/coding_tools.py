@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -65,7 +63,5 @@ class CodingWorkspace:
         tests = root / 'tests'
         if not tests.is_dir():
             raise FileNotFoundError('A tests/ folder is required for this allowlisted test action.')
-        raise PermissionError(
-            'EXECUTION_ISOLATION_UNAVAILABLE: project tests are executable code. '
-            'Host execution is disabled; review and run in a disposable VM.'
-        )
+        from .code_execution import DockerCodeRunner
+        return DockerCodeRunner().run(root, kind='unittest', timeout=max(10, min(int(timeout), 300)))

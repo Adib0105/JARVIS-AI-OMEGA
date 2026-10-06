@@ -197,13 +197,11 @@ def _install_security_gui_hooks(gui_module) -> None:
     from .ui_command_center import show_command_center
 
     def v7_confirm_tool(self, tool: str, args: dict):
-        event = threading.Event()
         result = {'decision': ApprovalDecision.DENY.value}
 
         def ask() -> None:
             if getattr(self, '_closing', False):
-                event.set()
-                return
+                return result['decision']
             try:
                 if isinstance(args, dict) and '__approval__' in args:
                     result['decision'] = ask_approval(self.root, tool, args)
@@ -215,28 +213,26 @@ def _install_security_gui_hooks(gui_module) -> None:
                     )
                     result['decision'] = ApprovalDecision.ALLOW_ONCE.value if allowed else ApprovalDecision.DENY.value
                 if result['decision'] == ApprovalDecision.CANCEL_MISSION.value:
+                    if hasattr(self, '_cancel_code_tests'):
+                        self._cancel_code_tests()
                     try:
                         self.jarvis.cancel_mission()
                     except Exception:
                         pass
             except (RuntimeError, tk.TclError):
                 result['decision'] = ApprovalDecision.DENY.value
-            finally:
-                event.set()
+            return result['decision']
 
         if getattr(self, '_closing', False):
             return result['decision']
-        if threading.current_thread() is threading.main_thread():
-            ask()
-        else:
-            try:
-                self.root.after(0, ask)
-            except (RuntimeError, tk.TclError):
-                return result['decision']
-            while not event.wait(0.1):
-                if getattr(self, '_closing', False):
-                    return result['decision']
-        return result['decision']
+        from .code_execution import CURRENT
+        control = CURRENT.get()
+        gate = getattr(self, '_ui_calls', None)
+        if gate is None:
+            # An incompletely constructed/closed UI cannot grant permission.
+            return result['decision']
+        return gate.call(ask, default=ApprovalDecision.DENY.value,
+                         cancel=control.cancel if control else None)
 
     gui_module.JarvisDesktop._confirm_tool = v7_confirm_tool
     original_right = gui_module.JarvisDesktop._build_right_panel

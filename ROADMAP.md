@@ -2,10 +2,29 @@
 
 This roadmap tracks engineering reality, not marketing promises.
 
+## Current V8 track
+
+The baseline is V7.9 on `main`. Development proceeds on `v8-saas-smart-jarvis`.
+See [the current architecture and phased SaaS plan](docs/V8-SAAS-AUDIT.md) and
+[P0 validation](docs/V8-P0-VALIDATION.md). Final P0 recovery and physical Windows
+acceptance remain blockers before the
+later SaaS/UI rollout. The earlier V7 checklist below is historical context;
+promotion to main is not evidence that physical release gates have passed.
+
+The [opt-in isolated code runner](docs/CODE-EXECUTION.md) now has real Docker CI
+evidence for isolation and cancellation. Native capture/ASR process recovery has
+source and frozen Windows lifecycle checks. Observed-identity semantic tools are
+integrated behind an experimental flag with a real Windows UIA fixture suite.
+Physical device/workflow acceptance remains separate from these automated checks.
+The [SaaS architecture contract](docs/V8-SAAS-ARCHITECTURE.md) is documented over
+the existing account/billing service. Its next coding increment is versioned
+migrations and account/session/deletion lifecycle; no AI gateway is live yet.
+
 ## Branches
 
-- `main` — stable V6 baseline until final V7 release
-- `v7-development` — V7/V7.5 engineering and release-candidate work
+- `main` — V7.9 reliability baseline; public release remains on hold
+- `v8-saas-smart-jarvis` — current V8 audit and staged development
+- `v7-development` — earlier V7/V7.5 engineering history
 
 ## Completed / verified foundations
 

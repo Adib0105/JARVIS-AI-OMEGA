@@ -32,7 +32,29 @@ It combines typed chat, voice, screen/image vision, local documents, memory/RAG,
 
 ## V7.9 audit repairs
 
+V8 development now includes an opt-in [isolated Python test runner](docs/CODE-EXECUTION.md)
+with live output and cancellation. It requires a reviewed, provisioned Linux Docker
+image; an unsupported/unconfigured machine continues to fail closed. This is not a
+V8 production release. See [phase evidence](docs/V8-EXECUTION-VALIDATION.md).
+
 [Repair status and remaining release gates](docs/V7.9-AUDIT-REPAIRS.md) · [Operations and recovery](docs/V7.9-OPERATIONS.md). Public release remains on hold; CI installers are test builds.
+
+## V8 development — release on hold
+
+[Current architecture, feature audit and SaaS plan](docs/V8-SAAS-AUDIT.md) ·
+[Original P0 repairs](docs/V8-P0-VALIDATION.md) ·
+[Latest phase report and evidence](docs/V8-P0-CONTINUATION.md).
+Development is isolated on `v8-saas-smart-jarvis`. Current increments add an
+[isolated test runner](docs/V8-EXECUTION-VALIDATION.md),
+[native audio process recovery](docs/V8-NATIVE-AUDIO-VALIDATION.md), and
+[observed-identity semantic dispatch](docs/V8-SEMANTIC-VALIDATION.md).
+Tests require a provisioned reviewed Docker image; semantic tools are opt-in.
+Physical Windows acceptance, remaining P0 recovery limits and the full production
+SaaS gateway/plans/quotas/admin product remain open. Public release stays on HOLD.
+The existing online subscription gates weather, not owner-funded AI.
+The next [SaaS architecture contract](docs/V8-SAAS-ARCHITECTURE.md) defines the
+account migrations, server entitlement/gateway boundaries and bounded cost ledger;
+it is a design document, not an implemented service.
 
 ## V7.8 update
 
@@ -260,7 +282,7 @@ Detailed architecture: [docs/V7-ARCHITECTURE.md](docs/V7-ARCHITECTURE.md)
 | Capability Registry | ✅ Implemented / CI verified |
 | Self Evaluation / Gap Detection | ✅ Implemented / CI verified |
 | Evaluation benchmarks | ✅ Implemented / CI verified |
-| Computer Use V2 UIA | ✅ Implemented / CI verified |
+| Computer Use V2 UIA | 🧪 Engine/fixture tests; normal semantic tool integration and Windows acceptance pending |
 | OCR fallback | ✅ Implemented / CI verified |
 | Browser V2 security | ✅ Implemented / CI verified |
 | Document provenance / dedupe | ✅ Implemented / CI verified |

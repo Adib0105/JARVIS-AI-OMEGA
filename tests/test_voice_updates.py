@@ -122,14 +122,16 @@ class OfflineRecognitionTests(unittest.TestCase):
 
     def test_capture_lock_blocks_overlap_and_releases_after_failure(self):
         sd = MagicMock()
-        with microphone._exclusive_stream(sd):
-            with self.assertRaises(microphone.MicrophoneUnavailable):
+        with patch('jarvis.native_audio.NativeAudioCapture') as capture:
+            with microphone._exclusive_stream(sd):
+                with self.assertRaises(microphone.MicrophoneUnavailable):
+                    with microphone._exclusive_stream(sd):
+                        pass
+            capture.side_effect = RuntimeError('device failed')
+            with self.assertRaises(RuntimeError):
                 with microphone._exclusive_stream(sd):
                     pass
-        sd.RawInputStream.side_effect = RuntimeError('device failed')
-        with self.assertRaises(RuntimeError):
-            with microphone._exclusive_stream(sd):
-                pass
+        sd.RawInputStream.assert_not_called()
         self.assertFalse(microphone._CAPTURE_LOCK.locked())
 
     def test_rapid_wake_restart_does_not_clear_old_stop(self):

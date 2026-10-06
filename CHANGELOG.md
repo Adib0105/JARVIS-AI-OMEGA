@@ -1,3 +1,18 @@
+## V8 development — P0 foundation, unreleased
+
+- Integrate opt-in semantic desktop tools through observed application/window/element identity, single-use expiry, sensitive-field protection, UIA Invoke/Value patterns and scoped post-action verification. Add real Windows UIA fixture CI; physical acceptance remains open.
+- Isolate native microphone capture and built-in transcription in killable spawned workers; bound IPC, cancel/timeout/reap, retain ownership and add a non-recording frozen-worker CI check. Physical voice acceptance remains open.
+- Add an opt-in, offline, resource-limited Linux Docker runner shared by coding and self-development tests, with immutable image IDs and no host mount/execution fallback.
+- Stream separate bounded/redacted test output through the Tk event queue; add Cancel Tests, process deadlines, namespace cleanup verification and an owner-thread permission dialog queue.
+- Add real-container adversarial CI; keep Windows Docker/physical acceptance and public release on hold. See `docs/CODE-EXECUTION.md`.
+- Audit the exact V7.9 baseline and document missing SaaS gateway, plan, quota and admin systems.
+- Deliver desktop and Command Center worker outcomes through a main-thread event queue; recover from exceptions, reject duplicate jobs and cap displayed output.
+- Keep native wake abort off the caller/UI thread and retain ASR ownership after cancellation until the recognizer exits.
+- Preserve mission tool evidence after verification failures and stop uncertain side effects from being retried or replanned automatically.
+- Require literal boolean verification evidence; verify actual todo completion and an observed field change instead of pre-existing text.
+- Reject truthy failed benchmark objects, changed scenario sets and sample-count-only improvement claims.
+- Preserve the project-code execution isolation guard and public-release hold. See `docs/V8-P0-VALIDATION.md` for evidence and unresolved gates.
+
 ## V7.8 — personalized wake, weather and subscription integration
 
 - Recognize stable partial wake phrases; reuse the Vosk model across listening and transcription.

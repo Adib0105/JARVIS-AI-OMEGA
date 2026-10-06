@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import sys
 import threading
 import tkinter as tk
@@ -19,6 +20,8 @@ from .settings_ui import show_settings_dialog, show_update_dialog
 from .system_tools import system_metrics
 from .vision import capture_screen
 from .voice import VoiceOutput
+from .ui_tasks import TkTaskRunner, TkCallGate
+from .logging_utils import redact_text
 
 
 BG = '#0c1020'
@@ -74,9 +77,12 @@ class JarvisDesktop:
         self.root.configure(bg=BG)
 
         self.hud: ArcReactorHUD | None = None
+        self._ui_calls = TkCallGate(self.root, closing=lambda: getattr(self, '_closing', False))
         self.voice = VoiceOutput(on_state_change=self._voice_state_changed)
         self.jarvis = JarvisOmega(confirmer=self._confirm_tool)
         self.busy = False
+        self._tool_tasks = TkTaskRunner(self.root)
+        self.root.bind('<Destroy>', self._close_tool_tasks, add='+')
         self.attached_images: list[Path] = []
         self._preview_ref = None
         self.wake_listener = WakeWordListener(
@@ -272,13 +278,20 @@ class JarvisDesktop:
             ('SETTINGS', self._open_settings, GREEN),
             ('LEARN DOCUMENT', self._learn_document, MAGENTA),
             ('RUN CODE TESTS', self._code_tests, GOLD),
+            ('CANCEL TESTS', self._cancel_code_tests, RED),
             ('EXPORT CHAT', self._export_chat, CYAN),
             ('VOICE TEST', lambda: self.voice.test('hinglish'), GREEN),
             ('MUTE / UNMUTE', self._toggle_voice, GREEN),
             ('IMAGE HELP', self._image_help, MAGENTA),
             ('SYSTEM STATUS', self._show_status, CYAN),
         ]:
-            self._button(modules, text, command, color).pack(fill='x', pady=1)
+            button = self._button(modules, text, command, color)
+            button.pack(fill='x', pady=1)
+            if text == 'RUN CODE TESTS':
+                self.code_tests_button = button
+            elif text == 'CANCEL TESTS':
+                self.cancel_tests_button = button
+                button.configure(state='disabled')
 
         self.status = tk.Label(
             parent,
@@ -371,43 +384,30 @@ class JarvisDesktop:
             self.status.configure(text=f'● {label}', fg=color)
         if hasattr(self, 'send_button'):
             self.send_button.configure(state='disabled' if busy else 'normal')
+        if hasattr(self, 'code_tests_button'):
+            self.code_tests_button.configure(state='disabled' if busy else 'normal')
         if hud_state:
             self._set_hud(hud_state)
         elif not busy:
             self._set_hud('idle')
 
     def _confirm_tool(self, tool: str, args: dict) -> bool:
-        event = threading.Event()
-        result = {'allowed': False}
-
-        def ask() -> None:
+        if getattr(self, '_closing', False) or not hasattr(self, '_ui_calls'):
+            return False
+        def ask():
             if getattr(self, '_closing', False):
-                event.set()
-                return
+                return False
             try:
-                result['allowed'] = messagebox.askyesno(
+                return messagebox.askyesno(
                     'JARVIS V6 // Permission Gate',
                     f'Allow this local action?\n\nTool: {tool}\n\nArguments:\n{args}\n\n'
                     'Only approve if this matches what you asked JARVIS to do.'
                 )
             except (RuntimeError, tk.TclError):
-                result['allowed'] = False
-            finally:
-                event.set()
-
-        if getattr(self, '_closing', False):
-            return bool(result['allowed'])
-        if threading.current_thread() is threading.main_thread():
-            ask()
-        else:
-            try:
-                self.root.after(0, ask)
-            except (RuntimeError, tk.TclError):
-                return bool(result['allowed'])
-            while not event.wait(0.1):
-                if getattr(self, '_closing', False):
-                    return bool(result['allowed'])
-        return bool(result['allowed'])
+                return False
+        from .code_execution import CURRENT
+        control = CURRENT.get()
+        return bool(self._ui_calls.call(ask, cancel=control.cancel if control else None))
 
     def _refresh_metrics(self) -> None:
         try:
@@ -760,17 +760,74 @@ class JarvisDesktop:
             self._run_tool_async('open_app', {'app': app}, 'APP')
 
     def _run_tool_async(self, name: str, args: dict, label: str) -> None:
+        if self.busy or getattr(self, '_closing', False):
+            return
+        if not hasattr(self, '_tool_tasks'):
+            self._tool_tasks = TkTaskRunner(self.root)
+        if self._tool_tasks.running:
+            return
         self._set_busy(True, label, GOLD, 'thinking')
+        from .code_execution import ExecutionControl, execution_context
+        control = ExecutionControl(emit=self._tool_tasks.post_progress)
+        self._code_control = control if name == 'run_project_tests' else None
+        self._code_output_chars = 0
+        if hasattr(self, 'cancel_tests_button'):
+            self.cancel_tests_button.configure(state='normal' if self._code_control else 'disabled')
 
-        def worker() -> None:
-            result = self.jarvis.tools.call(name, args)
-            self.root.after(0, lambda: self._tool_done(name, result))
+        def work():
+            with execution_context(control):
+                return self.jarvis.tools.call(name, args)
 
-        threading.Thread(target=worker, daemon=True).start()
+        def finish(result):
+            if not getattr(self, '_closing', False):
+                self._tool_done(name, result)
+        self._tool_tasks.start(
+            work, finish,
+            lambda error: finish(json.dumps({'ok': False, 'error': redact_text(error)})),
+            progress=self._code_progress,
+            daemon=name != 'run_project_tests',
+        )
+
+    def _code_progress(self, event):
+        if getattr(self, '_closing', False):
+            return
+        text = redact_text(str(event.get('text', '')))
+        stream = event.get('stream', 'status')
+        if stream == 'status' and hasattr(self, 'status'):
+            self.status.configure(text='● ' + text[:90], fg=GOLD)
+        remaining = max(0, 65536 - self._code_output_chars)
+        if remaining:
+            self._append('TEST ' + str(stream).upper(), text[:remaining])
+            self._code_output_chars += len(text[:remaining])
+
+    def _cancel_code_tests(self):
+        control = getattr(self, '_code_control', None)
+        if control is not None:
+            control.cancel.set()
+            if hasattr(self, 'cancel_tests_button'):
+                self.cancel_tests_button.configure(state='disabled')
+            if hasattr(self, 'status'):
+                self.status.configure(text='● CANCELLING — waiting for cleanup', fg=GOLD)
+            # Busy ownership is released only after the runner confirms cleanup.
+
+    def _close_tool_tasks(self, event):
+        if event.widget is self.root:
+            control = getattr(self, '_code_control', None)
+            if control is not None:
+                control.cancel.set()
+            self._tool_tasks.close()
+            if hasattr(self, '_ui_calls'):
+                self._ui_calls.close()
 
     def _tool_done(self, name: str, result: str) -> None:
+        self._code_control = None
+        if hasattr(self, 'cancel_tests_button'):
+            self.cancel_tests_button.configure(state='disabled')
         self._set_busy(False)
-        self._append('SYSTEM', f'{name}:\n{result}')
+        text = redact_text(str(result))
+        if len(text) > 65536:
+            text = text[:65536] + '\n[Display truncated at 65,536 characters.]'
+        self._append('SYSTEM', f'{name}:\n{text}')
         self._refresh_tasks()
 
     def _toggle_voice(self) -> None:

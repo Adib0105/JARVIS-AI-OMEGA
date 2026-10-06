@@ -246,6 +246,7 @@ class MissionOrchestrator:
                     f'Step {step.index} retry {attempt}',
                 )
             self._clear_tool_events()
+            step.tool_events = []
             prompt = (
                 'JARVIS OMEGA V7 MISSION STEP\n'
                 f'Mission ID: {mission.id}\n'
@@ -301,7 +302,15 @@ class MissionOrchestrator:
 
                 failure = self._failure_from_verification(verification)
             except Exception as exc:
-                step.tool_events = self._collect_tool_events()
+                # Verification/persistence may fail after events were drained.
+                # Preserve that evidence: replacing it with an empty second drain
+                # would make a side effect appear safe to replay.
+                try:
+                    step.tool_events.extend(self._collect_tool_events())
+                except Exception:
+                    # Lost event transport means unknown side effects, not none.
+                    step.tool_events.append({'name': 'unknown_dispatch_outcome',
+                                             'output': {'ok': False, 'error': 'Evidence collection failed.'}})
                 step.error = f'{type(exc).__name__}: {exc}'[:2000]
                 failure = classify_exception(
                     exc,
@@ -521,6 +530,11 @@ class MissionOrchestrator:
 
                 if failure and failure.category == ErrorCategory.PERMISSION_ERROR:
                     mission.last_error = 'User permission was denied; mission stopped without bypassing the decision.'
+                    self._transition(mission, MissionStatus.FAILED, progress, mission.last_error)
+                    break
+
+                if self.verifier.has_unsafe_retry_risk(step.tool_events):
+                    mission.last_error = 'A side-effecting step failed or could not be verified; inspect its evidence before trying again.'
                     self._transition(mission, MissionStatus.FAILED, progress, mission.last_error)
                     break
 

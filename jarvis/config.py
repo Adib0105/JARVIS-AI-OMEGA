@@ -112,6 +112,7 @@ class Settings:
     enable_local_tools: bool = _bool('ENABLE_LOCAL_TOOLS', True)
     require_local_approval: bool = _bool('REQUIRE_LOCAL_APPROVAL', True)
     enable_desktop_automation: bool = _bool('ENABLE_DESKTOP_AUTOMATION', True)
+    enable_semantic_computer_use: bool = _bool('ENABLE_SEMANTIC_COMPUTER_USE', False)
     enable_document_intelligence: bool = _bool('ENABLE_DOCUMENT_INTELLIGENCE', True)
     enable_coding_tools: bool = _bool('ENABLE_CODING_TOOLS', True)
     enable_google_workspace: bool = _bool('ENABLE_GOOGLE_WORKSPACE', False)

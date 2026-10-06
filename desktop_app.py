@@ -24,6 +24,10 @@ if __name__ == '__main__' and sys.argv[1:2] == ['--jarvis-background-check']:
     from jarvis.background_check import main as background_check
     raise SystemExit(background_check())
 
+if __name__ == '__main__' and sys.argv[1:2] == ['--jarvis-audio-worker-check']:
+    from jarvis.native_audio import worker_selfcheck
+    raise SystemExit(worker_selfcheck())
+
 
 def _report_update_process_ready() -> bool:
     """Acknowledge a successful updater relaunch before local sign-in blocks.

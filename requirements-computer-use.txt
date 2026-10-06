@@ -1,0 +1,2 @@
+# Optional Windows UI Automation adapter. No coordinate fallback is enabled by this package.
+pywinauto==0.6.9; sys_platform == 'win32'

@@ -205,8 +205,11 @@ class CapabilityRegistry:
                 from .computer_use.windows_ui import WindowsUIBackend
                 backend = WindowsUIBackend().status()
                 if backend.available:
-                    computer_status = CapabilityStatus.AVAILABLE
-                    computer_detail = f'UIA ready; OCR fallback={visual_available}'
+                    computer_status = CapabilityStatus.EXPERIMENTAL
+                    computer_detail = (f'UIA dependency ready; OCR fallback={visual_available}; '
+                                       'observed-identity semantic dispatch is opt-in via ENABLE_SEMANTIC_COMPUTER_USE; '
+                                       '30-second single-use targets and sensitive-field guards are enforced; '
+                                       'physical Windows workflow validation pending')
                 elif _module('pyautogui') and visual_available:
                     computer_status = CapabilityStatus.DEGRADED
                     computer_detail = f'UIA unavailable ({backend.detail}); confidence-gated local OCR fallback ready'
@@ -401,7 +404,9 @@ class CapabilityRegistry:
             self_dev_detail = 'controlled self-development disabled by configuration'
         elif self_dev_exists:
             self_dev_status = CapabilityStatus.DEGRADED
-            self_dev_detail = 'proposal/edit support available; generated-code tests BLOCKED: EXECUTION_ISOLATION_UNAVAILABLE; production release remains locked'
+            self_dev_detail = ('proposal/edit support available; tests require the opt-in reviewed Docker Linux image '
+                               'and runtime preflight (otherwise EXECUTION_ISOLATION_UNAVAILABLE); '
+                               'Windows acceptance pending; production release remains locked')
         else:
             self_dev_status = CapabilityStatus.MISSING
             self_dev_detail = 'self-development package is absent'

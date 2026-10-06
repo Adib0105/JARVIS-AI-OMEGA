@@ -413,10 +413,9 @@ class BackgroundController:
                 payload['briefing'] = self._cached_briefing()
                 return
             from .microphone import record_until_silence
-            from .offline_speech import transcribe_vosk
+            from .native_audio import LocalVoskTranscriber
 
-            def local_transcriber(data, sample_rate, _language):
-                return transcribe_vosk(data, sample_rate, self.listener.model_path)
+            local_transcriber = LocalVoskTranscriber(self.listener.model_path)
 
             payload['text'] = record_until_silence(
                 language=settings.speech_language,

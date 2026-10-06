@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 from .targets import UITarget
@@ -38,6 +40,75 @@ class WindowsUIBackend:
             backend='pywinauto-uia',
             detail='ready' if self._desktop is not None else self._error or 'unavailable',
         )
+
+    @contextmanager
+    def automation_session(self):
+        if os.name != 'nt':
+            raise RuntimeError('Semantic desktop actions require Windows UI Automation.')
+        import comtypes
+        comtypes.CoInitializeEx(0)
+        previous = self._desktop
+        try:
+            from pywinauto import Desktop
+            self._desktop = Desktop(backend='uia')
+            yield
+        finally:
+            self._desktop = previous
+            comtypes.CoUninitialize()
+
+    @staticmethod
+    def protected_field(wrapper, name='', automation_id=''):
+        try:
+            password = wrapper.element_info.element.CurrentIsPassword
+        except Exception:
+            return None  # Unknown accessibility state cannot authorize an action.
+        if bool(password):
+            return True
+        markers = r'password|passwd|passcode|secret|token|api.?key|credential|credit.?card|card.?number|cvv|cvc|otp|one.?time|recovery.?code|seed.?phrase'
+        return bool(re.search(markers, name + ' ' + automation_id, re.I))
+
+    def describe(self, wrapper, window):
+        import psutil
+        info = wrapper.element_info
+        pid = int(info.process_id)
+        process = psutil.Process(pid)
+        automation_id = self._safe_element(wrapper, 'automation_id')
+        protected = self.protected_field(wrapper)
+        name = '[PROTECTED FIELD]' if protected is not False else self._safe_text(wrapper)
+        protected = self.protected_field(wrapper, name, automation_id)
+        if protected is not False:
+            name = '[PROTECTED FIELD]'
+        left, top, right, bottom = self._safe_rect(wrapper)
+        return UITarget(name=name or automation_id, control_type=str(info.control_type),
+                        window_title=self._safe_text(window), automation_id=automation_id,
+                        left=left, top=top, right=right, bottom=bottom,
+                        visible=bool(wrapper.is_visible()), enabled=bool(wrapper.is_enabled()),
+                        backend_ref=wrapper, process_id=pid, process_started=process.create_time(),
+                        application=process.exe(), window_handle=int(window.handle),
+                        runtime_id=tuple(info.runtime_id), protected=protected)
+
+    def refresh(self, target):
+        wrapper = target.backend_ref
+        if wrapper is None:
+            raise RuntimeError('Missing live UI Automation reference.')
+        return self.describe(wrapper, wrapper.top_level_parent())
+
+    def invoke(self, target):
+        current = self.refresh(target)
+        if current.identity != target.identity or current.protected is not False or not current.visible or not current.enabled:
+            raise RuntimeError('Target changed or is protected; invocation was blocked.')
+        # InvokePattern addresses this exact element; no coordinate/global click.
+        target.backend_ref.iface_invoke.Invoke()
+
+    def replace_text(self, target, text):
+        current = self.refresh(target)
+        if current.identity != target.identity or current.protected is not False or not current.visible or not current.enabled:
+            raise RuntimeError('Target changed or is protected; input was blocked.')
+        value = target.backend_ref.iface_value
+        if bool(value.CurrentIsReadOnly):
+            raise RuntimeError('Target field is read-only.')
+        # ValuePattern is literal Unicode replacement, never interpreted keys.
+        value.SetValue(text)
 
     @staticmethod
     def _safe_text(wrapper) -> str:
@@ -85,33 +156,12 @@ class WindowsUIBackend:
             for wrapper in descendants:
                 if len(output) >= max_controls:
                     return output
-                name = self._safe_text(wrapper)
-                automation_id = self._safe_element(wrapper, 'automation_id')
-                control_type = self._safe_element(wrapper, 'control_type') or type(wrapper).__name__
-                if not name and not automation_id:
+                try:
+                    output.append(self.describe(wrapper, window))
+                except Exception:
+                    # Missing identity, stale UIA or inaccessible processes are
+                    # not actionable; do not synthesize affirmative defaults.
                     continue
-                left, top, right, bottom = self._safe_rect(wrapper)
-                try:
-                    visible = bool(wrapper.is_visible())
-                except Exception:
-                    visible = True
-                try:
-                    enabled = bool(wrapper.is_enabled())
-                except Exception:
-                    enabled = True
-                output.append(UITarget(
-                    name=name or automation_id,
-                    control_type=control_type,
-                    window_title=title,
-                    automation_id=automation_id,
-                    left=left,
-                    top=top,
-                    right=right,
-                    bottom=bottom,
-                    enabled=enabled,
-                    visible=visible,
-                    backend_ref=wrapper,
-                ))
         return output
 
     @staticmethod
@@ -143,9 +193,9 @@ class WindowsUIBackend:
         if wrapper is None:
             return evidence | {'observed': False}
         try:
-            evidence['exists'] = bool(wrapper.exists(timeout=0.5))
+            evidence['exists'] = int(wrapper.element_info.element.CurrentProcessId) == target.process_id
         except Exception:
-            evidence['exists'] = True
+            evidence['exists'] = False
         try:
             evidence['focused'] = bool(wrapper.has_keyboard_focus())
         except Exception:
@@ -155,7 +205,8 @@ class WindowsUIBackend:
         except Exception:
             evidence['selected'] = None
         try:
-            evidence['value'] = wrapper.get_value()
+            protected = WindowsUIBackend.protected_field(wrapper, target.name, target.automation_id)
+            evidence['value'] = wrapper.get_value() if protected is False else None
         except Exception:
             evidence['value'] = None
         evidence['observed'] = True
