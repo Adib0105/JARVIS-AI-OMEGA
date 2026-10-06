@@ -193,7 +193,7 @@ class VoiceReliabilityTests(unittest.TestCase):
         def transcribe(*args):
             event.set()
             return 'unwanted command'
-        with patch('jarvis.microphone._deps', return_value=(sd, MagicMock())), patch('jarvis.microphone._transcribe_pcm', side_effect=transcribe):
+        with patch('jarvis.microphone._deps', return_value=(sd, MagicMock())), patch('jarvis.microphone._transcribe_pcm', side_effect=transcribe), patch('jarvis.native_audio.NativeAudioCapture', return_value=sd.RawInputStream.return_value):
             self.assertEqual(record_until_silence(max_seconds=2, stop_event=event), '')
 
     def test_wake_listener_preserves_command_case(self):

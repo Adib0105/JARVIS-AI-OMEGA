@@ -39,7 +39,8 @@ def _exclusive_stream(sd, **kwargs):
     if not _CAPTURE_LOCK.acquire(blocking=False):
         raise MicrophoneUnavailable('Microphone already in use. Stop wake-word/listening before starting another recording.')
     try:
-        with sd.RawInputStream(**kwargs) as stream:
+        from .native_audio import NativeAudioCapture
+        with NativeAudioCapture(**kwargs) as stream:
             yield stream
     finally:
         _CAPTURE_LOCK.release()
@@ -77,13 +78,13 @@ def _capture_blocks(sd, frames, sample_rate, *, stop_event=None, seconds=15):
             stream_ready.set()
     worker = threading.Thread(target=produce, daemon=True, name='jarvis-mic-owner')
     worker.start()
-    deadline, last_audio = time.monotonic() + seconds + 2, time.monotonic()
+    deadline, last_audio = time.monotonic() + seconds + 7, time.monotonic()
     try:
         while True:
             if stop_event is not None and stop_event.is_set():
                 return
             now = time.monotonic()
-            if now >= deadline or now - last_audio > 2:
+            if now >= deadline or now - last_audio > (2 if stream_ready.is_set() else 6):
                 raise MicrophoneUnavailable('Microphone timed out; reconnect/select the input device.')
             try:
                 chunk, overflow = pending.get(timeout=0.05)
@@ -112,6 +113,21 @@ def _capture_blocks(sd, frames, sample_rate, *, stop_event=None, seconds=15):
 
 
 def _bounded_transcribe(recognize, data, rate, language, stop_event):
+    # Product recognizers are importable trusted callables and run in a killable
+    # process. Extension/test callables keep the existing bounded thread contract.
+    from types import FunctionType
+    from .native_audio import LocalVoskTranscriber, transcribe_in_process
+    isolated = isinstance(recognize, LocalVoskTranscriber) or (
+        isinstance(recognize, FunctionType) and recognize is _transcribe_pcm)
+    if isolated:
+        if not _ASR_LOCK.acquire(blocking=False):
+            raise MicrophoneUnavailable('Speech recognition is already running; please retry after it stops.')
+        try:
+            return transcribe_in_process(recognize, data, rate, language, stop_event)
+        except Exception as exc:
+            raise MicrophoneUnavailable(str(exc)) from exc
+        finally:
+            _ASR_LOCK.release()
     if stop_event is not None and stop_event.is_set():
         return ''
     if not _ASR_LOCK.acquire(blocking=False):
