@@ -53,8 +53,15 @@ Those 12 local tests pass. UIA itself is simulated in them. A new
 `tests_windows/test_semantic_uia.py` suite opens a disposable WinForms application
 and exercises actual UIA replacement, invocation, password protection, stale
 application handling and normal registry/audit/verification. No user application,
-private account or network service is targeted. Real Windows CI results will be
-recorded after the branch check completes; the test definition alone is not proof.
+private account or network service is targeted. All **4 real Windows UIA tests
+passed in 4.652s** in [run 37428735356](https://github.com/Adib0105/JARVIS-AI-OMEGA/actions/runs/37428735356)
+at `ced58e414b61ae47db908a1556433b4d4e9b4065`. Its ordinary Windows suite ran
+518 tests: 516 passed and two POSIX-only cases skipped. The Linux local suite
+ran 518: 517 passed and one Windows DPAPI case skipped. All ten CI validation
+jobs passed, including the updated packaged UIA dependency, frozen audio worker,
+installer/update lifecycle, real Docker, dependency audit and account services.
+Public release was skipped. These disposable-application CI results do not replace
+physical Windows acceptance in real user applications.
 
 ## Remaining limits and next gate
 

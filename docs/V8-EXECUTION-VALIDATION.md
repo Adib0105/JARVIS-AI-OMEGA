@@ -36,7 +36,7 @@ Initial integration run found three legacy approval-queue test failures/errors:
 the shutdown fixture had no new queue, and the closing guard needed an early
 denial. The guard and fixtures were corrected; no test was deleted or disabled.
 No local Docker engine is available. Bubblewrap also failed its namespace probe.
-Real Docker and remaining platform/service check results will be recorded after CI.
+The isolated local service suite passed 30/30 (6.200s).
 
 First real-daemon run (`37426460229`) passed seven of nine cases, including file/
 environment/network isolation, cgroup/seccomp/capability inspection, memory limits,
@@ -47,6 +47,14 @@ was added, plus a regression for older Python versions that exit 0 on empty
 discovery. No failed real-boundary assertion was removed or weakened. All eight
 ordinary regression/service/security CI jobs passed on that initial head; Windows
 package work was still in progress at the time of this report update.
+
+After correction, [run 37426791227](https://github.com/Adib0105/JARVIS-AI-OMEGA/actions/runs/37426791227)
+passed **10/10 real Docker cases** (14.410s). The same suite passed again in the
+native-audio and semantic branch checks. CI used immutable local image ID
+`sha256:df18428df8a0f9189c84e7424d214b4c50092af1f9dca5842a00c41c39bda316`
+from published digest `python@sha256:ddb0207ae1f0356c2b724d740769b0c5f5f51cc54a0525178f721825f78fe74c`.
+No orphan labeled containers remained. With the empty-suite regression, this
+increment contributes 24 new local cases (the initial 23 count above is historical).
 
 ## Security impact and regression risk
 
@@ -65,8 +73,8 @@ General arbitrary builds/shell execution are not exposed.
 
 ## Remaining work and next step
 
-Complete real-daemon CI evidence; then continue native voice process recovery and
-semantic application/window identity, freshness and sensitive-field enforcement.
+Real-daemon CI evidence is now available. Subsequent native audio and semantic
+increments are documented in the adjacent phase reports.
 Physical Windows microphone/Bluetooth/sleep/tray/installer evidence still requires
 a target machine. SaaS gateway, configurable plans, entitlements, quotas, extended
 accounts/billing, admin and UX phases remain in the audited implementation order.

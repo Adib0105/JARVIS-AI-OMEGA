@@ -3,6 +3,15 @@
 Date: 2026-10-06. Baseline: `main@83b7f34b67c0aca444c1139cd7db700364bc554c`.
 Target branch: `v8-saas-smart-jarvis`. Release decision: **HOLD**.
 
+The architecture/matrix below records the original baseline audit. Subsequent P0
+implementation is summarized in the [latest phase report](V8-P0-CONTINUATION.md).
+Scoped evidence is in [execution](V8-EXECUTION-VALIDATION.md),
+[native audio](V8-NATIVE-AUDIO-VALIDATION.md) and [semantic dispatch](V8-SEMANTIC-VALIDATION.md).
+These do not constitute full V8 or physical Windows acceptance.
+The subsequent [SaaS architecture contract](V8-SAAS-ARCHITECTURE.md) records module,
+API, migration, entitlement, reservation and rollout decisions for the next phase.
+It does not change the baseline feature matrix into an implementation claim.
+
 This is an audit of the checked-out mainline, not a claim that the requested V8
 product exists. The existing draft PR #24 contains an earlier frontier audit;
 its findings are leads, not verification evidence for this change. No mainline

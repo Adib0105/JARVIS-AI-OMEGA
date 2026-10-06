@@ -6,15 +6,19 @@ This roadmap tracks engineering reality, not marketing promises.
 
 The baseline is V7.9 on `main`. Development proceeds on `v8-saas-smart-jarvis`.
 See [the current architecture and phased SaaS plan](docs/V8-SAAS-AUDIT.md) and
-[P0 validation](docs/V8-P0-VALIDATION.md). Project execution isolation, semantic
-desktop integration and physical Windows acceptance remain blockers before the
+[P0 validation](docs/V8-P0-VALIDATION.md). Final P0 recovery and physical Windows
+acceptance remain blockers before the
 later SaaS/UI rollout. The earlier V7 checklist below is historical context;
 promotion to main is not evidence that physical release gates have passed.
 
-Next P0 increment adds the [opt-in isolated code runner](docs/CODE-EXECUTION.md)
-and cancellable live test output. Local process/policy/Tcl regressions pass;
-real Docker CI and Windows acceptance are separate gates. Full semantic and voice
-process recovery work remains ahead of SaaS rollout.
+The [opt-in isolated code runner](docs/CODE-EXECUTION.md) now has real Docker CI
+evidence for isolation and cancellation. Native capture/ASR process recovery has
+source and frozen Windows lifecycle checks. Observed-identity semantic tools are
+integrated behind an experimental flag with a real Windows UIA fixture suite.
+Physical device/workflow acceptance remains separate from these automated checks.
+The [SaaS architecture contract](docs/V8-SAAS-ARCHITECTURE.md) is documented over
+the existing account/billing service. Its next coding increment is versioned
+migrations and account/session/deletion lifecycle; no AI gateway is live yet.
 
 ## Branches
 

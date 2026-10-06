@@ -42,13 +42,19 @@ V8 production release. See [phase evidence](docs/V8-EXECUTION-VALIDATION.md).
 ## V8 development — release on hold
 
 [Current architecture, feature audit and SaaS plan](docs/V8-SAAS-AUDIT.md) ·
-[P0 repairs, test evidence and remaining gates](docs/V8-P0-VALIDATION.md).
-Development is isolated on `v8-saas-smart-jarvis`. The first increment repairs
-UI worker error delivery, wake-stop blocking, ASR worker ownership and false
-verification/replay behavior. It does not implement the complete V8 SaaS product.
-Project tests still require a reviewed OS execution sandbox; semantic desktop
-integration, physical Windows acceptance and production backend validation remain
-open. The existing online subscription gates weather, not owner-funded AI.
+[Original P0 repairs](docs/V8-P0-VALIDATION.md) ·
+[Latest phase report and evidence](docs/V8-P0-CONTINUATION.md).
+Development is isolated on `v8-saas-smart-jarvis`. Current increments add an
+[isolated test runner](docs/V8-EXECUTION-VALIDATION.md),
+[native audio process recovery](docs/V8-NATIVE-AUDIO-VALIDATION.md), and
+[observed-identity semantic dispatch](docs/V8-SEMANTIC-VALIDATION.md).
+Tests require a provisioned reviewed Docker image; semantic tools are opt-in.
+Physical Windows acceptance, remaining P0 recovery limits and the full production
+SaaS gateway/plans/quotas/admin product remain open. Public release stays on HOLD.
+The existing online subscription gates weather, not owner-funded AI.
+The next [SaaS architecture contract](docs/V8-SAAS-ARCHITECTURE.md) defines the
+account migrations, server entitlement/gateway boundaries and bounded cost ledger;
+it is a design document, not an implemented service.
 
 ## V7.8 update
 

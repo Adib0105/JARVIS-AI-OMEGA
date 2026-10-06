@@ -79,7 +79,7 @@ Normal window close cancels the runner and lets its bounded cleanup worker finis
 An abrupt application/host crash can leave a stopped container record; no claim
 of crash-persistent garbage collection is made in this increment.
 
-The final result distinguishes PASSED, FAILED, TIMEOUT, CANCELLED, OUTPUT_LIMIT,
+The final result distinguishes PASSED, FAILED, NO_TESTS, TIMEOUT, CANCELLED, OUTPUT_LIMIT,
 MEMORY_LIMIT, ERROR and CLEANUP_FAILED. Only a confirmed exit code 0 plus verified
 container removal can pass. Failed cleanup blocks subsequent runs in the process
 until removal or absence is independently confirmed. The UI recovers and reports
