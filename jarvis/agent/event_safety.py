@@ -17,7 +17,7 @@ _PRIVATE_ARGUMENT_KEYS = {
 
 _PRIVATE_RESULT_KEYS = {
     'content', 'text', 'body', 'messages', 'message', 'raw', 'transcript',
-    'html', 'markdown', 'document_text', 'page_content',
+    'html', 'markdown', 'document_text', 'page_content', 'stdout', 'stderr',
 }
 
 _SAFE_RESULT_KEYS = {

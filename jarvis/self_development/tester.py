@@ -33,19 +33,21 @@ class TestReport:
 
 
 class SelfDevelopmentTester:
-    """Fails closed until a reviewed OS execution isolation backend is available."""
+    """Use the shared opt-in container boundary; never execute host Python."""
 
     def __init__(self, timeout: int = 300) -> None:
         self.timeout = max(10, min(int(timeout), 900))
 
     def _run(self, name: str, args: list[str], cwd: Path) -> CheckResult:
-        # A worktree, timeout and scrubbed environment are not an OS boundary.
-        # No supported/reviewed Windows isolation backend exists in this build.
-        # Never fall back to host Python, even after ordinary action approval.
-        return CheckResult(name=name, ok=False, returncode=126, duration_ms=0.0,
-                           stdout='', stderr='EXECUTION_ISOLATION_UNAVAILABLE: '
-                           'Generated code was not executed. Use a separately reviewed '
-                           'disposable VM; host execution is disabled.')
+        from ..code_execution import COMMANDS, DockerCodeRunner
+        if COMMANDS.get(name) != args:
+            raise PermissionError('Test command is not allowlisted.')
+        try:
+            result = DockerCodeRunner().run(cwd, kind=name, timeout=self.timeout)
+        except PermissionError as exc:
+            return CheckResult(name, False, 126, 0.0, '', str(exc))
+        return CheckResult(name, result['ok'], result['returncode'], result['duration_ms'],
+                           result['stdout'], result['stderr'] + ('\n' + result['error'] if result.get('error') else ''))
 
     def run_regression(self, worktree: Path) -> TestReport:
         worktree = worktree.resolve()

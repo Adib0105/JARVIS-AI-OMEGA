@@ -10,6 +10,51 @@ permissions:
   contents: read
 
 jobs:
+  code-sandbox:
+    name: isolated-code-execution (real Docker)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONWARNINGS: error::ResourceWarning
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Install desktop dependencies
+        run: pip install -r requirements.txt -c constraints/linux.txt
+      - name: Provision CI-only image and record immutable ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull python:3.12-slim
+          image_id=$(docker image inspect --format '{{.Id}}' python:3.12-slim)
+          echo "JARVIS_CODE_SANDBOX_IMAGE=$image_id" >> "$GITHUB_ENV"
+          docker image inspect --format '{{json .RepoDigests}}' "$image_id"
+      - name: Real sandbox security and lifecycle acceptance
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m unittest discover -s tests_sandbox -v 2>&1 | tee sandbox-test-output.txt
+      - name: Confirm no orphan sandbox containers
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          containers=$(docker ps -aq --filter label=com.jarvis.code-sandbox=1)
+          if [ -n "$containers" ]; then
+            docker rm -f $containers
+            echo 'Orphan sandbox found: acceptance failed.'
+            exit 1
+          fi
+      - name: Upload isolation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: code-sandbox-evidence
+          path: sandbox-test-output.txt
+          if-no-files-found: ignore
+
   test:
     name: linux-regression (${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -259,7 +304,7 @@ jobs:
   publish-release:
     # Release remains blocked until FINAL-HARDENING-AUDIT mandatory findings close.
     if: ${{ false }}
-    needs: [test, account-service, windows-regression, windows-package-smoke, dependency-audit]
+    needs: [test, account-service, windows-regression, windows-package-smoke, dependency-audit, code-sandbox]
     runs-on: ubuntu-latest
     permissions:
       contents: write

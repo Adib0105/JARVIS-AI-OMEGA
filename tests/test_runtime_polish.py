@@ -208,9 +208,13 @@ class ApprovalShutdownTests(unittest.TestCase):
 
     def test_shutdown_releases_worker_waiting_for_dialog(self):
         from jarvis.gui import JarvisDesktop
+        from jarvis.ui_tasks import TkCallGate
         d = SimpleNamespace(_closing=False, root=MagicMock())
         scheduled = threading.Event()
-        d.root.after.side_effect = lambda *_: scheduled.set()
+        d._ui_calls = TkCallGate(d.root, closing=lambda: d._closing)
+        self.addCleanup(d._ui_calls.close)
+        enqueue = d._ui_calls.pending.put_nowait
+        d._ui_calls.pending.put_nowait = lambda request: (enqueue(request), scheduled.set())
         result = []
         worker = threading.Thread(target=lambda: result.append(JarvisDesktop._confirm_tool(d, 'open_app', {})), daemon=True)
         worker.start()
@@ -232,16 +236,23 @@ class AdditionalRecoveryTests(unittest.TestCase):
 
     def test_v7_dialog_failure_denies_without_name_error(self):
         import tkinter as tk
+        from jarvis.ui_tasks import TkCallGate
         confirm = self.guarded_confirm()
         d = SimpleNamespace(_closing=False, root=MagicMock())
+        d._ui_calls = TkCallGate(d.root, closing=lambda: d._closing)
+        self.addCleanup(d._ui_calls.close)
         with patch('tkinter.messagebox.askyesno', side_effect=tk.TclError):
             self.assertEqual(confirm(d, 'open_app', {}), 'deny')
 
     def test_v7_shutdown_releases_pending_permission(self):
+        from jarvis.ui_tasks import TkCallGate
         confirm = self.guarded_confirm()
         d = SimpleNamespace(_closing=False, root=MagicMock())
         scheduled = threading.Event()
-        d.root.after.side_effect = lambda *_: scheduled.set()
+        d._ui_calls = TkCallGate(d.root, closing=lambda: d._closing)
+        self.addCleanup(d._ui_calls.close)
+        enqueue = d._ui_calls.pending.put_nowait
+        d._ui_calls.pending.put_nowait = lambda request: (enqueue(request), scheduled.set())
         answers = []
         worker = threading.Thread(target=lambda: answers.append(confirm(d, 'open_app', {})), daemon=True)
         worker.start()

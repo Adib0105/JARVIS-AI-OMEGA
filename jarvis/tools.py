@@ -196,6 +196,9 @@ class ToolRegistry:
         return open_local_path(str(target))
 
     def _before_dispatch(self, name, args):
+        from .code_execution import CURRENT as CODE_CURRENT
+        if CODE_CURRENT.get() is not None:
+            CODE_CURRENT.get().check()
         from .agent.budget import CURRENT
         if CURRENT.get():
             CURRENT.get().check()
@@ -287,6 +290,10 @@ class ToolRegistry:
                     'error': None if result.get('playing') else result.get('message'),
                     'verification': {'status': 'VERIFIED' if verified else 'PARTIAL' if result.get('playing') else 'FAILED',
                                      'verified': verified, 'evidence': result}}, ensure_ascii=False)
+            if name == 'run_project_tests':
+                return json.dumps({'ok': result.get('ok') is True, 'result': result,
+                                   'error': result.get('error') or (None if result.get('ok') is True else result.get('status'))},
+                                  ensure_ascii=False)
             return json.dumps({'ok': True, 'result': result}, ensure_ascii=False, default=str)
         except Exception as exc:
             return json.dumps({'ok': False, 'error': f'{type(exc).__name__}: {exc}'}, ensure_ascii=False)

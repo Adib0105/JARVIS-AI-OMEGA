@@ -1,5 +1,8 @@
 ## V8 development — P0 foundation, unreleased
 
+- Add an opt-in, offline, resource-limited Linux Docker runner shared by coding and self-development tests, with immutable image IDs and no host mount/execution fallback.
+- Stream separate bounded/redacted test output through the Tk event queue; add Cancel Tests, process deadlines, namespace cleanup verification and an owner-thread permission dialog queue.
+- Add real-container adversarial CI; keep Windows Docker/physical acceptance and public release on hold. See `docs/CODE-EXECUTION.md`.
 - Audit the exact V7.9 baseline and document missing SaaS gateway, plan, quota and admin systems.
 - Deliver desktop and Command Center worker outcomes through a main-thread event queue; recover from exceptions, reject duplicate jobs and cap displayed output.
 - Keep native wake abort off the caller/UI thread and retain ASR ownership after cancellation until the recognizer exits.

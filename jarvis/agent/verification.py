@@ -109,10 +109,12 @@ class VerificationEngine:
             return self._verify_file_write(event, name, args, result)
         if name == 'run_project_tests':
             code = result.get('returncode') if isinstance(result, dict) else None
+            verified = (type(code) is int and code == 0 and result.get('ok') is True
+                        and result.get('status') == 'PASSED' and result.get('cleanup_verified') is True)
             return _base(event, name, side_effecting=True) | {
-                'verified': code == 0,
-                'status': 'VERIFIED' if code == 0 else 'FAILED',
-                'evidence': {'returncode': code},
+                'verified': verified,
+                'status': 'VERIFIED' if verified else 'FAILED',
+                'evidence': {'returncode': code, 'scope': 'isolated_test_exit'},
             }
         if name == 'gmail_send':
             message_id = result.get('id') if isinstance(result, dict) else None

@@ -11,6 +11,11 @@ desktop integration and physical Windows acceptance remain blockers before the
 later SaaS/UI rollout. The earlier V7 checklist below is historical context;
 promotion to main is not evidence that physical release gates have passed.
 
+Next P0 increment adds the [opt-in isolated code runner](docs/CODE-EXECUTION.md)
+and cancellable live test output. Local process/policy/Tcl regressions pass;
+real Docker CI and Windows acceptance are separate gates. Full semantic and voice
+process recovery work remains ahead of SaaS rollout.
+
 ## Branches
 
 - `main` — V7.9 reliability baseline; public release remains on hold

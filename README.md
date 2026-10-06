@@ -32,6 +32,11 @@ It combines typed chat, voice, screen/image vision, local documents, memory/RAG,
 
 ## V7.9 audit repairs
 
+V8 development now includes an opt-in [isolated Python test runner](docs/CODE-EXECUTION.md)
+with live output and cancellation. It requires a reviewed, provisioned Linux Docker
+image; an unsupported/unconfigured machine continues to fail closed. This is not a
+V8 production release. See [phase evidence](docs/V8-EXECUTION-VALIDATION.md).
+
 [Repair status and remaining release gates](docs/V7.9-AUDIT-REPAIRS.md) · [Operations and recovery](docs/V7.9-OPERATIONS.md). Public release remains on hold; CI installers are test builds.
 
 ## V8 development — release on hold
